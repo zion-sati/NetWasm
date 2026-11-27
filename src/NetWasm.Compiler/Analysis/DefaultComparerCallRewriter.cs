@@ -21,6 +21,7 @@ internal sealed class DefaultComparerCallRewriter(
     ITypeRelationshipClassifier relationships,
     IConstrainedCallTargetResolver targets,
     IStackValueConsumerFinder consumers,
+    ICalleeMethodBodyReader calleeBodies,
     bool devirtualize) : IMethodRewriteRule
 {
     private readonly NullableTypeResolver _nullableTypes = new();
@@ -33,6 +34,7 @@ internal sealed class DefaultComparerCallRewriter(
     private readonly ITypeRelationshipClassifier _relationships = relationships ?? throw new ArgumentNullException(nameof(relationships));
     private readonly IConstrainedCallTargetResolver _targets = targets ?? throw new ArgumentNullException(nameof(targets));
     private readonly IStackValueConsumerFinder _consumers = consumers ?? throw new ArgumentNullException(nameof(consumers));
+    private readonly ICalleeMethodBodyReader _calleeBodies = calleeBodies ?? throw new ArgumentNullException(nameof(calleeBodies));
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -123,23 +125,46 @@ internal sealed class DefaultComparerCallRewriter(
             {
                 continue;
             }
+            var direct = _methodInstances.ResolveMethodInstance(
+                implementation.Key.Assembly,
+                implementation.Key.MetadataToken,
+                _symbols.Format(implementation),
+                0,
+                new CliGenericContext(arguments, [])) with
+            {
+                DeclaringType = type,
+            };
             instructions[consumer] = instructions[consumer] with
             {
                 Operation = CilOperation.Call,
-                Operand = new CilOperand.MethodInstance(_methodInstances.ResolveMethodInstance(
-                    implementation.Key.Assembly,
-                    implementation.Key.MetadataToken,
-                    _symbols.Format(implementation),
-                    0,
-                    new CliGenericContext(arguments, [])) with
-                {
-                    DeclaringType = type,
-                }),
+                Operand = new CilOperand.MethodInstance(direct),
             };
+            // A default comparer keeps no state, and where its method never reads this (every upstream default
+            // comparer's Equals, Compare and GetHashCode) the call needs no receiver: the getter and the comparer
+            // class's initialization check it makes go, as the JIT finds the class initialized and drops the unused
+            // receiver. The class is beforefieldinit, so its initialization may wait for a read of its field.
+            if (!ReadsReceiver(direct))
+            {
+                instructions[index] = instructions[index] with
+                {
+                    Operation = CilOperation.LoadNull,
+                    Operand = new CilOperand.None(),
+                };
+            }
             changed = true;
         }
         return changed;
     }
+
+    // Whether the method reads, writes or takes the address of its this argument; true where its body is unknown.
+    private bool ReadsReceiver(MethodInstanceModel method) =>
+        !_calleeBodies.TryReadMethodBody(method, out var body) ||
+        body.Instructions.Any(static instruction =>
+            instruction is
+            {
+                Operation: CilOperation.LoadArgument or CilOperation.LoadArgumentAddress or CilOperation.StoreArgument,
+                Operand: CilOperand.Index { Value: 0 },
+            });
 
     // The comparer class the default comparer of a closed type is: its
     // definition, its type and its type arguments.

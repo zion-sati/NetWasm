@@ -480,14 +480,15 @@ public sealed class ManagedInliningResolverTests
         ManagedMethodInliningPolicy policy, bool aggressive, int calleeInstructions, int calleeBody, bool nested,
         bool resolves)
     {
-        // The three-instruction wrapper calls another method. An aggressive callee is a priority candidate, so a
-        // large one is composed into the wrapper: under the speed policy, for a call in the caller's own body, the
-        // whole counts as small within the composed budget, and otherwise only within the small limit, since the
-        // later rounds leave the callee a call. A small callee composes like any small callee, and a callee with no
-        // body makes the wrapper large. The call is in a loop, where the size tiers decide under either policy.
+        // The three-instruction wrapper calls another method with a constant, so it is no forwarder (see the next
+        // test). An aggressive callee is a priority candidate, so a large one is composed into the wrapper: under the
+        // speed policy, for a call in the caller's own body, the whole counts as small within the composed budget, and
+        // otherwise only within the small limit, since the later rounds leave the callee a call. A small callee
+        // composes like any small callee, and a callee with no body makes the wrapper large. The call is in a loop,
+        // where the size tiers decide under either policy.
         var fixture = new Fixture(byReferenceParameter: false, instructions:
         [
-            new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            new(0, 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
             new(1, 2, CilOperation.Call, new CilOperand.None()),
             new(2, 3, CilOperation.Return, new CilOperand.None()),
         ])
@@ -498,6 +499,38 @@ public sealed class ManagedInliningResolverTests
         };
 
         Assert.Equal(resolves, fixture.Resolver().Resolve(fixture.Request() with { Nested = nested, InLoop = true }) is not null);
+    }
+
+    // A static wrapper that only passes its arguments to a callee asking to be inlined, with the same signature, is a
+    // forwarder (float.SinCos to MathF.SinCos): under the speed policy its call is the call to that callee, which a
+    // nested round takes at any size, as the caller's own body does. The other policies keep the wrapper's budget.
+    [Theory]
+    [InlineData(ManagedMethodInliningPolicy.Speed, 17, false, true)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, 17, true, true)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, ManagedInliningResolver.ComposedBodyInstructionLimit + 10, true, true)]
+    [InlineData(ManagedMethodInliningPolicy.Loops, 17, true, false)]
+    public void AForwarderToACalleeAskingToBeInlinedResolvesAsItsCallee(
+        ManagedMethodInliningPolicy policy, int calleeInstructions, bool nested, bool resolves)
+    {
+        var fixture = new Fixture(byReferenceParameter: false, instructions:
+        [
+            new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            new(1, 2, CilOperation.Call, new CilOperand.None()),
+            new(2, 3, CilOperation.Return, new CilOperand.None()),
+        ])
+        {
+            Policy = policy,
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            CalleeShape = (true, calleeInstructions, 1),
+        };
+
+        var plan = fixture.Resolver().Resolve(fixture.Request() with { Nested = nested, InLoop = true });
+
+        Assert.Equal(resolves, plan is not null);
+        if (plan is not null)
+        {
+            Assert.Equal("Callee", plan.Method.Definition.Name);
+        }
     }
 
     [Theory]
@@ -576,7 +609,7 @@ public sealed class ManagedInliningResolverTests
     [InlineData(false, 3, true)]
     [InlineData(false, ManagedInliningResolver.SmallBodyInstructionLimit + 1, false)]
     [InlineData(true, ManagedInliningResolver.SmallBodyInstructionLimit + 1, true)]
-    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes + 1, true)]
+    [InlineData(false, ManagedInliningResolver.ByReferenceBodyILBytes + 1, false)]
     public void AWrapperOfALargeByReferenceCalleeIsSmallOnlyWhenTheCalleeAsksToBeInlined(
         bool aggressive, int calleeInstructions, bool resolves)
     {
@@ -584,7 +617,8 @@ public sealed class ManagedInliningResolverTests
         // decimal.Round(decimal, int, MidpointRounding) does to its private overload. The callee is a priority
         // candidate within the by-reference budget, but the next round takes it only when it asks to be inlined:
         // then the wrapper composes; otherwise it is as large as the callee. A small callee composes as any small
-        // callee does, and past the budget the callee stays a call. The call is in the caller's own body and in a
+        // callee does. Past the budget the wrapper's own body still takes the callee, since the call passes the address
+        // of the wrapper's argument, so the wrapper is not small either. The call is in the caller's own body and in a
         // loop, where only the size tiers decide.
         var fixture = new Fixture(byReferenceParameter: false, instructions:
         [
@@ -596,6 +630,70 @@ public sealed class ManagedInliningResolverTests
             SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
             CalleeShape = (aggressive, calleeInstructions, 1),
             CalleeByReference = true,
+            EntryStacks = new Dictionary<int, ImmutableArray<CliValueKind>>
+            {
+                [0] = [],
+                [1] = [CliValueKind.ManagedAddress],
+                [2] = [CliValueKind.I4],
+            }.ToImmutableDictionary(),
+        };
+
+        Assert.Equal(resolves, fixture.Resolver().Resolve(fixture.Request() with { InLoop = true }) is not null);
+    }
+
+    [Theory]
+    [InlineData(ManagedMethodInliningPolicy.Speed, "argument address", false)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, "static field address", true)]
+    [InlineData(ManagedMethodInliningPolicy.Speed, "argument address in a loop", true)]
+    [InlineData(ManagedMethodInliningPolicy.Loops, "argument address", true)]
+    public void AWrapperWhoseOwnBodyTakesAByReferenceCalleePastTheBudgetIsNotSmall(
+        ManagedMethodInliningPolicy policy, string argument, bool resolves)
+    {
+        // A wrapper passes a by-reference callee past the priority tier's budget, as a benchmark's TryGetArray passes
+        // MemoryMarshal.TryGetArray the address of its out local. Under the speed policy the wrapper's own body takes
+        // that callee where the call, outside the wrapper's loops, passes the address of one of its locals or
+        // arguments, and a later round would leave it a call, so the wrapper is not small; the call is in the caller's
+        // own body and in a loop, where only the size tiers decide. An address the wrapper does not own (a static
+        // field's), a call in the wrapper's loop to a callee that loads nothing in a loop of its own, and the loop
+        // policy, which takes no callee for a local's address, leave the wrapper small.
+        var held = argument == "static field address";
+        var loop = argument == "argument address in a loop";
+        var address = held
+            ? new CilInstruction(0, 1, CilOperation.LoadStaticFieldAddress, new CilOperand.Entity(new(new AssemblyIdentity("InliningTests"), 0x04000001)))
+            : new CilInstruction(0, 1, CilOperation.LoadArgumentAddress, new CilOperand.Index(0));
+        ImmutableArray<CilInstruction> instructions = loop
+            ?
+            [
+                address,
+                new(1, 2, CilOperation.Call, new CilOperand.None()),
+                new(2, 3, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(0)),
+                new(3, 4, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+                new(4, 5, CilOperation.Return, new CilOperand.None()),
+            ]
+            :
+            [
+                address,
+                new(1, 2, CilOperation.Call, new CilOperand.None()),
+                new(2, 3, CilOperation.Return, new CilOperand.None()),
+            ];
+        var stacks = new Dictionary<int, ImmutableArray<CliValueKind>>
+        {
+            [0] = [],
+            [1] = [CliValueKind.ManagedAddress],
+            [2] = [CliValueKind.I4],
+        };
+        if (loop)
+        {
+            stacks[3] = [];
+            stacks[4] = [CliValueKind.I4];
+        }
+        var fixture = new Fixture(byReferenceParameter: false, instructions: instructions)
+        {
+            Policy = policy,
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            CalleeShape = (false, ManagedInliningResolver.ByReferenceBodyILBytes + 1, 1),
+            CalleeByReference = true,
+            EntryStacks = stacks.ToImmutableDictionary(),
         };
 
         Assert.Equal(resolves, fixture.Resolver().Resolve(fixture.Request() with { InLoop = true }) is not null);
@@ -1540,11 +1638,13 @@ public sealed class ManagedInliningResolverTests
             : instruction.Operand is CilOperand.None && CalleeShape is { } shape ? Callee(shape.Aggressive, shape.RelativeVirtualAddress)
             : Target;
 
+        // The entry stacks the validator reports, in place of a value only at each return.
+        public ImmutableDictionary<int, ImmutableArray<CliValueKind>>? EntryStacks { get; init; }
         public ImmutableDictionary<int, ImmutableArray<CliValueKind>> Validate(
             CilMethodBody body)
         {
             BodyValidationCalls++;
-            return body.Instructions
+            return EntryStacks ?? body.Instructions
                 .Where(static instruction =>
                     instruction.Operation == CilOperation.Return)
                 .ToImmutableDictionary(

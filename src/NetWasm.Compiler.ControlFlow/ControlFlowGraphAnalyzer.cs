@@ -8,14 +8,11 @@ namespace NetWasm.Compiler.ControlFlow;
 
 public sealed class ControlFlowGraphAnalyzer(
     IControlFlowDominanceAnalyzer dominance,
-    IControlFlowPostDominanceAnalyzer postDominance,
     IControlFlowComponentAnalyzer components,
     IControlFlowNaturalLoopAnalyzer naturalLoops) : IControlFlowGraphAnalyzer
 {
     private readonly IControlFlowDominanceAnalyzer _dominance =
         dominance ?? throw new ArgumentNullException(nameof(dominance));
-    private readonly IControlFlowPostDominanceAnalyzer _postDominance =
-        postDominance ?? throw new ArgumentNullException(nameof(postDominance));
     private readonly IControlFlowComponentAnalyzer _components =
         components ?? throw new ArgumentNullException(nameof(components));
     private readonly IControlFlowNaturalLoopAnalyzer _naturalLoops =
@@ -35,8 +32,7 @@ public sealed class ControlFlowGraphAnalyzer(
         return new ControlFlowGraphAnalysis(
             entry,
             blocks,
-            _dominance.Analyze(graph, entry, blocks).ToImmutableDictionary(),
-            _postDominance.Analyze(graph, null, blocks).ToImmutableDictionary(),
+            _dominance.Analyze(graph, entry, blocks),
             _components.Analyze(graph, blocks),
             _naturalLoops.Analyze(graph, entry, blocks));
     }

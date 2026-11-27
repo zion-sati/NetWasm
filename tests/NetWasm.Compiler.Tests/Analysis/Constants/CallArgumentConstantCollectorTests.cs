@@ -97,6 +97,36 @@ public sealed class CallArgumentConstantCollectorTests
             value => Assert.Equal(new ScalarConstant.Int32(0), value),
             value => Assert.IsType<ScalarConstant.Null>(value),
             Assert.Null);
+        // The caller's own parameters are passed on unchanged, so the call says which.
+        Assert.Equal([0, -1, -1, 1], call.ForwardedParameters);
+    }
+
+    // A parameter the caller stores to, or takes the address of, may not hold its caller's value, so passing it on
+    // forwards nothing; a call that forwards nothing leaves ForwardedParameters default.
+    [Fact]
+    public void AParameterTheCallerChangesIsNotForwarded()
+    {
+        var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4);
+        var target = Method(2) with { Signature = signature };
+        target = target with { Definition = target.Definition with { Signature = signature } };
+        var caller = Method();
+        caller = caller with { Definition = caller.Definition with { Signature = signature }, Signature = signature };
+        var body = Body(
+            Instruction(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(3)),
+            Instruction(1, CilOperation.StoreArgument, new CilOperand.Index(0)),
+            Instruction(2, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            Instruction(3, CilOperation.Call, new CilOperand.MethodInstance(target)),
+            Instruction(4, CilOperation.Return)) with
+        { Method = caller.Definition, MethodInstance = caller };
+        var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);
+        int[] depths = [0, 1, 0, 1, 1];
+        var stacks = depths.Select((count, offset) =>
+            KeyValuePair.Create(offset, Enumerable.Repeat(CliValueKind.I4, count).ToImmutableArray())).ToImmutableDictionary();
+        var method = new ManagedMethodBody(caller, new(graph, ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty, stacks));
+
+        var call = Assert.Single(AsCollector(new CallArgumentConstantCollector(new MethodFacts())).Collect(method));
+
+        Assert.True(call.ForwardedParameters.IsDefault);
     }
 
     private static ICallArgumentConstantCollector AsCollector(ICallArgumentConstantCollector collector) => collector;

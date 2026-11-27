@@ -42,7 +42,7 @@ public sealed class NativeCallbackThunkEmitterTests
                 new AddressInstructionEmitter(layouts),
                 initialization,
                 terminal,
-                writers));
+                writers, new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory()));
 
         emitter.Emit(
             callback,
@@ -91,7 +91,7 @@ public sealed class NativeCallbackThunkEmitterTests
                 new AddressInstructionEmitter(layouts),
                 new RecordingStaticInitializationEmitter(),
                 terminal,
-                new RecordingWriterFactory()));
+                new RecordingWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory()));
 
         Assert.Throws<InvalidOperationException>(() => emitter.Emit(
             CallbackPlan(),
@@ -112,7 +112,7 @@ public sealed class NativeCallbackThunkEmitterTests
             new AddressInstructionEmitter(layouts),
             new RecordingStaticInitializationEmitter(),
             terminal,
-            new RecordingWriterFactory());
+            new RecordingWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory());
 
         emitter.Emit(
             CallbackPlan(CliValueKind.Void),
@@ -138,7 +138,7 @@ public sealed class NativeCallbackThunkEmitterTests
         var writers = new RecordingWriterFactory();
         var selection = new RuntimeImportSelection(WasmModuleProfile.CoreApplication, IncludeTerminalExceptionReporter: true);
         var emitter = new NativeCallbackThunkEmitter(layouts, imports, new AddressInstructionEmitter(layouts),
-            new RecordingStaticInitializationEmitter(), new RecordingTerminalBoundaryEmitter(), writers);
+            new RecordingStaticInitializationEmitter(), new RecordingTerminalBoundaryEmitter(), writers, new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory());
 
         emitter.Emit(AggregatePlan(resultKind, vectorResult), ModuleDataPlan.Empty with { NativeCallbackReadinessAddress = 256 },
             selection, new FixedFunctionIndexResolver());
@@ -288,7 +288,8 @@ public sealed class NativeCallbackThunkEmitterTests
             int resultLocal,
             int reportFunctionIndex,
             int? raiseFunctionIndex,
-            Action emitBody)
+            Action emitBody,
+            int? exceptionObserverFunctionIndex = null)
         {
             Entered = true;
             EntryInstructionCount = ((EmitterTestSupport.RecordingInstructionWriter)code)

@@ -52,6 +52,7 @@ listed after the table.
 | `NetWasmManagedArrayLoopIdioms` | Turns loops that fill or copy arrays into bulk memory operations. | `O1`, `O2`, `O3` |
 | `NetWasmManagedArrayStoreCheckElimination` | Skips the covariant array store check where the element type is exact. | `O1`, `O2`, `O3`, `Os`, `Oz` |
 | `NetWasmManagedBranchPrefixDuplication` | Duplicates a short code prefix into each branch that jumps to it; size-limited at `Os` and `Oz`. | `O1`, `O2`, `O3`, `Os`, `Oz` |
+| `NetWasmManagedByRefNullCheckElimination` | Leaves out the null check of a reference (`ref`) the compiler proves non-null: the address of a local, argument, static, array element or field, or one already used. A span loop is versioned: a test before it runs a copy without checks when none of the elements it reads is at address 0, and the loop as written otherwise. | `O1`, `O2`, `O3`, `Os`, `Oz` |
 | `NetWasmManagedConditionalSelects` | Turns a branch whose arms only compute a number into a `select`. | `O1`, `O2`, `O3`, `Os`, `Oz` |
 | `NetWasmManagedConditionalStoreMerging` | Stores once to a field that both arms of an `if` store to. | `O1`, `O2`, `O3`, `Os`, `Oz` |
 | `NetWasmManagedConstantArgumentPropagation` | Specializes a method for constant arguments every caller passes. | `O2`, `O3`, `Os`, `Oz` |

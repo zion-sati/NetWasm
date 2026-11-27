@@ -30,7 +30,8 @@ internal sealed record ReachabilityLedgerSnapshot(
     ImmutableHashSet<ManagedExceptionKind> ImplicitExceptions,
     ImmutableHashSet<CliTypeIdentity> AllocatedTypes,
     ImmutableDictionary<string, DispatchDeclaration> DispatchDeclarations,
-    ImmutableDictionary<string, ImmutableArray<DispatchTargetModel>> DispatchTargets,
+    // Each slot use's targets, in receiver order.
+    ImmutableDictionary<DispatchSlot, ImmutableArray<DispatchTargetModel>> DispatchTargets,
     ImmutableDictionary<string, MethodInstanceModel> CallableMethods,
     ImmutableDictionary<EntityKey, MethodDefinitionModel> JavaScriptImports,
     ImmutableDictionary<EntityKey, MethodDefinitionModel> WitImports,
@@ -40,6 +41,8 @@ internal sealed record ReachabilityLedgerSnapshot(
 {
     internal ImmutableDictionary<string, MethodInstanceModel> SharedObjectDispatch { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
+    internal SharedArrayPlan? SharedArrays { get; init; }
 
     internal ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>> TypeDependencyPaths { get; init; } =
         ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>>.Empty;
@@ -51,6 +54,13 @@ internal sealed record ReachabilityLedgerSnapshot(
     internal ImmutableHashSet<CliTypeIdentity> RuntimeTypes { get; init; } = [];
 
     internal ImmutableHashSet<CliTypeIdentity> RequiredTypes { get; init; } = [];
+
+    internal ImmutableHashSet<string> GeneratedCallees { get; init; } = [];
+
+    // Each dispatched call's admitted receivers when the closure dispatched them by receiver flow; empty when it
+    // dispatched them by type.
+    internal ImmutableDictionary<string, ReceiverFlow.ReceiverFlowAdmission> ReceiverFlowAdmissions { get; init; } =
+        ImmutableDictionary<string, ReceiverFlow.ReceiverFlowAdmission>.Empty;
 
     internal ImmutableHashSet<CliTypeIdentity> StructMarshallingTypes { get; init; } = [];
 
@@ -66,6 +76,8 @@ internal sealed record ReachabilityLedgerSnapshot(
 
     internal ImmutableDictionary<string, MethodInstanceModel> JavaScriptConversions { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
+    internal bool ProducesJavaScriptErrors { get; init; }
 
     internal ImmutableDictionary<string, MethodInstanceModel> MethodDescriptors { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
@@ -129,8 +141,7 @@ internal sealed record ReachabilityLedgerSnapshot(
             pair => pair.Value.Values
                 .OrderBy(target => target.ReceiverType.CanonicalName, StringComparer.Ordinal)
                 .ThenBy(target => target.Method.CanonicalName, StringComparer.Ordinal)
-                .ToImmutableArray(),
-            StringComparer.Ordinal),
+                .ToImmutableArray()),
         ledger.CallableMethods.ToImmutable(),
         ledger.JavaScriptImports.ToImmutable(),
         ledger.WitImports.ToImmutable(),
@@ -142,10 +153,12 @@ internal sealed record ReachabilityLedgerSnapshot(
         ModuleInitializers = ledger.ModuleInitializers.ToImmutable(),
         Contributions = ledger.Contributions.ToImmutableDictionary(StringComparer.Ordinal),
         JavaScriptConversions = ledger.JavaScriptConversions.ToImmutable(),
+        ProducesJavaScriptErrors = ledger.ProducesJavaScriptErrors,
         EnumMetadataRequirements = ledger.EnumMetadataRequirements.ToImmutable(),
         UninitializedObjectTypes = [.. ledger.UninitializedObjectTypes],
         RuntimeTypes = [.. ledger.RuntimeTypes],
         RequiredTypes = [.. ledger.RequiredTypes],
+        GeneratedCallees = [.. ledger.GeneratedCallees],
         StructMarshallingTypes = [.. ledger.StructMarshallingTypes],
         StructMarshallingFieldNames = ledger.StructMarshallingFieldNames,
         StructMarshallingConstructors = ledger.StructMarshallingConstructors.ToImmutableDictionary(),
@@ -155,6 +168,7 @@ internal sealed record ReachabilityLedgerSnapshot(
         ObjectArrayDelegateAdapters = ledger.ObjectArrayDelegateAdapters.ToImmutable(),
         MemberExecution = ledger.MemberExecution,
         SharedObjectDispatch = ledger.SharedObjectDispatch.ToImmutableDictionary(StringComparer.Ordinal),
+        SharedArrays = ledger.SharedArrays,
         NamedMemberDescriptors = ledger.NamedMemberDescriptors.ToImmutable(),
         RequiresTypeFacts = ledger.RequiresTypeFacts,
         RequiresGenericArguments = ledger.RequiresGenericArguments,

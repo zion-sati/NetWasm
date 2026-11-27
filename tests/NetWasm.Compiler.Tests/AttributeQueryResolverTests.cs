@@ -14,6 +14,7 @@ public sealed class AttributeQueryResolverTests
     private static readonly CliTypeIdentity Target = CliTypeIdentity.Named(Assembly, "Example", "Target", false);
     private static readonly CliTypeIdentity Filter = CliTypeIdentity.Named(Assembly, "Example", "MarkerAttribute", false);
     private static readonly CliTypeIdentity Attribute = CliTypeIdentity.Named(new("Core"), "System", "Attribute", false);
+    private static readonly CliTypeIdentity Object = CliTypeIdentity.Named(new("Core"), "System", "Object", false);
     private static readonly AttributeQueryCall ExplicitCall = new(AttributeQueryOperation.GetMany, 3, 1, null, 2);
 
     [Theory]
@@ -99,18 +100,19 @@ public sealed class AttributeQueryResolverTests
         Assert.Empty(definitions.Requests);
     }
 
+    // A filter that is not an attribute type stays unresolved for Attribute's statics and the extensions, whose bodies
+    // throw ArgumentException for it; a target's own query takes object and interfaces as well.
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void CatchAllAndNonAttributeFiltersRemainUnresolved(bool catchAll)
+    [InlineData((int)AttributeQueryApiKind.AttributeStatic)]
+    [InlineData((int)AttributeQueryApiKind.Extension)]
+    public void NonAttributeFiltersRemainUnresolvedForStaticsAndExtensions(int api)
     {
         var relationships = new Relationships(false);
-        var filter = catchAll ? Attribute : Filter;
 
-        Assert.Null(Resolve(new AttributeQueryResolver(new Definitions(), relationships, Attribute, []),
-            ExplicitCall, [Type(Target), Type(filter), default]));
+        Assert.Null(Resolve(new AttributeQueryResolver(new Definitions(), relationships, Attribute, Object),
+            ExplicitCall with { Api = (AttributeQueryApiKind)api }, [Type(Target), Type(Filter), default]));
 
-        Assert.Equal(catchAll ? 0 : 1, relationships.Calls);
+        Assert.Equal(1, relationships.Calls);
     }
 
     [Theory]
@@ -154,13 +156,13 @@ public sealed class AttributeQueryResolverTests
 
     private static AttributeValueProof Type(CliTypeIdentity type) => new(AttributeValueKind.Type, type);
 
+    // A filter of Attribute itself resolves: the planner adds what desktop synthesizes from a type's flags (Serializable,
+    // ComImport) to what metadata holds.
     [Fact]
-    public void SynthesizedAttributeFiltersRemainUnresolvedByBoundIdentity()
+    public void TheAttributeFilterResolves()
     {
-        var resolver = new AttributeQueryResolver(new Definitions(), new Relationships(true), Attribute, [Filter]);
-        Assert.Null(Resolve(resolver, ExplicitCall, [Type(Target), Type(Filter), default]));
-        var userType = CliTypeIdentity.Named(new("User"), "Example", "MarkerAttribute", false);
-        Assert.Equal(userType, Resolve(resolver, ExplicitCall, [Type(Target), Type(userType), default])!.Filter);
+        var resolver = new AttributeQueryResolver(new Definitions(), new Relationships(true), Attribute, Object);
+        Assert.Equal(Attribute, Resolve(resolver, ExplicitCall, [Type(Target), Type(Attribute), default])!.Filter);
     }
 
     [Fact]
@@ -181,32 +183,30 @@ public sealed class AttributeQueryResolverTests
         Assert.Equal([Target], definitions.Requests);
     }
 
-    // An assembly the compile knows is a target whose own attributes a sealed, top-level filter finds by name; another
-    // filter keeps the runtime query.
+    // An assembly the compile knows is a target for any filter: a sealed, top-level filter finds its attributes by
+    // name, another reads them all and keeps those it takes.
     [Theory]
     [InlineData(true, false, true)]
     [InlineData(false, false, false)]
     [InlineData(true, true, false)]
-    public void AssemblyTargetsResolveForSealedTopLevelFilters(bool isSealed, bool nested, bool resolves)
+    public void AssemblyTargetsResolveEveryFilter(bool isSealed, bool nested, bool byName)
     {
         var assembly = new AttributeValueProof(AttributeValueKind.Assembly, Assembly: Assembly);
 
         var result = Resolve(Create(new Definitions(isSealed: isSealed, nested: nested)), ExplicitCall, [assembly, Type(Filter), default]);
 
-        Assert.Equal(resolves, result is not null);
-        if (result is not null)
-        {
-            Assert.Null(result.Target);
-            Assert.Equal(Assembly, result.TargetAssembly);
-            Assert.Equal(Filter, result.Filter);
-        }
+        Assert.NotNull(result);
+        Assert.Null(result.Target);
+        Assert.Equal(Assembly, result.TargetAssembly);
+        Assert.Equal(Filter, result.Filter);
+        Assert.Equal(byName ? Filter.FullName : null, result.AttributeName);
         Assert.True(assembly.Condition);
         var generic = CliTypeIdentity.GenericInstantiation(Filter, [Target]);
-        Assert.Null(Resolve(Create(new Definitions(arity: 1, isSealed: true)), ExplicitCall, [assembly, Type(generic), default]));
+        Assert.Null(Resolve(Create(new Definitions(arity: 1, isSealed: true)), ExplicitCall, [assembly, Type(generic), default])?.AttributeName);
     }
 
     private static AttributeQueryResolver Create(Definitions? definitions = null) =>
-        new(definitions ?? new Definitions(), new Relationships(true), Attribute, []);
+        new(definitions ?? new Definitions(), new Relationships(true), Attribute, Object);
 
     private static ResolvedAttributeQuery? Resolve<TResolver>(TResolver resolver,
         AttributeQueryCall call, ImmutableArray<AttributeValueProof> stack)
@@ -218,7 +218,7 @@ public sealed class AttributeQueryResolverTests
     public void AnOpenGenericFilterResolvesWithAnAttributeArray()
     {
         var open = CliTypeIdentity.Named(Assembly, "Example", "TagAttribute`1", false);
-        var resolver = new AttributeQueryResolver(new Arities(open), new Relationships(true), Attribute, []);
+        var resolver = new AttributeQueryResolver(new Arities(open), new Relationships(true), Attribute, Object);
         ImmutableArray<AttributeValueProof> stack = [default, Type(Target), Type(open), new(AttributeValueKind.Int32, Integer: 1)];
 
         var result = Resolve(resolver, ExplicitCall, stack);

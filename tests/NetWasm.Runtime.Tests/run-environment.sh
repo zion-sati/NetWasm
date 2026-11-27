@@ -11,7 +11,7 @@ trap 'rm -rf "$output_dir"' EXIT
 
 for target in wasm32 wasm64; do
   layout="$output_dir/$target.layout.json"
-  node -e 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({ schemaVersion: 2, target: process.argv[2], applicationStaticDataEnd: 65536 }))' "$layout" "$target"
+  node "$workspace_dir/src/NetWasm.Runtime.Pack/tools/write-complete-runtime-layout.mjs" "$layout" "$target" 65536
   for configuration in debug release; do
     module="$output_dir/$target-$configuration.wasm"
     bash "$workspace_dir/eng/build-netwasm-runtime.sh" \

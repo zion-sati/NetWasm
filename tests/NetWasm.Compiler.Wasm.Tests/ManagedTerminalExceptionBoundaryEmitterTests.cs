@@ -71,6 +71,53 @@ public sealed class ManagedTerminalExceptionBoundaryEmitterTests
             Call(imports, RuntimeImportSymbol.ManagedTerminalExceptionRaise)));
     }
 
+    // An exception observer costs nothing on the body's normal path: the code up to the catch is the same with or without
+    // it. In the catch it is called with the rooted exception before the report, and the exception is read back from the
+    // root after it, since a collection in the observer may move it.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void AnExceptionObserverRunsOnlyInTheCatchWithTheRootedException(WasmTarget target)
+    {
+        const int observer = 91;
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var plain = Boundary(target, imports, null);
+        var observed = Boundary(target, imports, observer);
+        var handler = plain.AsSpan().IndexOf(Call(imports, RuntimeImportSymbol.ExceptionFrameUnwind));
+
+        Assert.True(handler > 0);
+        Assert.True(plain.AsSpan(0, handler).SequenceEqual(observed.AsSpan(0, handler)),
+            "the observer changed the code before the catch");
+        var rootStore = observed.AsSpan().IndexOf(Call(imports, RuntimeImportSymbol.RootFrameEnter));
+        var call = observed.AsSpan().IndexOf(new byte[] { WasmOpcodes.LocalGet, 0, WasmOpcodes.Call, observer });
+        var report = observed.AsSpan().IndexOf(Call(imports, RuntimeImportSymbol.ManagedTerminalExceptionReport));
+        var reload = observed.AsSpan(call).IndexOf(new byte[] { WasmOpcodes.LocalGet, 1 }) + call;
+        Assert.True(call > rootStore && call < report, "the observer is not called between the root and the report");
+        Assert.True(reload > call && reload < report, "the exception is not read back from its root");
+        Assert.Equal(-1, plain.AsSpan().IndexOf(new byte[] { WasmOpcodes.Call, observer }));
+    }
+
+    private static byte[] Boundary(WasmTarget target, RuntimeImportCatalog imports, int? observer)
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var program = new FakeProgram();
+        var emitter = new ManagedTerminalExceptionBoundaryEmitter(
+            layouts,
+            imports,
+            new ExceptionPayloadBlockEmitter(layouts),
+            new ExceptionObjectStateReader(layouts, layouts,
+                new ExceptionFieldLayoutResolver(layouts, program, program, layouts)));
+        var outputBuffer = new WasmBinaryBuffer();
+        var code = new WasmInstructionWriter(new WasmBinaryWriter(outputBuffer));
+        ((IManagedTerminalExceptionBoundaryEmitter)emitter).Emit(
+            code, 0, 1, 2, 3, 4, 5, 6, CliValueKind.Void, 0,
+            imports.Resolve(RuntimeImportSymbol.ManagedTerminalExceptionReport, WasmModuleProfile.CoreApplication),
+            imports.Resolve(RuntimeImportSymbol.ManagedTerminalExceptionRaise, WasmModuleProfile.CoreApplication),
+            () => code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned(30))),
+            observer);
+        return new WasmBinarySnapshotReader(outputBuffer).Read();
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]

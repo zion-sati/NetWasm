@@ -180,6 +180,21 @@ public sealed class LinkedCorpusOracleRunnerTests
         "references", "oracle.mjs", "oracle.dll", "11.0.0", "compiler.dll",
         TimeSpan.FromSeconds(3));
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DebugIlRecordsManagedStackTracesAsTheSdksDebugConfigurationDoes(bool debug)
+    {
+        var profile = debug ? CilProfile.Debug : CilProfile.Release;
+        var dependencies = new Dependencies();
+        var compilation = CreateCompilation() with { Profile = profile };
+
+        CreateRunner(dependencies).CompileBuildAndRun(
+            compilation, new CorpusMatrixCell(profile, WasmTarget.Wasm32, CorpusWasmForm.Direct), CancellationToken.None);
+
+        Assert.Equal(debug, dependencies.CompilerRequest!.MethodSymbolsPath is not null);
+    }
+
     private static CorpusCompilation CreateCompilation()
     {
         var artifact = new CorpusArtifact("same.dll", "same.pdb", "hash", "pdb-hash", "compiler", []);

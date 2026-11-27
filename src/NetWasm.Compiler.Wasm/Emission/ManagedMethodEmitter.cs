@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.ControlFlow.Structured;
@@ -19,6 +20,8 @@ using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 using NetWasm.Compiler.Wasm.Emission.Values;
 using NetWasm.Compiler.Wasm.Emission.Arrays;
 using NetWasm.Compiler.Wasm.Emission.CallLifetimes;
+
+using NetWasm.Compiler.Wasm.Emission.StructResults;
 
 namespace NetWasm.Compiler.Wasm.Emission;
 
@@ -46,9 +49,16 @@ internal sealed class ManagedMethodEmitter(
     IAuthoritativeRootLayoutPlanner authoritativeLayouts,
     IRootClearElisionPlanner rootClearElisions,
     IRootFrameEntryClearPlanner rootFrameEntryClears,
+    ILazyRootFramePlanner lazyRootFrames,
     IRootValueElisionPlanner rootValueElisions,
     IValueFrameReferenceMapPlanner frameReferences,
-    IRootSlotAllocator rootSlots) : IManagedMethodEmitter
+    IRootSlotAllocator rootSlots,
+    IExceptionFrameStrategySelector frameStrategies,
+    ILandingPadRestorePlanner landingPadRestores,
+    IStructResultScratchPlanner? structResultScratch = null,
+    IStructResultClassifier? structResults = null,
+    IFieldArgumentPlanner? fieldArgumentPlanner = null,
+    IStructLanePlanner? structLanePlanner = null) : IManagedMethodEmitter
 {
     public ManagedMethodEmission Emit(
         MethodDefinitionModel method,
@@ -75,7 +85,8 @@ internal sealed class ManagedMethodEmitter(
         OptionalFunctionIndex managedThrowFunction = default,
         bool inlineSmallBlocks = false,
         bool inlineArrayData = false,
-        bool conditionalAllocationRoots = false)
+        bool conditionalAllocationRoots = false,
+        bool reachesFilters = true)
     {
         ArgumentNullException.ThrowIfNull(method);
         ArgumentNullException.ThrowIfNull(structured);
@@ -88,6 +99,24 @@ internal sealed class ManagedMethodEmitter(
         {
             Header = structured.Header with { MethodInstance = effectiveMethodInstance },
         };
+        // A value returned in results, call results, and temporaries built for calls stay in lanes where they can.
+        var returnShape = effectiveSignature.ReturnSignatureType.StackKind == CliValueKind.ValueType
+            ? structResults?.Classify(effectiveSignature.ReturnSignatureType)
+            : null;
+        var lanes = structLanePlanner?.Plan(emissionStructure, rootMap, returnShape) ?? StructLanePlan.Empty;
+        var returnLanes = lanes.Return;
+        var callResultLanes = lanes.CallResults;
+        var argumentLanes = lanes.Arguments;
+        // The struct arguments passed by their fields, and those read in place from their parameters.
+        var fieldArgumentPlan = fieldArgumentPlanner?.Plan(emissionStructure, method, effectiveSignature, returnShape) ??
+            SequentialArguments(method, effectiveSignature, structResults);
+        var argumentParameters = fieldArgumentPlan.ArgumentParameters;
+        var fieldArguments = fieldArgumentPlan.Copied;
+        var fieldArgumentsInPlace = fieldArgumentPlan.InPlace;
+        var forwardedLoads = fieldArgumentPlan.ForwardedLoads;
+        var confinedArguments = fieldArgumentPlan.Confined;
+        var argumentLaneOrder = argumentLanes.Locals.Keys.Order().ToArray();
+        ImmutableArray<CliValueKind> argumentLaneKinds = [.. argumentLaneOrder.SelectMany(local => argumentLanes.Locals[local].Results)];
         var valueLayout = valueFrames.Create(
             emissionStructure,
             nativeImports,
@@ -95,7 +124,14 @@ internal sealed class ManagedMethodEmitter(
             byRefEffects,
             addressTakenScalarPromotions,
             addressTakenAggregatePromotions,
-            scalarCallLifetimes.Plan(emissionStructure, enableScalarCallPreservation));
+            scalarCallLifetimes.Plan(emissionStructure, enableScalarCallPreservation),
+            // A value returned in results has no buffer to live in; its lanes keep it out of the frame too.
+            returnShape is null
+                ? ReturnBufferLocals.Find(emissionStructure, rootMap)
+                : null,
+            new StructConventionStorage(lanes.Locals, callResultLanes.Calls.Keys.ToHashSet(),
+                argumentLanes.WholeLoads.Keys.Concat(forwardedLoads).ToHashSet(), fieldArguments.Keys.ToHashSet(),
+                fieldArgumentsInPlace.Keys.ToHashSet()));
         valueLayout = valueLayout with
         {
             ManagedByRefAggregatePromotions = managedByRefAggregatePromotions ??
@@ -106,17 +142,22 @@ internal sealed class ManagedMethodEmitter(
         {
             Size = Math.Max(valueLayout.Size, filterEnvironment.Size),
         };
-        var parameterOffset = effectiveSignature.ReturnSignatureType.StackKind ==
-            CliValueKind.ValueType ? 1 : 0;
+        // A value type returned through a buffer takes the buffer first; one returned in results takes none.
+        var parameterOffset = effectiveSignature.ReturnSignatureType.StackKind == CliValueKind.ValueType &&
+            structResults?.Classify(effectiveSignature.ReturnSignatureType) is null ? 1 : 0;
         var parameterCount = effectiveMethodInstance is null
             ? functionTypes.Resolve(method).Parameters.Length
             : functionTypes.Resolve(effectiveMethodInstance).Parameters.Length;
         var groups = exceptionGroups.Enumerate(emissionStructure).ToArray();
+        rootMap = LaneRoots.Exclude(rootMap, rootSlots, lanes.Locals, confinedArguments);
         var placement = branchPrefixDuplication != BranchPrefixDuplicationPolicy.Disabled && filterEnvironment.Size == 0 &&
             valueLayout.ScalarCallLifetimes.CallLocals.IsEmpty
             ? branchValueFrames.Plan(emissionStructure, valueLayout, rootMap,
                 copyTails: branchPrefixDuplication == BranchPrefixDuplicationPolicy.Speed)
             : null;
+        // A root frame alone, placed in the arm that does not throw, is entered on every path that returns,
+        // where a lazy root frame is entered only on paths that publish a root.
+        if (placement is not null && valueLayout.Size == 0) placement = null;
         var allocationLayout = placement is null ? valueLayout : valueLayout with
         {
             SpilledScalarLocals = [],
@@ -131,8 +172,22 @@ internal sealed class ManagedMethodEmitter(
             ? frameReferences.Plan(emissionStructure.Header, allocationLayout, filterEnvironment, managedAggregateValues)
             : ValueFrameReferenceMap.Empty;
         rootMap = references.Exclude(rootMap, rootSlots);
+        // The protected blocks whose strategy keeps their marks in locals.
+        var markedGroups = groups.Where(id => frameStrategies.Select(emissionStructure.ExceptionGroups[id], reachesFilters).KeepsMarks)
+            .ToHashSet();
+        // Which variables are authoritative is weighed on the context the method would have with none, the frame
+        // placed as it will be.
+        var structResultLocals = structResultScratch?.Plan(emissionStructure.Header, memberExecution) ?? [];
+        var unselected = MethodEmissionContextFactory.Create(emissionStructure.Header, rootMap, parameterCount,
+            parameterOffset, groups, allocationLayout, filterEnvironment, callerIdentity, managedAggregateValues, arrayPlan,
+            lengthRuns, markedGroups, structResultLocals, fieldArguments.Count, argumentLaneKinds).Context with
+        {
+            ConditionalAllocationRoots = conditionalAllocationRoots,
+            ReachesFilters = reachesFilters,
+            TerminalBranchValueFramePlacement = placement is null ? null : new(placement, valueLayout),
+        };
         var authoritative = authoritativeLayouts.Plan(rootMap,
-            authoritativeSources.Select(rootMap, allocationLayout, filterEnvironment, arrayPlan));
+            authoritativeSources.Select(emissionStructure, unselected, arrayPlan));
         rootMap = authoritative.RootMap;
         // A collection reads every capture where it lives when the value frame's map covers them, so no
         // filter root frame copies them; funclets publish into this method's root frame by its final slots.
@@ -150,9 +205,42 @@ internal sealed class ManagedMethodEmitter(
             callerIdentity,
             managedAggregateValues,
             arrayPlan,
-            lengthRuns);
+            lengthRuns,
+            markedGroups,
+            structResultLocals,
+            fieldArguments.Count,
+            argumentLaneKinds);
+        var laneLocalsByTemporary = ImmutableDictionary.CreateBuilder<int, ImmutableArray<int>>();
+        {
+            var at = 0;
+            foreach (var local in argumentLaneOrder)
+            {
+                var width = argumentLanes.Locals[local].Results.Length;
+                laneLocalsByTemporary[local] = emissionLayout.Context.ArgumentLaneFlat.Slice(at, width);
+                at += width;
+            }
+        }
+        // A field argument's local is the address of its frame copy, which the entry fills.
+        var argumentLocals = argumentParameters.ToArray();
+        {
+            var address = 0;
+            foreach (var argument in fieldArguments.Keys.Order()) argumentLocals[argument] = emissionLayout.Context.FieldArgumentAddressLocals[address++];
+            foreach (var (argument, fieldArgument) in fieldArgumentsInPlace) argumentLocals[argument] = fieldArgument.FirstParameter;
+        }
         var context = emissionLayout.Context with
         {
+            ArgumentLocals = [.. argumentLocals],
+            FieldArguments = fieldArguments,
+            FieldArgumentAddresses = fieldArgumentPlan.FieldAddresses,
+            FieldArgumentLoads = fieldArgumentPlan.FieldLoads,
+            ForwardedFieldArguments = fieldArgumentPlan.Forwarded,
+            ForwardedArgumentLoads = forwardedLoads,
+            ReturnedFieldArguments = fieldArgumentPlan.Returned,
+            InPlaceFieldArguments = fieldArgumentsInPlace,
+            ArgumentLanes = argumentLanes,
+            ArgumentLaneLocals = laneLocalsByTemporary.ToImmutable(),
+            ReturnLanes = returnLanes,
+            CallResultLanes = callResultLanes,
             StackTraceMethodId = stackTraceMethodId,
             RuntimeImportSelection = runtimeImportSelection,
             ManagedThrowFunction = managedThrowFunction,
@@ -162,6 +250,7 @@ internal sealed class ManagedMethodEmitter(
             InlineSmallBlocks = inlineSmallBlocks,
             InlineArrayData = inlineArrayData,
             ConditionalAllocationRoots = conditionalAllocationRoots,
+            ReachesFilters = reachesFilters,
             ExactArrayStores = arrayStoreChecks.Plan(emissionStructure, eliminateArrayStoreChecks),
         };
         if (placement is not null)
@@ -176,7 +265,13 @@ internal sealed class ManagedMethodEmitter(
                 },
             };
         }
-        context = context with { RootFrameStartsZeroed = rootFrameEntryClears.Plan(emissionStructure, context) };
+        // A lazy frame is zeroed where it is entered, so the clear elisions are planned as for a zeroed frame.
+        context = context with { LazyRootFrame = lazyRootFrames.Plan(emissionStructure, context) };
+        context = context with { LandingPadRestores = landingPadRestores.Plan(emissionStructure, context) };
+        context = context with
+        {
+            RootFrameStartsZeroed = context.LazyRootFrame is not null || rootFrameEntryClears.Plan(emissionStructure, context),
+        };
         context = context with { RootClearElisions = rootClearElisions.Plan(emissionStructure, context) };
         context = context with { RootValueElisions = rootValueElisions.Plan(emissionStructure, context) };
         if (placement is { DefersRootFrame: true } && context.TerminalBranchValueFramePlacement is { } branchFrame)
@@ -213,4 +308,15 @@ internal sealed class ManagedMethodEmitter(
             code.InstructionCount);
     }
 
+    // Without struct arguments passed by their fields: each argument is one parameter, after a return buffer's.
+    private static FieldArgumentPlan SequentialArguments(MethodDefinitionModel method, MethodSignatureModel signature,
+        IStructResultClassifier? structResults)
+    {
+        var first = signature.ReturnSignatureType.StackKind == CliValueKind.ValueType &&
+            structResults?.Classify(signature.ReturnSignatureType) is null ? 1 : 0;
+        var count = signature.ParameterSignatureTypes.Length + (method.IsStatic ? 0 : 1);
+        return new([.. Enumerable.Range(first, count)], ImmutableDictionary<int, FieldArgument>.Empty,
+            ImmutableDictionary<int, FieldArgument>.Empty, [], ImmutableDictionary<int, (int, CliValueKind)>.Empty,
+            ImmutableDictionary<(int, int), int>.Empty, [], ImmutableDictionary<int, int>.Empty, []);
+    }
 }

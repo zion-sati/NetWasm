@@ -3,14 +3,17 @@
 
 using System;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Layout;
 
 internal sealed class ManagedLayoutCompiler(
     IManagedTypeLayoutCompilerFactory typeLayoutCompilers,
-    IManagedStaticDataBuilderFactory staticDataBuilders) : IManagedLayoutCompiler
+    IManagedStaticDataBuilderFactory staticDataBuilders,
+    IAnalysisStepRecorder? steps = null) : IManagedLayoutCompiler
 {
+    private readonly IAnalysisStepRecorder _steps = steps ?? UnrecordedAnalysisStepRecorder.Instance;
     private readonly IManagedTypeLayoutCompilerFactory _typeLayoutCompilers =
         typeLayoutCompilers ?? throw new ArgumentNullException(nameof(typeLayoutCompilers));
     private readonly IManagedStaticDataBuilderFactory _staticDataBuilders =
@@ -38,7 +41,7 @@ internal sealed class ManagedLayoutCompiler(
         ArgumentNullException.ThrowIfNull(identityBaseTypes);
         ArgumentNullException.ThrowIfNull(program);
         var targetLayout = WasmTargetLayout.For(target);
-        var typeLayouts = _typeLayoutCompilers.Create(
+        var typeLayouts = _steps.Record("type layouts", () => _typeLayoutCompilers.Create(
             metadata,
             typeRepository,
             fields,
@@ -48,7 +51,7 @@ internal sealed class ManagedLayoutCompiler(
             entityBaseTypes,
             identityBaseTypes,
             program,
-            targetLayout).Compile();
+            targetLayout).Compile());
         var staticData = _staticDataBuilders.Create(
             metadata,
             typeRepository,

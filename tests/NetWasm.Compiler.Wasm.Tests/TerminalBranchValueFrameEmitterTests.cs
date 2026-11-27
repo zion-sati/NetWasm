@@ -147,7 +147,6 @@ public sealed class TerminalBranchValueFrameEmitterTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
-    [InlineData(3)]
     [InlineData(4)]
     [InlineData(5)]
     [InlineData(6)]
@@ -159,7 +158,6 @@ public sealed class TerminalBranchValueFrameEmitterTests
         {
             0 => fixture.Context with { ValueLayout = fixture.Placement.FramedLayout },
             2 => fixture.Context with { FilterEnvironment = FilterEnvironmentLayout.Empty with { Size = 8 } },
-            3 => fixture.Context with { ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(new(0), 0) },
             4 => fixture.Context with { AddressTakenScalarPromotions = AddressTakenScalarPromotionLayout.Empty },
             5 => fixture.Context with { RootMap = fixture.Placement.FramedRootMap! },
             _ => fixture.Context,

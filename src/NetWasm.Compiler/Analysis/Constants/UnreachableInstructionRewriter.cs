@@ -15,7 +15,13 @@ internal sealed class UnreachableInstructionRewriter(IControlFlowGraphBuilder gr
     public CilMethodBody Rewrite(CilMethodBody body)
     {
         ArgumentNullException.ThrowIfNull(body);
-        var graph = _graphs.Build(body);
+        return Erase(body, _graphs.Build(body));
+    }
+
+    // The body with each instruction of a block that no path from the entry or a handler reaches made a nop, except
+    // the branches and terminators that keep the blocks apart; the body itself when no such block holds another.
+    internal static CilMethodBody Erase(CilMethodBody body, ControlFlowGraph graph)
+    {
         var dead = graph.Blocks
             .Where(block => !graph.ReachableBlocks.Contains(block.Index))
             .SelectMany(block => block.Instructions)

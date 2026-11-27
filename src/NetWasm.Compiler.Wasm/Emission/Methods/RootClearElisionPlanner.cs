@@ -56,7 +56,10 @@ internal sealed class RootClearElisionPlanner(IStructuredBlockPredecessorReader 
                 if (context.ManagedAggregateValues.Plan.Accesses.ContainsKey(instruction.Offset)) continue;
                 if (roots.Safepoints.TryGetValue(instruction.Offset, out var point))
                 {
-                    var normalLive = point.Roots.Select(source => roots.Slots[source]).ToImmutableHashSet();
+                    // A deferrable root whose slot holds null is left unpublished, so its slot stays null.
+                    var deferred = DeferredRoots.Of(roots, point, zero);
+                    var normalLive = point.Roots.Where(source => !deferred.Contains(source))
+                        .Select(source => roots.Slots[source]).ToImmutableHashSet();
                     var constructorLive = point.ConstructorCallRoots.Select(source => roots.Slots[source]).ToImmutableHashSet();
                     // A repeated publication inside the same instruction may
                     // follow either phase. Never assume its active slots stayed zero.

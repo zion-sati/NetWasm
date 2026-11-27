@@ -18,6 +18,8 @@ public sealed class ReachabilityMarkersTests
     [InlineData("System", "Type", "get_IsValueType", false)]
     [InlineData("System.Reflection", "MemberInfo", "get_DeclaringType", false)]
     [InlineData("System", "Object", "GetGenericArguments", false)]
+    [InlineData("System", "Type", "MakeArrayType", true)]
+    [InlineData("System", "Type", "MakeByRefType", false)]
     public void TheInlinerKeepsEveryMarkerCall(string ns, string type, string method, bool marker)
     {
         var instance = Method(ns, type, method);
@@ -25,6 +27,7 @@ public sealed class ReachabilityMarkersTests
         Assert.Equal(marker, ReachabilityMarkers.IsMarker(instance));
         Assert.Equal(method == "GetGenericArguments" && type == "Type", ReachabilityMarkers.RequiresGenericArguments(instance));
         Assert.Equal(method == "get_Name" && type == "MemberInfo", ReachabilityMarkers.RequiresMemberNames(instance));
+        Assert.Equal(method == "MakeArrayType" && type == "Type", ReachabilityMarkers.MakesArrayTypes(instance));
     }
 
     private static MethodInstanceModel Method(string ns, string type, string name)

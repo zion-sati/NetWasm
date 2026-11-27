@@ -20,7 +20,8 @@ internal sealed class MethodFrameEntryEmitter(
     IValueFrameAddressEmitter valueFrameAddresses,
     IValueFrameEntryEmitter valueFrames,
     IFilterEnvironmentRootEmitter filterEnvironmentRoots,
-    IManagedByRefAggregateInitializationEmitter managedByRefAggregates) :
+    IManagedByRefAggregateInitializationEmitter managedByRefAggregates,
+    ILandingPadRestoreEmitter landingPadRestores) :
     IMethodFrameEntryEmitter
 {
     public void Emit(
@@ -40,7 +41,8 @@ internal sealed class MethodFrameEntryEmitter(
                 context.RuntimeImportSelection);
         }
 
-        if (context.RootSlotCount != 0)
+        // A lazy frame is entered where the method first publishes a root; its local starts 0.
+        if (context.RootSlotCount != 0 && context.LazyRootFrame is null)
         {
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.I32Constant,
@@ -50,21 +52,16 @@ internal sealed class MethodFrameEntryEmitter(
                 WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
                     RuntimeImportSymbol.RootFrameEnter))));
             code.Write(WasmInstruction.WithOperand(
-                context.ExceptionRootSlots.Count == 0 || context.RootFrameStartsZeroed
-                    ? WasmOpcodes.LocalSet
-                    : WasmOpcodes.LocalTee,
+                WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)context.RootFrame)));
             if (context.RootFrameStartsZeroed)
             {
-                // Every slot, the exception slots and authoritative locals' among them, starts null.
-                FrameRangeZeroing.Emit(code, layouts.Target,
+                // Every slot, authoritative locals' among them, starts null; an authoritative argument's slot takes the
+                // argument right after.
+                FrameSlotZeroing.Emit(code, layouts.Target,
                     writer => writer.Write(WasmInstruction.WithOperand(
                         WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)context.RootFrame))),
-                    checked(context.RootSlotCount * layouts.Target.ObjectReferenceSize));
-            }
-            else
-            {
-                InitializeExceptionRoots(code, context);
+                    context.RootSlotCount, RootFrameEntryClearPlanner.ArgumentSlots(context));
             }
             foreach (var (source, slot) in context.AuthoritativeRootSlots.OrderBy(pair => pair.Value))
             {
@@ -73,7 +70,7 @@ internal sealed class MethodFrameEntryEmitter(
                     WasmInstructionOperand.Unsigned((uint)context.RootFrame)));
                 if (source.Kind != RootSourceKind.Local)
                     code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                        WasmInstructionOperand.Unsigned((uint)(source.Index + context.ParameterOffset))));
+                        WasmInstructionOperand.Unsigned((uint)(context.ArgumentLocal(source.Index)))));
                 else
                     ManagedMemoryEmitter.EmitAddressConstant(code, layouts.Target, 0);
                 ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target,
@@ -81,54 +78,20 @@ internal sealed class MethodFrameEntryEmitter(
             }
         }
         valueFrames.Emit(code, header, context);
+        // A local kept in the caller's return buffer has the buffer, the first parameter, for its address.
+        if (context.ValueLayout.ReturnBufferLocal is { } returned)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned(0)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+                WasmInstructionOperand.Unsigned((uint)(context.LocalBase + returned.Local))));
+        }
         if (context.FilterEnvironment.Size != 0)
         {
             InitializeFilterEnvironment(code, context);
         }
         managedByRefAggregates.Emit(code, context);
-    }
-
-    private void InitializeExceptionRoots(
-        IWasmInstructionWriter code,
-        MethodEmissionContext context)
-    {
-        if (context.ExceptionRootSlots.Count == 0)
-        {
-            return;
-        }
-
-        var byteOffset = checked(
-            context.RootMap.SlotCount * layouts.Target.ObjectReferenceSize);
-        if (context.ExceptionRootSlots.Count == 1)
-        {
-            ManagedMemoryEmitter.EmitAddressConstant(code, layouts.Target, 0);
-            ManagedMemoryEmitter.EmitStoreBySize(
-                code,
-                layouts.Target,
-                byteOffset,
-                layouts.Target.ObjectReferenceSize);
-            return;
-        }
-
-        if (byteOffset != 0)
-        {
-            ManagedMemoryEmitter.EmitAddressConstant(
-                code,
-                layouts.Target,
-                byteOffset);
-            ManagedMemoryEmitter.EmitAddressAdd(code, layouts.Target);
-        }
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(0)));
-        ManagedMemoryEmitter.EmitAddressConstant(
-            code,
-            layouts.Target,
-            checked(context.ExceptionRootSlots.Count *
-                layouts.Target.ObjectReferenceSize));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Prefixed,
-            WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        // Last, so the reads see the method's own frames entered.
+        landingPadRestores.Emit(code, LandingPadRestoreStep.MethodEntry, context);
     }
 
     private void InitializeFilterEnvironment(
@@ -176,7 +139,7 @@ internal sealed class MethodFrameEntryEmitter(
             valueFrameAddresses.Emit(code, context, capture.Offset);
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)(capture.Slot.Index + context.ParameterOffset))));
+                WasmInstructionOperand.Unsigned((uint)(context.ArgumentLocal(capture.Slot.Index)))));
             if (capture.Type.StackKind == CliValueKind.ValueType)
             {
                 SmallBlockEmitter.EmitKnownSizeCopy(code, context, values.GetValueLayout(capture.Type).Size,

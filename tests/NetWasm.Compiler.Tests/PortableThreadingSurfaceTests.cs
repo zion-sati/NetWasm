@@ -81,11 +81,9 @@ public sealed class PortableThreadingSurfaceTests
         var methods = result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values)
             .Select(body => body.Method)
             .Where(method => method.DeclaringType.FullName == "System.Threading.Volatile").ToArray();
-        // Read and its location check are small and may be inlined, as upstream's AggressiveInlining asks; the check
-        // folds away where the address cannot be null (an argument's). Nothing else of threading comes with them, and a
-        // null location still throws as on desktop.
-        Assert.Subset(new HashSet<string> { "Read", "ValidateLocation" },
-            methods.Select(method => method.Definition.Name).ToHashSet());
+        // Read is the volatile load it is on one thread, so no Volatile method comes with it (nor anything else of
+        // threading), and a null location still throws as on desktop, from the load's own check.
+        Assert.Empty(methods);
         Assert.DoesNotContain(result.Program.Methods.Values,
             body => body.Method.DeclaringType.FullName == "System.Threading.Timeout");
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,

@@ -1,259 +1,313 @@
-// Ported from dotnet/runtime System.Private.CoreLib; upstream commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
-// Licensed to the .NET Foundation under the MIT license.
-namespace System.Text;
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce src/libraries/System.Private.CoreLib/src/System/Text/Decoder.cs
 
-public abstract class Decoder
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
+
+namespace System.Text
 {
-    internal Encoding? _encoding;
-    private DecoderFallback? _fallback;
-    private DecoderFallbackBuffer? _fallbackBuffer;
-    private byte[]? _pendingBytes;
-
-    protected Decoder() { }
-
-    public DecoderFallback? Fallback
+    // A Decoder is used to decode a sequence of blocks of bytes into a
+    // sequence of blocks of characters. Following instantiation of a decoder,
+    // sequential blocks of bytes are converted into blocks of characters through
+    // calls to the GetChars method. The decoder maintains state between the
+    // conversions, allowing it to correctly decode byte sequences that span
+    // adjacent blocks.
+    //
+    // Instances of specific implementations of the Decoder abstract base
+    // class are typically obtained through calls to the GetDecoder method
+    // of Encoding objects.
+    //
+    public abstract class Decoder
     {
-        get => _fallback;
-        set
+        internal DecoderFallback? _fallback;
+
+        internal DecoderFallbackBuffer? _fallbackBuffer;
+
+        protected Decoder()
         {
-            ArgumentNullException.ThrowIfNull(value);
-            if (_fallbackBuffer is not null && _fallbackBuffer.Remaining != 0) throw new ArgumentException("The fallback buffer is not empty.", nameof(value));
-            _fallback = value;
-            _fallbackBuffer = null;
+            // We don't call default reset because default reset probably isn't good if we aren't initialized.
         }
-    }
 
-    public DecoderFallbackBuffer FallbackBuffer { get => _fallbackBuffer ??= (_fallback ?? DecoderFallback.ReplacementFallback).CreateFallbackBuffer(); }
-
-    internal void Initialize(Encoding encoding) => _encoding = encoding;
-
-    public abstract int GetCharCount(byte[] bytes, int index, int count);
-
-    public unsafe virtual int GetCharCount(byte* bytes, int count, bool flush) => GetCharCount(new ReadOnlySpan<byte>(bytes, count), flush);
-
-    public virtual int GetCharCount(byte[] bytes, int index, int count, bool flush)
-    {
-        ArgumentNullException.ThrowIfNull(bytes);
-        Encoding.ValidateRange(index, count, bytes.Length);
-        return GetCharCountCore(new ReadOnlySpan<byte>(bytes, index, count), flush);
-    }
-
-    public virtual int GetCharCount(ReadOnlySpan<byte> bytes, bool flush) => CountWithoutConsuming(bytes, flush);
-
-    public virtual int GetChars(byte[] bytes, int byteIndex, int byteCount, char[] chars, int charIndex, bool flush)
-    {
-        ArgumentNullException.ThrowIfNull(bytes);
-        ArgumentNullException.ThrowIfNull(chars);
-        Encoding.ValidateRange(byteIndex, byteCount, bytes.Length);
-        Encoding.ValidateDestination(charIndex, chars.Length);
-        var required = CountWithoutConsuming(new ReadOnlySpan<byte>(bytes, byteIndex, byteCount), flush);
-        Encoding.EnsureDestination(charIndex, required, chars.Length);
-        return GetCharsCore(new ReadOnlySpan<byte>(bytes, byteIndex, byteCount), new Span<char>(chars, charIndex, chars.Length - charIndex), flush);
-    }
-
-    public abstract int GetChars(byte[] bytes, int byteIndex, int byteCount, char[] chars, int charIndex);
-
-    public unsafe virtual int GetChars(byte* bytes, int byteCount, char* chars, int charCount, bool flush) => GetChars(new ReadOnlySpan<byte>(bytes, byteCount), new Span<char>(chars, charCount), flush);
-
-    public unsafe virtual void Convert(byte* bytes, int byteCount, char* chars, int charCount, bool flush, out int bytesUsed, out int charsUsed, out bool completed) =>
-        Convert(new ReadOnlySpan<byte>(bytes, byteCount), new Span<char>(chars, charCount), flush, out bytesUsed, out charsUsed, out completed);
-
-    public virtual int GetChars(ReadOnlySpan<byte> bytes, Span<char> chars, bool flush)
-    {
-        var required = CountWithoutConsuming(bytes, flush);
-        if (required > chars.Length) throw new ArgumentException("The destination buffer is too small.", nameof(chars));
-        return GetCharsCore(bytes, chars, flush);
-    }
-
-    public virtual void Convert(byte[] bytes, int byteIndex, int byteCount, char[] chars, int charIndex, int charCount, bool flush, out int bytesUsed, out int charsUsed, out bool completed)
-    {
-        ArgumentNullException.ThrowIfNull(bytes);
-        ArgumentNullException.ThrowIfNull(chars);
-        Encoding.ValidateRange(byteIndex, byteCount, bytes.Length);
-        Encoding.ValidateDestination(charIndex, chars.Length);
-        if (charCount < 0 || charCount > chars.Length - charIndex) throw new ArgumentOutOfRangeException(nameof(charCount));
-
-        var incoming = new ReadOnlySpan<byte>(bytes, byteIndex, byteCount).ToArray();
-        var pending = _pendingBytes;
-        var combined = pending is null ? incoming : Combine(pending, incoming);
-        var prefixLength = pending?.Length ?? 0;
-        _pendingBytes = null;
-        var held = !flush ? GetIncompleteTail(combined) : 0;
-        var decodableLength = combined.Length - held;
-        var encoding = GetEffectiveEncoding();
-        var take = FindDecodablePrefix(encoding, combined, decodableLength, charCount);
-        if (take == 0 && decodableLength != 0) throw new ArgumentException("The destination buffer is too small.", nameof(chars));
-
-        var output = new Span<char>(chars, charIndex, charCount);
-        charsUsed = take == 0 ? 0 : encoding.GetChars(new ReadOnlySpan<byte>(combined, 0, take), output);
-        var consumed = take;
-        if (held != 0 && take == decodableLength)
+        public DecoderFallback? Fallback
         {
-            _pendingBytes = new byte[held];
-            for (var index = 0; index < held; index++) _pendingBytes[index] = combined[decodableLength + index];
-            consumed += held;
-        }
-        else if (take == 0)
-        {
-            _pendingBytes = pending;
-        }
-        bytesUsed = consumed > prefixLength ? consumed - prefixLength : 0;
-        if (bytesUsed > byteCount) bytesUsed = byteCount;
-        completed = bytesUsed == byteCount && (!flush || _pendingBytes is null) && (_fallbackBuffer is null || _fallbackBuffer.Remaining == 0);
-    }
-
-    public virtual void Convert(ReadOnlySpan<byte> bytes, Span<char> chars, bool flush, out int bytesUsed, out int charsUsed, out bool completed)
-    {
-        var input = bytes.ToArray();
-        var output = new char[chars.Length];
-        Convert(input, 0, input.Length, output, 0, output.Length, flush, out bytesUsed, out charsUsed, out completed);
-        for (var index = 0; index < charsUsed; index++) chars[index] = output[index];
-    }
-
-    public virtual void Reset()
-    {
-        _fallbackBuffer?.Reset();
-        _pendingBytes = null;
-    }
-
-    private int GetCharCountCore(ReadOnlySpan<byte> bytes, bool flush)
-    {
-        var combined = _pendingBytes is null ? bytes.ToArray() : Combine(_pendingBytes, bytes.ToArray());
-        var hold = !flush ? GetIncompleteTail(combined) : 0;
-        var result = GetEffectiveEncoding().GetCharCount(new ReadOnlySpan<byte>(combined, 0, combined.Length - hold));
-        _pendingBytes = hold == 0 ? null : Tail(combined, hold);
-        return result;
-    }
-
-    private int GetCharsCore(ReadOnlySpan<byte> bytes, Span<char> chars, bool flush)
-    {
-        var combined = _pendingBytes is null ? bytes.ToArray() : Combine(_pendingBytes, bytes.ToArray());
-        var hold = !flush ? GetIncompleteTail(combined) : 0;
-        var result = GetEffectiveEncoding().GetChars(new ReadOnlySpan<byte>(combined, 0, combined.Length - hold), chars);
-        _pendingBytes = hold == 0 ? null : Tail(combined, hold);
-        return result;
-    }
-
-    private int CountWithoutConsuming(ReadOnlySpan<byte> bytes, bool flush)
-    {
-        var saved = _pendingBytes;
-        try { return GetCharCountCore(bytes, flush); }
-        finally { _pendingBytes = saved; }
-    }
-
-    private int GetIncompleteTail(byte[] bytes)
-    {
-        if (_encoding is UTF8Encoding)
-        {
-            var start = bytes.Length;
-            while (start > 0 && (bytes[start - 1] & 0xC0) == 0x80) start--;
-            // Include the lead byte before the final continuation run. A tail
-            // containing only continuation bytes is invalid, not incomplete.
-            if (start > 0) start--;
-            if (start >= 0)
+            get => _fallback;
+            set
             {
-                var status = Rune.DecodeFromUtf8(new ReadOnlySpan<byte>(bytes, start, bytes.Length - start), out _, out _);
-                if (status == System.Buffers.OperationStatus.NeedMoreData) return bytes.Length - start;
+                ArgumentNullException.ThrowIfNull(value);
+
+                // Can't change fallback if buffer is wrong
+                if (_fallbackBuffer is not null && _fallbackBuffer.Remaining > 0)
+                    throw new ArgumentException(
+                      SR.Argument_FallbackBufferNotEmpty, nameof(value));
+
+                _fallback = value;
+                _fallbackBuffer = null;
             }
         }
-        else if (_encoding is UnicodeEncoding)
+
+        // Note: we don't test for threading here because async access to Encoders and Decoders
+        // doesn't work anyway.
+        public DecoderFallbackBuffer FallbackBuffer
         {
-            var oddTail = bytes.Length & 1;
-            var completeLength = bytes.Length - oddTail;
-            if (completeLength >= 2 && IsHighSurrogate(ReadUtf16Unit(bytes, completeLength - 2, _encoding.CodePage == 1201))) return 2 + oddTail;
-            if (oddTail != 0) return 1;
-        }
-        else if (_encoding is UTF32Encoding && (bytes.Length & 3) != 0) return bytes.Length & 3;
-        return 0;
-    }
+            get
+            {
+                _fallbackBuffer ??= _fallback is not null ?
+                    _fallback.CreateFallbackBuffer() :
+                    DecoderFallback.ReplacementFallback.CreateFallbackBuffer();
 
-    private static int FindDecodablePrefix(Encoding encoding, byte[] bytes, int length, int charCapacity)
-    {
-        var accepted = 0;
-        for (var index = 0; index < length;)
+                return _fallbackBuffer;
+            }
+        }
+
+        internal bool InternalHasFallbackBuffer => _fallbackBuffer is not null;
+
+        // Reset the Decoder
+        //
+        // Normally if we call GetChars() and an error is thrown we don't change the state of the Decoder.  This
+        // would allow the caller to correct the error condition and try again (such as if they need a bigger buffer.)
+        //
+        // If the caller doesn't want to try again after GetChars() throws an error, then they need to call Reset().
+        //
+        // Virtual implementation has to call GetChars with flush and a big enough buffer to clear a 0 byte string
+        // We avoid GetMaxCharCount() because a) we can't call the base encoder and b) it might be really big.
+        public virtual void Reset()
         {
-            var next = NextBoundary(encoding, bytes, index, length);
-            if (encoding.GetCharCount(new ReadOnlySpan<byte>(bytes, 0, next)) > charCapacity) break;
-            accepted = next;
-            index = next;
+            byte[] byteTemp = [];
+            char[] charTemp = new char[GetCharCount(byteTemp, 0, 0, true)];
+            GetChars(byteTemp, 0, 0, charTemp, 0, true);
+            _fallbackBuffer?.Reset();
         }
-        return accepted;
-    }
 
-    private static int NextBoundary(Encoding encoding, byte[] bytes, int index, int length)
-    {
-        if (encoding is UTF8Encoding)
+        // Returns the number of characters the next call to GetChars will
+        // produce if presented with the given range of bytes. The returned value
+        // takes into account the state in which the decoder was left following the
+        // last call to GetChars. The state of the decoder is not affected
+        // by a call to this method.
+        //
+        public abstract int GetCharCount(byte[] bytes, int index, int count);
+
+        public virtual int GetCharCount(byte[] bytes, int index, int count, bool flush)
         {
-            var status = Rune.DecodeFromUtf8(new ReadOnlySpan<byte>(bytes, index, length - index), out _, out var consumed);
-            return status == System.Buffers.OperationStatus.Done
-                ? index + consumed
-                : index + (consumed == 0 ? 1 : consumed);
+            return GetCharCount(bytes, index, count);
         }
-        if (encoding is UnicodeEncoding)
+
+        // We expect this to be the workhorse for NLS Encodings, but for existing
+        // ones we need a working (if slow) default implementation)
+        [CLSCompliant(false)]
+        public virtual unsafe int GetCharCount(byte* bytes, int count, bool flush)
         {
-            if (length - index < 2) return length;
-            var next = index + 2;
-            var value = ReadUtf16Unit(bytes, index, encoding.CodePage == 1201);
-            if (IsHighSurrogate(value) && length - next >= 2 && IsLowSurrogate(ReadUtf16Unit(bytes, next, encoding.CodePage == 1201))) next += 2;
-            return next;
+            ArgumentNullException.ThrowIfNull(bytes);
+            ArgumentOutOfRangeException.ThrowIfNegative(count);
+
+            byte[] arrbyte = new byte[count];
+
+            for (int index = 0; index < count; index++)
+                arrbyte[index] = bytes[index];
+
+            return GetCharCount(arrbyte, 0, count);
         }
-        if (encoding is UTF32Encoding) return Math.Min(index + 4, length);
-        return index + 1;
-    }
 
-    private static char ReadUtf16Unit(byte[] bytes, int index, bool bigEndian) =>
-        bigEndian
-            ? (char)(bytes[index] << 8 | bytes[index + 1])
-            : (char)(bytes[index] | bytes[index + 1] << 8);
+        public virtual unsafe int GetCharCount(ReadOnlySpan<byte> bytes, bool flush)
+        {
+            fixed (byte* bytesPtr = &MemoryMarshal.GetNonNullPinnableReference(bytes))
+            {
+                return GetCharCount(bytesPtr, bytes.Length, flush);
+            }
+        }
 
-    private static bool IsHighSurrogate(char value) => value >= 0xD800 && value <= 0xDBFF;
-    private static bool IsLowSurrogate(char value) => value >= 0xDC00 && value <= 0xDFFF;
+        // Decodes a range of bytes in a byte array into a range of characters
+        // in a character array. The method decodes byteCount bytes from
+        // bytes starting at index byteIndex, storing the resulting
+        // characters in chars starting at index charIndex. The
+        // decoding takes into account the state in which the decoder was left
+        // following the last call to this method.
+        //
+        // An exception occurs if the character array is not large enough to
+        // hold the complete decoding of the bytes. The GetCharCount method
+        // can be used to determine the exact number of characters that will be
+        // produced for a given range of bytes. Alternatively, the
+        // GetMaxCharCount method of the Encoding that produced this
+        // decoder can be used to determine the maximum number of characters that
+        // will be produced for a given number of bytes, regardless of the actual
+        // byte values.
+        //
+        public abstract int GetChars(byte[] bytes, int byteIndex, int byteCount,
+                                        char[] chars, int charIndex);
 
-    private Encoding GetEffectiveEncoding()
-    {
-        if (_encoding is null) throw new InvalidOperationException("The decoder is not associated with an encoding.");
-        if (_fallback is null || ReferenceEquals(_fallback, _encoding.DecoderFallback)) return _encoding;
-        var clone = (Encoding)_encoding.Clone();
-        clone.DecoderFallback = _fallback;
-        return clone;
-    }
+        public virtual int GetChars(byte[] bytes, int byteIndex, int byteCount,
+                                       char[] chars, int charIndex, bool flush)
+        {
+            return GetChars(bytes, byteIndex, byteCount, chars, charIndex);
+        }
 
-    private static byte[] Combine(byte[] first, byte[] second)
-    {
-        var result = new byte[first.Length + second.Length];
-        for (var index = 0; index < first.Length; index++) result[index] = first[index];
-        for (var index = 0; index < second.Length; index++) result[first.Length + index] = second[index];
-        return result;
-    }
+        // We expect this to be the workhorse for NLS Encodings, but for existing
+        // ones we need a working (if slow) default implementation)
+        //
+        // WARNING: If this breaks it could be a security threat.  Obviously we
+        // call this internally, so you need to make sure that your pointers, counts
+        // and indexes are correct when you call this method.
+        //
+        // In addition, we have internal code, which will be marked as "safe" calling
+        // this code.  However this code is dependent upon the implementation of an
+        // external GetChars() method, which could be overridden by a third party and
+        // the results of which cannot be guaranteed.  We use that result to copy
+        // the char[] to our char* output buffer.  If the result count was wrong, we
+        // could easily overflow our output buffer.  Therefore we do an extra test
+        // when we copy the buffer so that we don't overflow charCount either.
+        [CLSCompliant(false)]
+        public virtual unsafe int GetChars(byte* bytes, int byteCount,
+                                           char* chars, int charCount, bool flush)
+        {
+            ArgumentNullException.ThrowIfNull(bytes);
+            ArgumentNullException.ThrowIfNull(chars);
+            ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
+            ArgumentOutOfRangeException.ThrowIfNegative(charCount);
 
-    private static byte[] Tail(byte[] value, int count)
-    {
-        var result = new byte[count];
-        for (var index = 0; index < count; index++) result[index] = value[value.Length - count + index];
-        return result;
-    }
-}
+            // Get the byte array to convert
+            byte[] arrByte = new byte[byteCount];
 
-internal sealed class EncodingDecoder : Decoder
-{
-    internal EncodingDecoder(Encoding encoding) => Initialize(encoding);
+            for (int index = 0; index < byteCount; index++)
+                arrByte[index] = bytes[index];
 
-    public override int GetCharCount(byte[] bytes, int index, int count)
-    {
-        ArgumentNullException.ThrowIfNull(bytes);
-        Encoding.ValidateRange(index, count, bytes.Length);
-        return GetCharCount(new ReadOnlySpan<byte>(bytes, index, count), flush: false);
-    }
+            // Get the char array to fill
+            char[] arrChar = new char[charCount];
 
-    public override int GetChars(byte[] bytes, int byteIndex, int byteCount, char[] chars, int charIndex)
-    {
-        ArgumentNullException.ThrowIfNull(bytes);
-        ArgumentNullException.ThrowIfNull(chars);
-        Encoding.ValidateRange(byteIndex, byteCount, bytes.Length);
-        Encoding.ValidateDestination(charIndex, chars.Length);
-        return GetChars(
-            new ReadOnlySpan<byte>(bytes, byteIndex, byteCount),
-            new Span<char>(chars, charIndex, chars.Length - charIndex),
-            flush: false);
+            // Do the work
+            int result = GetChars(arrByte, 0, byteCount, arrChar, 0, flush);
+
+            Debug.Assert(result <= charCount, "Returned more chars than we have space for");
+
+            // Copy the char array
+            // WARNING: We MUST make sure that we don't copy too many chars.  We can't
+            // rely on result because it could be a 3rd party implementation.  We need
+            // to make sure we never copy more than charCount chars no matter the value
+            // of result
+            if (result < charCount)
+                charCount = result;
+
+            // We check both result and charCount so that we don't accidentally overrun
+            // our pointer buffer just because of an issue in GetChars
+            for (int index = 0; index < charCount; index++)
+                chars[index] = arrChar[index];
+
+            return charCount;
+        }
+
+        public virtual unsafe int GetChars(ReadOnlySpan<byte> bytes, Span<char> chars, bool flush)
+        {
+            fixed (byte* bytesPtr = &MemoryMarshal.GetNonNullPinnableReference(bytes))
+            fixed (char* charsPtr = &MemoryMarshal.GetNonNullPinnableReference(chars))
+            {
+                return GetChars(bytesPtr, bytes.Length, charsPtr, chars.Length, flush);
+            }
+        }
+
+        // This method is used when the output buffer might not be large enough.
+        // It will decode until it runs out of bytes, and then it will return
+        // true if it the entire input was converted.  In either case it
+        // will also return the number of converted bytes and output characters used.
+        // It will only throw a buffer overflow exception if the entire length of chars[] is
+        // too small to store the next char. (like 0 or maybe 1 or 4 for some encodings)
+        // We're done processing this buffer only if completed returns true.
+        //
+        // Might consider checking Max...Count to avoid the extra counting step.
+        //
+        // Note that if all of the input bytes are not consumed, then we'll do a /2, which means
+        // that its likely that we didn't consume as many bytes as we could have.  For some
+        // applications this could be slow.  (Like trying to exactly fill an output buffer from a bigger stream)
+        public virtual void Convert(byte[] bytes, int byteIndex, int byteCount,
+                                    char[] chars, int charIndex, int charCount, bool flush,
+                                    out int bytesUsed, out int charsUsed, out bool completed)
+        {
+            ArgumentNullException.ThrowIfNull(bytes);
+            ArgumentNullException.ThrowIfNull(chars);
+
+            ArgumentOutOfRangeException.ThrowIfNegative(byteIndex);
+            ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
+            ArgumentOutOfRangeException.ThrowIfNegative(charIndex);
+            ArgumentOutOfRangeException.ThrowIfNegative(charCount);
+
+            if (bytes.Length - byteIndex < byteCount)
+                throw new ArgumentOutOfRangeException(nameof(bytes),
+                      SR.ArgumentOutOfRange_IndexCountBuffer);
+
+            if (chars.Length - charIndex < charCount)
+                throw new ArgumentOutOfRangeException(nameof(chars),
+                      SR.ArgumentOutOfRange_IndexCountBuffer);
+
+            bytesUsed = byteCount;
+
+            // Its easy to do if it won't overrun our buffer.
+            while (bytesUsed > 0)
+            {
+                if (GetCharCount(bytes, byteIndex, bytesUsed, flush) <= charCount)
+                {
+                    charsUsed = GetChars(bytes, byteIndex, bytesUsed, chars, charIndex, flush);
+                    completed = (bytesUsed == byteCount &&
+                        (_fallbackBuffer is null || _fallbackBuffer.Remaining == 0));
+                    return;
+                }
+
+                // Try again with 1/2 the count, won't flush then 'cause won't read it all
+                flush = false;
+                bytesUsed /= 2;
+            }
+
+            // Oops, we didn't have anything, we'll have to throw an overflow
+            throw new ArgumentException(SR.Argument_ConversionOverflow);
+        }
+
+        // This is the version that uses *.
+        // We're done processing this buffer only if completed returns true.
+        //
+        // Might consider checking Max...Count to avoid the extra counting step.
+        //
+        // Note that if all of the input bytes are not consumed, then we'll do a /2, which means
+        // that its likely that we didn't consume as many bytes as we could have.  For some
+        // applications this could be slow.  (Like trying to exactly fill an output buffer from a bigger stream)
+        [CLSCompliant(false)]
+        public virtual unsafe void Convert(byte* bytes, int byteCount,
+                                           char* chars, int charCount, bool flush,
+                                           out int bytesUsed, out int charsUsed, out bool completed)
+        {
+            ArgumentNullException.ThrowIfNull(bytes);
+            ArgumentNullException.ThrowIfNull(chars);
+
+            ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
+            ArgumentOutOfRangeException.ThrowIfNegative(charCount);
+
+            // Get ready to do it
+            bytesUsed = byteCount;
+
+            // Its easy to do if it won't overrun our buffer.
+            while (bytesUsed > 0)
+            {
+                if (GetCharCount(bytes, bytesUsed, flush) <= charCount)
+                {
+                    charsUsed = GetChars(bytes, bytesUsed, chars, charCount, flush);
+                    completed = (bytesUsed == byteCount &&
+                        (_fallbackBuffer is null || _fallbackBuffer.Remaining == 0));
+                    return;
+                }
+
+                // Try again with 1/2 the count, won't flush then 'cause won't read it all
+                flush = false;
+                bytesUsed /= 2;
+            }
+
+            // Oops, we didn't have anything, we'll have to throw an overflow
+            throw new ArgumentException(SR.Argument_ConversionOverflow);
+        }
+
+        public virtual unsafe void Convert(ReadOnlySpan<byte> bytes, Span<char> chars, bool flush, out int bytesUsed, out int charsUsed, out bool completed)
+        {
+            fixed (byte* bytesPtr = &MemoryMarshal.GetNonNullPinnableReference(bytes))
+            fixed (char* charsPtr = &MemoryMarshal.GetNonNullPinnableReference(chars))
+            {
+                Convert(bytesPtr, bytes.Length, charsPtr, chars.Length, flush, out bytesUsed, out charsUsed, out completed);
+            }
+        }
     }
 }

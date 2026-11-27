@@ -26,7 +26,7 @@ function recordingRegistry() {
 test("keeps an adopted callback's handle until JavaScript collects the function", () => {
   const released = [];
   const { Registry, registries } = recordingRegistry();
-  const lifetime = createManagedCallbackLifetime(handle => released.push(handle), Registry);
+  const lifetime = createManagedCallbackLifetime(handle => released.push(handle), () => false, Registry);
   const callback = lifetime.adopt(7, (left, right) => left + right);
 
   assert.equal(Object.isFrozen(callback), true);
@@ -39,20 +39,39 @@ test("keeps an adopted callback's handle until JavaScript collects the function"
   assert.deepEqual(released, [7]);
 });
 
-test("stops a dropped callback and releases handles quietly", () => {
-  const lifetime = createManagedCallbackLifetime(() => { throw new Error("program ended"); }, undefined);
+test("stops a dropped callback, and a failed release throws", () => {
+  const lifetime = createManagedCallbackLifetime(() => { throw new Error("handle release failed"); }, () => false,
+    undefined);
   const callback = lifetime.adopt(9, () => 1);
 
   callback.keep();
   callback.drop();
   assert.throws(() => callback.function(), /released when the import that passed it failed/);
-  assert.doesNotThrow(() => lifetime.release(9));
-  assert.throws(() => createManagedCallbackLifetime(null), TypeError);
+  assert.throws(() => lifetime.release(9), /handle release failed/);
+  assert.throws(() => createManagedCallbackLifetime(null, () => false), TypeError);
+  assert.throws(() => createManagedCallbackLifetime(() => {}, null), TypeError);
+});
+
+test("a function collected after its program ended releases nothing, and one collected before releases loudly", () => {
+  let collect;
+  class Registry { constructor(callback) { collect = callback; } register() {} }
+  let closed = false;
+  const released = [];
+  createManagedCallbackLifetime(handle => {
+    if (handle === 13) throw new Error("handle release failed");
+    released.push(handle);
+  }, () => closed, Registry);
+
+  collect(5);
+  assert.throws(() => collect(13), /handle release failed/);
+  closed = true;
+  collect(7);
+  assert.deepEqual(released, [5]);
 });
 
 test("releases through the registry it was given, or keeps handles without one", () => {
   const released = [];
-  const lifetime = createManagedCallbackLifetime(handle => released.push(handle), null);
+  const lifetime = createManagedCallbackLifetime(handle => released.push(handle), () => false, null);
   lifetime.adopt(4, () => 0).keep();
   lifetime.release(4);
   assert.deepEqual(released, [4]);

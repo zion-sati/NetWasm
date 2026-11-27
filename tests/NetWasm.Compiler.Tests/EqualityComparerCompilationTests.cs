@@ -1,6 +1,10 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection;
+using NetWasm.Compiler.ComponentModel;
+using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests;
@@ -281,6 +285,65 @@ public sealed class EqualityComparerCompilationTests
             compilation.ApplicationModule,
             assets.Directory,
             41));
+    }
+
+    // A loop comparing through EqualityComparer<int>.Default or Comparer<int>.Default calls the comparers' methods
+    // directly, which never read this, so it neither reads Default nor checks the comparer class's initialization at
+    // each element (1.7 times the loop's time), as desktop's JIT, which finds the class initialized, does not.
+    [Fact]
+    public void ADefaultComparerLoopChecksNoInitialization()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("DefaultComparerLoops", """
+            using System.Collections.Generic;
+            using System.Runtime.CompilerServices;
+
+            public static class Loops
+            {
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                public static int CountEqual(int[] values, int value)
+                {
+                    var count = 0;
+                    foreach (var item in values) if (EqualityComparer<int>.Default.Equals(item, value)) count++;
+                    return count;
+                }
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                public static int CountLess(int[] values, int value)
+                {
+                    var count = 0;
+                    foreach (var item in values) if (Comparer<int>.Default.Compare(item, value) < 0) count++;
+                    return count;
+                }
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    var values = new[] { 1, input, 3, input, 5 };
+                    return Loops.CountEqual(values, input) * 10 + Loops.CountLess(values, 4);
+                }
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Optimization: FinalWasmOptimization.O3));
+        Assert.Equal(2 * 10 + 2, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 7, WasmTarget.Wasm32,
+            result.StaticDataEnd));
+
+        var module = Path.Combine(assets.Directory, "application.wasm");
+        File.WriteAllBytes(module, result.ApplicationModule);
+        using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
+        var printed = services.GetRequiredService<IWasmTools>().Run("print", module);
+        Assert.True(printed.ExitCode == 0, printed.StandardError);
+        var functions = Regex.Split(printed.StandardOutput, @"\n\s*\(func ")
+            .Skip(1)
+            .ToDictionary(static function => function[..function.IndexOfAny([' ', '\n'])], StringComparer.Ordinal);
+        foreach (var name in new[] { "$Loops::CountEqual", "$Loops::CountLess" })
+        {
+            Assert.DoesNotContain("static.initialize", functions[name], StringComparison.Ordinal);
+            Assert.DoesNotContain("root_frame_enter", functions[name], StringComparison.Ordinal);
+        }
     }
 
     [Fact]

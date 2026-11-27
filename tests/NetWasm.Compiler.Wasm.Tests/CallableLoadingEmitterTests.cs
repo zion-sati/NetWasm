@@ -192,7 +192,7 @@ public sealed class CallableLoadingEmitterTests
     }
 
     [Fact]
-    public void CompatibilityFacadeRoutesEachOperationToItsDedicatedLoader()
+    public void RoutesEachOperationToItsDedicatedLoader()
     {
         var functions = new RecordingFunctionLoader();
         var virtualFunctions = new RecordingVirtualFunctionLoader();

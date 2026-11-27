@@ -97,7 +97,7 @@ public abstract class TaskScheduler
         public override int MaximumConcurrencyLevel => 1;
 
         protected internal override void QueueTask(Task task) =>
-            PlatformServices.Scheduler.Schedule(() => TryExecuteTask(task), 0);
+            PlatformServices.Scheduler.Post(() => TryExecuteTask(task));
 
         protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued) => TryExecuteTask(task);
 

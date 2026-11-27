@@ -5,6 +5,7 @@
 // dotnet/performance micro-benchmark sources: construction, [Params] values,
 // [GlobalSetup], and each [Arguments] set, as plain C# the runner calls.
 // usage: Generator <output.cs> <exclusions.txt|-> <source files or directories...>
+// A source given as async:<path> contributes only its benchmarks that return a task.
 // run.py builds and runs it; see README.md.
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -13,7 +14,13 @@ using Microsoft.CodeAnalysis.CSharp;
 var output = args[0];
 var exclusions = args[1] == "-" ? [] : File.ReadAllLines(args[1])
     .Select(line => line.Split('#')[0].Trim()).Where(line => line.Length > 0).ToHashSet();
-var files = args.Skip(2).SelectMany(path => Directory.Exists(path)
+// The async benchmarks of a suite whose other benchmarks the table does not time: only those that return a task.
+var asyncOnly = args.Skip(2).Where(arg => arg.StartsWith("async:", StringComparison.Ordinal))
+    .Select(arg => Path.GetFullPath(arg["async:".Length..])).ToArray();
+bool AsyncOnly(IMethodSymbol method) => method.Locations.FirstOrDefault()?.SourceTree?.FilePath is { } file &&
+    asyncOnly.Any(source => Path.GetFullPath(file).StartsWith(source, StringComparison.Ordinal));
+var files = args.Skip(2).Select(arg => arg.StartsWith("async:", StringComparison.Ordinal) ? arg["async:".Length..] : arg)
+    .SelectMany(path => Directory.Exists(path)
         ? Directory.EnumerateFiles(path, "*.cs", SearchOption.AllDirectories)
         : [path])
     .Where(file => !exclusions.Any(excluded => file.Replace('\\', '/').Contains(excluded)))
@@ -70,8 +77,12 @@ foreach (var type in AllTypes(compilation.GlobalNamespace)
     .OrderBy(type => type.ToDisplayString().StartsWith("NetWasm.Workloads.", StringComparison.Ordinal))
     .ThenBy(type => type.ToDisplayString(), StringComparer.Ordinal))
 {
-    var benchmarks = type.GetMembers().OfType<IMethodSymbol>()
-        .Where(method => method.GetAttributes().Any(attribute => Is(attribute, "Benchmark"))).ToArray();
+    // A class runs the benchmarks it declares and those it inherits, as BenchmarkDotNet does: an abstract base's run
+    // once for each concrete class. An override counts once, as the most derived method (the call dispatches to it).
+    var benchmarks = AllMembers(type).OfType<IMethodSymbol>()
+        .Where(method => method.GetAttributes().Any(attribute => Is(attribute, "Benchmark")))
+        .DistinctBy(method => (method.Name, string.Join(",", method.Parameters.Select(parameter => parameter.Type.ToDisplayString()))))
+        .ToArray();
     if (benchmarks.Length == 0 || type.IsAbstract || type.IsStatic) continue;
     if (type.DeclaredAccessibility != Accessibility.Public || type.ContainingType is { DeclaredAccessibility: not Accessibility.Public })
     {
@@ -91,7 +102,7 @@ foreach (var type in AllTypes(compilation.GlobalNamespace)
             continue;
         }
         EmitType(instanceType, [.. benchmarks.Select(method => instanceType.Equals(type, SymbolEqualityComparer.Default)
-            ? method : instanceType.GetMembers(method.Name).OfType<IMethodSymbol>().First(member => member.OriginalDefinition.Equals(method, SymbolEqualityComparer.Default)))]);
+            ? method : AllMembers(instanceType).OfType<IMethodSymbol>().First(member => member.OriginalDefinition.Equals(method.OriginalDefinition, SymbolEqualityComparer.Default)))]);
     }
 }
 
@@ -126,6 +137,10 @@ void EmitType(INamedTypeSymbol type, IMethodSymbol[] benchmarks)
             skipped.Add($"{typeName}.{benchmark.Name}: static, generic or not public");
             continue;
         }
+        if (AsyncOnly(benchmark) && !IsTask(benchmark.ReturnType))
+        {
+            continue;
+        }
         if (benchmark.Parameters.Any(parameter => parameter.RefKind != RefKind.None || parameter.Type.IsRefLikeType))
         {
             skipped.Add($"{typeName}.{benchmark.Name}: by-reference or ref struct parameter");
@@ -150,7 +165,10 @@ void EmitType(INamedTypeSymbol type, IMethodSymbol[] benchmarks)
             else if (Is(attribute!, "ParamsSource"))
             {
                 var source = (string)attribute!.ConstructorArguments[0].Value!;
-                openers.Add($"foreach (var {variable} in new {typeName}().{source}{(members.OfType<IMethodSymbol>().Any(method => method.Name == source) ? "()" : "")})");
+                // A static source is read through the type, an instance one through a new instance.
+                var sourceMember = members.FirstOrDefault(candidate => candidate.Name == source);
+                var owner = sourceMember is { IsStatic: true } ? typeName : $"new {typeName}()";
+                openers.Add($"foreach (var {variable} in {owner}.{source}{(sourceMember is IMethodSymbol ? "()" : "")})");
             }
             else if (memberType.SpecialType == SpecialType.System_Boolean)
             {
@@ -170,8 +188,12 @@ void EmitType(INamedTypeSymbol type, IMethodSymbol[] benchmarks)
             assignments.Add($"b.{member.Name} = ({Name(memberType)}){variable};");
         }
 
-        var applicableSetups = setups.Where(setup => AppliesTo(setup, benchmark, "GlobalSetup")).Select(setup => $"b.{setup.Name}();");
-        var applicableIterationSetups = iterationSetups.Where(setup => AppliesTo(setup, benchmark, "IterationSetup")).Select(setup => $"b.{setup.Name}();");
+        // A setup that returns a task is awaited where the case is (see BenchmarkCase), and waited for otherwise.
+        var awaited = IsTask(benchmark.ReturnType);
+        string Setup(IMethodSymbol setup) => !IsTask(setup.ReturnType) ? $"b.{setup.Name}();"
+            : awaited ? $"await b.{setup.Name}();" : $"b.{setup.Name}().GetAwaiter().GetResult();";
+        var applicableSetups = setups.Where(setup => AppliesTo(setup, benchmark, "GlobalSetup")).Select(Setup);
+        var applicableIterationSetups = iterationSetups.Where(setup => AppliesTo(setup, benchmark, "IterationSetup")).Select(Setup);
 
         var argumentSets = new List<(string Id, string Arguments, string? Opener)>();
         var argumentAttributes = benchmark.GetAttributes().Where(attribute => Is(attribute, "Arguments")).ToArray();
@@ -230,11 +252,13 @@ void EmitType(INamedTypeSymbol type, IMethodSymbol[] benchmarks)
             }
             var idText = $"{type.ToDisplayString()}.{benchmark.Name}({string.Join(", ", idParts.Append(argumentId).Where(part => part.Length > 0))})";
             var invoke = $"b.{benchmark.Name}({arguments})";
+            // A task is awaited, its result consumed: a timed batch of awaited calls (see BenchmarkCase).
             var returns = benchmark.ReturnsVoid ? $"{invoke};"
-                : IsTask(benchmark.ReturnType) ? $"{invoke}.GetAwaiter().GetResult();"
+                : awaited ? benchmark.ReturnType is INamedTypeSymbol { IsGenericType: true }
+                    ? $"Runner.Consume(await {invoke});" : $"await {invoke};"
                 : $"Runner.Consume({invoke});";
             var captured = opener is not null ? "var ac = a; var aic = ai++; " : "";
-            block.AppendLine($"{depth}{{ {captured}{string.Concat(parameters.Select((_, index) => $"var c{index} = p{index}; "))}yield return new BenchmarkCase($\"{EscapeId(idText)}\", () =>");
+            block.AppendLine($"{depth}{{ {captured}{string.Concat(parameters.Select((_, index) => $"var c{index} = p{index}; "))}yield return new BenchmarkCase($\"{EscapeId(idText)}\", {(awaited ? "null, async " : "")}() =>");
             block.AppendLine($"{depth}{{");
             block.AppendLine($"{depth}    var b = new {typeName}();");
             foreach (var assignment in assignments) block.AppendLine($"{depth}    {ReplaceParams(assignment, parameters.Length)}");
@@ -242,7 +266,10 @@ void EmitType(INamedTypeSymbol type, IMethodSymbol[] benchmarks)
             var iteration = string.Concat(applicableIterationSetups.Select(setup => setup + " "));
             // Each timed body stays its own function: one dispatcher that inlined every
             // body made register allocation, and so timings, depend on unrelated cases.
-            block.AppendLine($"{depth}    return [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)] () => {{ {iteration}{returns} }};");
+            const string NoInlining = "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]";
+            block.AppendLine(awaited
+                ? $"{depth}    return {NoInlining} async (long count) => {{ var start = global::System.Diagnostics.Stopwatch.GetTimestamp(); for (long index = 0; index < count; index++) {{ {iteration}{returns} }} return global::System.Diagnostics.Stopwatch.GetTimestamp() - start; }};"
+                : $"{depth}    return {NoInlining} () => {{ {iteration}{returns} }};");
             block.AppendLine($"{depth}}}); }}");
             if (opener is not null)
             {
@@ -286,7 +313,10 @@ bool AppliesTo(IMethodSymbol setup, IMethodSymbol benchmark, string kind)
         .SelectMany(argument => argument.Value.Kind == TypedConstantKind.Array
             ? argument.Value.Values.Select(value => (string?)value.Value)
             : [(string?)argument.Value.Value])
-        .Where(name => name is not null).ToArray();
+        .Where(name => name is not null)
+        // BenchmarkDotNet reads a target as a comma-separated list of benchmark names.
+        .SelectMany(name => name!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        .ToArray();
     return targets.Length == 0 || targets.Contains(benchmark.Name);
 }
 

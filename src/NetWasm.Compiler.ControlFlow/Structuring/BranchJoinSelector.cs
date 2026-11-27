@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -169,6 +170,11 @@ internal sealed class BranchJoinSelector(
         return true;
     }
 
+    // Above the most any search tries in ordinary code (measured at Oz: SharpCompress compiled from source 539, the
+    // libraries-async workload 151, the async workload 75), so those choices stand; a runtime-async method entering
+    // hundreds of protected blocks from its dispatch tried thousands per search (4,400 at 400 awaits).
+    internal const int MaximumCandidates = 1024;
+
     private BranchJoinSelection? FindCandidate(
         BranchJoinSelectionRequest request,
         ImmutableHashSet<int> analysisBlocks,
@@ -186,14 +192,34 @@ internal sealed class BranchJoinSelector(
             analysisBlocks);
         // The best candidate has the fewest duplicated blocks, then the shortest combined and longest single distance,
         // then the lowest block. Candidates are built in distance order, so the first without duplicated blocks is the
-        // best of all and ends the search; otherwise the earliest with the fewest duplicated blocks is.
+        // best of all and ends the search; otherwise the earliest with the fewest duplicated blocks is. Each candidate
+        // walks the region, so a search that finds none among the region's blocks costs the region's size squared: the
+        // search stops after MaximumCandidates, keeping the best so far. From the second candidate on, one that lies off
+        // either start's CandidatePath is rejected without its walks (it counts as tried, as before).
         BranchJoinSelection? best = null;
+        var tried = 0;
+        HashSet<int>? firstPath = null;
+        HashSet<int>? secondPath = null;
         foreach (var join in firstDistances.Keys
             .Where(secondDistances.ContainsKey)
             .OrderBy(join => firstDistances[join] + secondDistances[join])
             .ThenBy(join => Math.Max(firstDistances[join], secondDistances[join]))
             .ThenBy(join => join))
         {
+            if (++tried > MaximumCandidates)
+            {
+                break;
+            }
+            if (tried == 2)
+            {
+                firstPath = CandidatePath(request, request.First, analysisBlocks, terminalTransfers);
+                secondPath = CandidatePath(request, request.Second, analysisBlocks, terminalTransfers);
+            }
+            if (join != request.Stop &&
+                (firstPath is not null && !firstPath.Contains(join) || secondPath is not null && !secondPath.Contains(join)))
+            {
+                continue;
+            }
             var candidate = CreateCandidate(request, join, analysisBlocks, terminalTransfers);
             if (candidate is null)
             {
@@ -209,6 +235,52 @@ internal sealed class BranchJoinSelector(
             }
         }
         return best;
+    }
+
+    // The blocks on one shortest path from a start to the nearest block that rejects every candidate the path avoids,
+    // or null when the start reaches none. Such a block is the stop, or one with an edge out of the allowed blocks that
+    // is not a terminal transfer. A candidate other than the stop that lies off the path leaves that block in the
+    // start's prefix (the prefix walk follows the continuation graph, whose edges include the graph's), so the prefix
+    // holds the stop or is not closed and CreateCandidate rejects it. A start outside the analysis blocks that is not a
+    // terminal transfer is closed only as the candidate itself. One walk of the start's reach.
+    private static HashSet<int>? CandidatePath(
+        BranchJoinSelectionRequest request,
+        int start,
+        ImmutableHashSet<int> analysisBlocks,
+        ImmutableHashSet<int> terminalTransfers)
+    {
+        if (terminalTransfers.Contains(start))
+        {
+            return null;
+        }
+        if (!analysisBlocks.Contains(start))
+        {
+            return [start];
+        }
+        var parents = new Dictionary<int, int> { [start] = -1 };
+        var pending = new Queue<int>();
+        pending.Enqueue(start);
+        while (pending.TryDequeue(out var block))
+        {
+            if (block == request.Stop || request.State.Graph.Successors[block].Any(successor =>
+                    !request.AllowedBlocks.Contains(successor) && !terminalTransfers.Contains(successor)))
+            {
+                var path = new HashSet<int>();
+                for (var at = block; at != -1; at = parents[at])
+                {
+                    path.Add(at);
+                }
+                return path;
+            }
+            foreach (var successor in request.State.ContinuationGraph.Successors[block])
+            {
+                if (analysisBlocks.Contains(successor) && parents.TryAdd(successor, block))
+                {
+                    pending.Enqueue(successor);
+                }
+            }
+        }
+        return null;
     }
 
     private BranchJoinSelection? CreateCandidate(

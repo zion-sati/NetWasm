@@ -29,6 +29,7 @@ internal sealed class CollectingRuntimeImports(IRuntimeImportResolver runtimeImp
         RuntimeImportSymbol.AllocateString,
         RuntimeImportSymbol.ArrayClone,
         RuntimeImportSymbol.ArrayCopy,
+        RuntimeImportSymbol.ArrayCopyShared,
         RuntimeImportSymbol.ArrayGetValue,
         RuntimeImportSymbol.BoxedValueClone,
         RuntimeImportSymbol.ObjectClone,

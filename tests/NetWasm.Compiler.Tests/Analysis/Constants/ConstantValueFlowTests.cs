@@ -176,6 +176,47 @@ public sealed class ConstantValueFlowTests
         Assert.Throws<ArgumentNullException>(() => Flow().Solve(null!));
     }
 
+    // A method of N loops, each counting with a local of its own, as Roslyn gives each loop's counter: every counter
+    // crosses blocks. The analysis allocates in proportion to the loops, where an array of every counter at every
+    // block took them squared (206 MB at 1,000 loops, 820 MB at 2,000; 8,000 such loops in handlers held gigabytes).
+    [Fact]
+    public void ManyLoopsWithCountersOfTheirOwnAllocateInProportionToThem()
+    {
+        // Both past 1,024 counters, so the trie has the same depth for each.
+        var small = Allocated(2_000);
+        var large = Allocated(4_000);
+
+        Assert.True(large < small * 3, $"2,000 loops: {small} bytes; 4,000: {large}");
+    }
+
+    private static long Allocated(int loops)
+    {
+        var instructions = new List<CilInstruction>();
+        for (var loop = 0; loop < loops; loop++)
+        {
+            var start = loop * 10;
+            var counter = new CilOperand.Index(loop);
+            instructions.AddRange(
+                Instruction(start, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+                Instruction(start + 1, CilOperation.StoreLocal, counter),
+                Instruction(start + 2, CilOperation.Branch, new CilOperand.BranchTarget(start + 7)),
+                Instruction(start + 3, CilOperation.LoadLocal, counter),
+                Instruction(start + 4, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+                Instruction(start + 5, CilOperation.Add),
+                Instruction(start + 6, CilOperation.StoreLocal, counter),
+                Instruction(start + 7, CilOperation.LoadLocal, counter),
+                Instruction(start + 8, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                Instruction(start + 9, CilOperation.BranchIfLessThanSigned, new CilOperand.BranchTarget(start + 3)));
+        }
+        instructions.Add(Instruction(loops * 10, CilOperation.Return));
+        var body = new CilMethodBody(Method().Definition, 4, [.. Enumerable.Repeat(CliValueKind.I4, loops)], [.. instructions]);
+        var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);
+        var flow = Flow();
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        _ = flow.Solve(graph);
+        return GC.GetAllocatedBytesForCurrentThread() - before;
+    }
+
     private static CilMethodBody Locals(params CilInstruction[] instructions) =>
         new(Method().Definition, 4, [CliValueKind.ManagedReference, CliValueKind.I4], [.. instructions]);
 

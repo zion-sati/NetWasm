@@ -307,6 +307,11 @@ public sealed record CommandEntryBinding(
 public static class JavaScriptConversion
 {
     public const string DeclaringType = "System.Runtime.InteropServices.JavaScript.JSMarshal";
+
+    // What an export's catch calls with the exception leaving it: a JSException holding a JavaScript error gives the
+    // host that error, which the host throws or rejects with instead of a managed failure, as .NET's browser runtime
+    // does. Reached only where the program builds such an exception (JavaScriptExportFailureRooting.cs).
+    public const string ExportFailure = "OfferExportFailure";
     public const string DateTimeType = "System.DateTime";
     public const string DateTimeOffsetType = "System.DateTimeOffset";
 

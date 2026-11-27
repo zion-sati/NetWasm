@@ -78,6 +78,10 @@ public sealed record CompilerOptions(
     // when it first compiles such a method, and the compile warns NW1016 for it.
     public bool MissingApiAsError { get; init; }
 
+    // Qualification: dispatch sites whose receivers the receiver flow analysis follows precisely check each receiver
+    // against its set and fail fast outside it (RECEIVER_TYPE_FLOW_DESIGN.md, step B). Dispatch is unchanged.
+    public bool ReceiverFlowAudit { get; init; }
+
     // The least severe entries the diagnostic log keeps. Trace, the most detailed (an entry for each emitted
     // function and each method's metrics), is left out unless asked for: it is nearly all of a large program's log.
     public LogLevel DiagnosticLogLevel { get; init; } = LogLevel.Debug;

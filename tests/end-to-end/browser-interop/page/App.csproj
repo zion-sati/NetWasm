@@ -11,6 +11,9 @@
   <ItemGroup>
     <NetWasmJavaScriptModule Include="bundled.mjs" Module="app.bundled" />
     <NetWasmJavaScriptModule Include="optional.mjs" Module="app.optional" />
+    <NetWasmJavaScriptModule Include="../shared/cells.mjs" Module="app.cells" />
+    <Compile Include="../shared/InteropCells.cs" />
+    <Content Include="../shared/check-cells.mjs" Link="check-cells.mjs" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="index.html;app.mjs" CopyToPublishDirectory="PreserveNewest" />
     <Compile Remove="worker-project/**" />
     <ProjectReference Include="worker-project/PageWorker.csproj" NetWasmWorker="true" />

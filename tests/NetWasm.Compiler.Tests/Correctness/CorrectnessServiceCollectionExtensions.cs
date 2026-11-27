@@ -63,6 +63,8 @@ internal static class CorrectnessServiceCollectionExtensions
         services.AddSingleton<ICompilerFailureArtifactWriter,
             CompilerFailureArtifactWriter>();
         services.AddSingleton(CorpusBackendOverride.Parse(Environment.GetEnvironmentVariable("NETWASM_CORPUS_BACKEND")));
+        services.AddSingleton(
+            CorpusRuntimeAsyncOverride.Parse(Environment.GetEnvironmentVariable("NETWASM_CORPUS_RUNTIME_ASYNC")));
         services.AddSingleton<ICorpusCompilationCellsSelector, CorpusCompilationCellsSelector>();
         services.AddSingleton<ICompiledCorpusRunner, CompiledCorpusRunner>();
         services.AddSingleton<ICompiledCorpusComparisonRunner, CompiledCorpusComparisonRunner>();

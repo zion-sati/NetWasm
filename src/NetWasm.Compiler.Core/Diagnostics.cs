@@ -39,6 +39,11 @@ public enum DiagnosticCode
     // JavaScript interop does not take, so the method stays ordinary code: JavaScript cannot call the export, and
     // calling the import throws PlatformNotSupportedException.
     DeclinedJavaScriptBinding = 1018,
+    // A warning: a reached attribute query the compiler cannot answer keeps its run-time path, which throws
+    // PlatformNotSupportedException when reached: an attribute it selects cannot be built, its target or filter is known
+    // only at run time, its target is a member other than a type, or a delegate, a function pointer or a method handle
+    // hides its arguments.
+    UnplannedAttributeQuery = 1019,
     GenericExpansion = 2001,
 }
 

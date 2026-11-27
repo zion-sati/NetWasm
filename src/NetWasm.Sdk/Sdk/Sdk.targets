@@ -6,9 +6,7 @@
     <NetWasmGuestFramework Condition="'$(TargetFramework)' == 'netwasm0.1' OR '$(_NetWasmPlatformFramework)' == 'true'">true</NetWasmGuestFramework>
   </PropertyGroup>
   <!-- JsModule and worker projects compile as ordinary libraries. Normalize
-       before stock SDK evaluation derives executable metadata from OutputType.
-       The removed JsWebWorker name is normalized too, so its diagnostic can
-       name the replacement instead of failing inside the stock SDK. -->
+       before stock SDK evaluation derives executable metadata from OutputType. -->
   <PropertyGroup Condition="'$(OutputType)' == 'WitWebWorker'">
     <_NetWasmWorkerKind>wit</_NetWasmWorkerKind>
     <OutputType>Library</OutputType>
@@ -32,10 +30,6 @@
     <OutputType>Library</OutputType>
     <CopyBuildOutputToPublishDirectory>false</CopyBuildOutputToPublishDirectory>
     <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(OutputType)' == 'JsWebWorker'">
-    <_NetWasmRemovedOutputType>JsWebWorker</_NetWasmRemovedOutputType>
-    <OutputType>Library</OutputType>
   </PropertyGroup>
   <PropertyGroup>
     <_NetWasmPlainCoreModule Condition="'$(_NetWasmPlainCoreModule)' == ''">false</_NetWasmPlainCoreModule>
@@ -92,6 +86,12 @@
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmStructuredDiagnostics Condition="'$(NetWasmStructuredDiagnostics)' == '' AND '$(Configuration)' == 'Debug'">true</NetWasmStructuredDiagnostics>
     <NetWasmStructuredDiagnostics Condition="'$(NetWasmStructuredDiagnostics)' == ''">false</NetWasmStructuredDiagnostics>
+    <NetWasmDebugInfo Condition="'$(NetWasmDebugInfo)' == '' AND '$(Configuration)' == 'Debug'">true</NetWasmDebugInfo>
+    <NetWasmDebugInfo Condition="'$(NetWasmDebugInfo)' == ''">false</NetWasmDebugInfo>
+    <!-- Runtime async: Roslyn compiles async methods to runtime-async IL (no state machine per method), which NetWasm
+         lowers onto CoreLib's RuntimeAsync, as CoreLib's own are. It runs as fast as state machines or faster and is
+         smaller, so every project takes it; .NET 10's compiler emits it too. Features the project sets are kept. -->
+    <Features>$(Features);runtime-async=on</Features>
     <!-- Raw mode emits core and materialized runtime modules while leaving
          componentization to an external linker or qualification harness. -->
     <NetWasmRawWasm Condition="'$(NetWasmRawWasm)' == ''">false</NetWasmRawWasm>
@@ -232,13 +232,6 @@
           Condition="'$(NetWasmGuestFramework)' == 'true' AND '$(NetWasmTarget)' != 'wasm32' AND '$(NetWasmTarget)' != 'wasm64'">
     <Error Code="NWSDK003"
            Text="NetWasmTarget must be 'wasm32' or 'wasm64'." />
-  </Target>
-
-  <Target Name="NetWasmSdkRejectRemovedOutputType"
-          BeforeTargets="Restore;CoreCompile;Publish;NetWasmSdkResolveBuildEnvironment"
-          Condition="'$(_NetWasmRemovedOutputType)' == 'JsWebWorker'">
-    <Error Code="NWSDK074"
-           Text="OutputType JsWebWorker was replaced by JsModule. Set &lt;OutputType&gt;JsModule&lt;/OutputType&gt; and &lt;NetWasmJavaScriptHosts&gt;worker&lt;/NetWasmJavaScriptHosts&gt; to keep a Web Worker host." />
   </Target>
 
   <Target Name="NetWasmSdkValidateCoreModuleOutput"

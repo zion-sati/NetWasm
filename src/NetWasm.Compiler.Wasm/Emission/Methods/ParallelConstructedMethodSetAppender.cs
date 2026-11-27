@@ -37,16 +37,13 @@ internal sealed class ParallelConstructedMethodSetAppender(
         if (orderedMethods.IsEmpty) return;
 
         using var batch = batches.Create();
-        var results = batch.Emit(orderedMethods, methodInstances, methods, rootMaps,
-            target, functionIndices);
-        for (var index = 0; index < results.Length; index++)
+        batch.Emit(orderedMethods, methodInstances, methods, rootMaps, target, functionIndices, (index, result) =>
         {
-            var result = results[index];
             var key = orderedMethods[index].CanonicalName;
             units.Capture(key, result, methods[key], rootMaps[key]);
             functions.Add(result.Function);
             filterEnvironments[result.EnvironmentKey] = result.Environment;
             emissions.Add(result.Record);
-        }
+        });
     }
 }

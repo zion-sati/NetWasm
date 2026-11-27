@@ -42,7 +42,7 @@ internal static class WasmRuntimeImports
 
     private static RuntimeImportBinding[] CreateBindings() =>
     [
-        .. CreateLegacyBindings(),
+        .. CreateCoreBindings(),
         new(RuntimeImportSymbol.ManagedTerminalExceptionReport, new WasmFunctionImport(
             RuntimeAbi.HostModule,
             RuntimeAbi.RuntimeReportTerminalException,
@@ -224,6 +224,64 @@ internal static class WasmRuntimeImports
                 CliValueKind.I4,
                 CliValueKind.I4,
                 CliValueKind.I4))),
+        // A landing pad that restores from marks reads them into locals: the root and value arenas' cursors (the value
+        // list follows from its arena's cursor) and the stack-trace depth.
+        new(RuntimeImportSymbol.FrameMarkRoot, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeFrameMarkRoot,
+            WasmFunctionType.Create(CliValueKind.ManagedAddress))),
+        new(RuntimeImportSymbol.FrameMarkValueCursor, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeFrameMarkValueCursor,
+            WasmFunctionType.Create(CliValueKind.ManagedAddress))),
+        new(RuntimeImportSymbol.FrameMarkStackTrace, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeFrameMarkStackTrace,
+            WasmFunctionType.Create(CliValueKind.I4))),
+        // A landing pad's restore from marks: the root and value arenas' cursors and the stack-trace depth (-1 when the
+        // program records none).
+        new(RuntimeImportSymbol.FrameMarksRewind, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeFrameMarksRewind,
+            WasmFunctionType.Create(
+                CliValueKind.Void,
+                CliValueKind.ManagedAddress,
+                CliValueKind.ManagedAddress,
+                CliValueKind.I4))),
+        // A landing pad's restore from the method's own value frame: the root arena's cursor, the frame and its size,
+        // and the stack-trace depth (-1 when the program records none).
+        new(RuntimeImportSymbol.FramesUnwind, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeFramesUnwind,
+            WasmFunctionType.Create(
+                CliValueKind.Void,
+                CliValueKind.ManagedAddress,
+                CliValueKind.ManagedAddress,
+                CliValueKind.ManagedAddress,
+                CliValueKind.I4))),
+        // A landing pad's one-slot root frame for the exception in flight, entered and holding it; and its leave.
+        new(RuntimeImportSymbol.ExceptionCellEnter, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeExceptionCellEnter,
+            WasmFunctionType.Create(CliValueKind.ManagedAddress, CliValueKind.ManagedReference))),
+        new(RuntimeImportSymbol.ExceptionCellLeave, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeExceptionCellLeave,
+            WasmFunctionType.Create(CliValueKind.Void, CliValueKind.ManagedAddress))),
+        // A catch without filters registers its frame only while a frame with filters is registered; otherwise its
+        // landing pad selects its own clause.
+        new(RuntimeImportSymbol.ExceptionFilterFramesLive, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeExceptionFilterFramesLive,
+            WasmFunctionType.Create(CliValueKind.I4))),
+        new(RuntimeImportSymbol.ExceptionCatchSelect, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeExceptionCatchSelect,
+            WasmFunctionType.Create(
+                CliValueKind.I4,
+                CliValueKind.ManagedReference,
+                CliValueKind.ManagedAddress,
+                CliValueKind.I4))),
         new(RuntimeImportSymbol.RecordReferenceWrite, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeRecordReferenceWrite,
@@ -248,9 +306,38 @@ internal static class WasmRuntimeImports
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeGcCollectYoung,
             WasmFunctionType.Create(CliValueKind.Void))),
+        new(RuntimeImportSymbol.RegisterSharedArrays, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeRegisterSharedArrays,
+            WasmFunctionType.Create(
+                CliValueKind.Void,
+                CliValueKind.ManagedAddress,
+                CliValueKind.I4))),
+        // is_assignable, array_copy and array_set_value for a program that allocates shared arrays.
+        new(RuntimeImportSymbol.IsAssignableShared, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeIsAssignableShared,
+            WasmFunctionType.Create(
+                CliValueKind.I4,
+                CliValueKind.ManagedReference,
+                CliValueKind.I4))),
+        new(RuntimeImportSymbol.ArrayCopyShared, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeArrayCopyShared,
+            WasmFunctionType.Create(
+                CliValueKind.I4,
+                CliValueKind.ManagedReference,
+                CliValueKind.I4,
+                CliValueKind.ManagedReference,
+                CliValueKind.I4,
+                CliValueKind.I4))),
+        new(RuntimeImportSymbol.ArraySetValueShared, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule, RuntimeAbi.RuntimeArraySetValueShared,
+            WasmFunctionType.Create(CliValueKind.I4, CliValueKind.ManagedReference, CliValueKind.I4,
+                CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.NativeInt)))
     ];
 
-    private static RuntimeImportBinding[] CreateLegacyBindings() =>
+    private static RuntimeImportBinding[] CreateCoreBindings() =>
     [
         new(RuntimeImportSymbol.Initialize, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,

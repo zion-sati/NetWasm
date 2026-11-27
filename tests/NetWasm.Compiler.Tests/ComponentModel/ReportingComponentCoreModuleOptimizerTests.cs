@@ -71,7 +71,7 @@ public sealed class ReportingComponentCoreModuleOptimizerTests
         public List<(string Input, string Output, FinalWasmOptimization Optimization, bool Converge, bool LowMemoryUnused)> Calls { get; } = [];
 
         public void Optimize(string inputPath, string outputPath, ComponentTarget target, FinalWasmOptimization optimization,
-            bool converge = false, bool lowMemoryUnused = false)
+            bool converge = false, bool lowMemoryUnused = false, bool keepNames = false)
         {
             Calls.Add((inputPath, outputPath, optimization, converge, lowMemoryUnused));
             whileRunning();

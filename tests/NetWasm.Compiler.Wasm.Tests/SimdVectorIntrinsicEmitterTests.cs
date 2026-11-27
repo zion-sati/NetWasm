@@ -153,6 +153,42 @@ public sealed class SimdVectorIntrinsicEmitterTests
         Assert.Equal(expected, string.Join(',', described));
     }
 
+    // Upstream's internal PackedSimd.Shuffle takes its indices as a vector: a swizzle of the first source, one of the
+    // second with the indices less 16, joined.
+    [Theory]
+    [InlineData("u1")]
+    [InlineData("i1")]
+    public void PackedSimdShuffleIsTwoSwizzles(string element)
+    {
+        var vector = Vector(element);
+        var signature = MethodSignatureModel.Create(vector, vector, vector, vector);
+        var instruction = CreateInstructionRequest(CilOperation.Call,
+            [CliValueKind.V128, CliValueKind.V128, CliValueKind.V128], maxStack: 3);
+        var definition = new MethodDefinitionModel(Key(0x06000204), TypeKey, "Shuffle", true, signature, 1);
+        var method = new MethodInstanceModel(definition,
+            CliTypeIdentity.Named(Assembly, "System.Runtime.Intrinsics.Wasm", "PackedSimd", false), [], signature);
+        var request = new RuntimeIntrinsicEmissionRequest(
+            new CallEmissionRequest(instruction, method, 0, 3),
+            RuntimeIntrinsic.PackedSimdInstruction, null, WasmTargetLayout.Wasm32, CreateFunctionIndexResolver());
+
+        new PackedSimdIntrinsicEmitter(new NoExceptions()).Emit(request, GetCodeWriter(instruction));
+
+        var locals = Enumerable.Range(0, 3).ToDictionary(argument => (uint)request.Local(argument, CliValueKind.V128));
+        var described = ((RecordingInstructionWriter)GetCodeWriter(instruction)).ToInstructions().Select(item =>
+            item.Opcode == WasmOpcodes.LocalGet ? $"get {locals[item.Operand.UnsignedValue]}"
+            : item.Opcode == WasmOpcodes.LocalSet ? $"set {locals[item.Operand.UnsignedValue]}"
+            : item.Operand.Bytes is [(byte)WasmSimdOpcodes.V128Constant, .. var lanes] ? $"const {string.Join(' ', lanes.Distinct())}"
+            : item.Opcode != WasmOpcodes.SimdPrefixed ? "other"
+            : item.Operand.UnsignedValue switch
+            {
+                WasmSimdOpcodes.I8x16Swizzle => "swizzle",
+                WasmSimdOpcodes.I8x16Subtract => "sub",
+                WasmSimdOpcodes.V128Or => "or",
+                _ => "other",
+            });
+        Assert.Equal("get 0,get 2,swizzle,get 1,get 2,const 16,sub,swizzle,or,set 0", string.Join(',', described));
+    }
+
     // PackedSimd lowers only the overloads in its table.
     [Fact]
     public void APackedSimdMethodWithoutAnInstructionStopsEmission()

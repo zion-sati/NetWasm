@@ -30,5 +30,9 @@ public interface IWholeProgramAnalyzerFactory
         WasmOptimizationSettings optimizationSettings,
         PlatformWorldCapabilities world,
         // Methods nothing is inlined into, since their functions came out over an engine limit.
-        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null);
+        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null,
+        // Run the receiver flow analysis over the final program and attach its report (a diagnostic).
+        bool reportsReceiverFlow = false,
+        // Audit precise dispatched calls against the analysis's sets, failing fast through this method.
+        EntityKey? receiverFlowAuditFailure = null);
 }

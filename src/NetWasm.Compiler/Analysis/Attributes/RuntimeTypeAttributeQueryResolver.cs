@@ -9,11 +9,19 @@ namespace NetWasm.Compiler.Analysis.Attributes;
 
 // Adapter: a target proven only to be a Type resolves as a closed type would. The compile-time resolver checks the
 // filter and the inheritance choice with a stand-in target (any closed type), and the query keeps no target.
-internal sealed class RuntimeTypeAttributeQueryResolver(IAttributeQueryResolver resolver, CliTypeIdentity closedStandIn) :
+// A filter of object or Attribute (or none), or an interface, takes every attribute of every candidate type the program
+// has, which would root each one's construction: those queries keep their run-time implementation.
+internal sealed class RuntimeTypeAttributeQueryResolver(IAttributeQueryResolver resolver, CliTypeIdentity closedStandIn,
+    ITypeDefinitionResolver? definitions = null, CliTypeIdentity? objectType = null, CliTypeIdentity? attributeType = null) :
     IRuntimeTypeAttributeQueryResolver
 {
     private readonly IAttributeQueryResolver _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
     private readonly CliTypeIdentity _standIn = closedStandIn ?? throw new ArgumentNullException(nameof(closedStandIn));
+
+    private bool TakesEverything(CliTypeIdentity filter) =>
+        filter.Equals(objectType) || filter.Equals(attributeType) ||
+        definitions is not null && filter.Shape is CliTypeShape.Named or CliTypeShape.GenericInstantiation &&
+        definitions.ResolveTypeIdentity(filter).IsInterface;
 
     public ResolvedAttributeQuery? ResolveRuntimeType(AttributeQueryCall call, ImmutableArray<AttributeValueProof> stack)
     {
@@ -27,7 +35,8 @@ internal sealed class RuntimeTypeAttributeQueryResolver(IAttributeQueryResolver 
         {
             return null;
         }
-        return _resolver.Resolve(call, stack.SetItem(start, new(AttributeValueKind.Type, _standIn))) is { } query
+        return _resolver.Resolve(call, stack.SetItem(start, new(AttributeValueKind.Type, _standIn))) is { } query &&
+            !TakesEverything(query.Filter)
             ? query with { Target = null }
             : null;
     }

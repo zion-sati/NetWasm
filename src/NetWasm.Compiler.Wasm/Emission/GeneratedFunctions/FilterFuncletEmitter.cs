@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
@@ -10,13 +11,16 @@ using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed class FilterFuncletEmitter(
 ITargetLayout layouts,
     IValueFrameLayoutPlanner valueFrames,
     IExceptionPayloadBlockEmitter exceptions,
-    IGeneratedFunctionWriterFactory writers) : IFilterFuncletEmitter
+    IGeneratedFunctionWriterFactory writers,
+    IStructResultScratchPlanner structResultScratch) : IFilterFuncletEmitter
 {
     public FilterFuncletEmission Emit(
         FilterFunclet filter,
@@ -62,6 +66,15 @@ ITargetLayout layouts,
             anchorLocals.Add(index, checked(parameterCount + localTypes.Length));
             localTypes = localTypes.Add(CliValueKind.ManagedAddress);
         }
+        // The locals the filter's calls move returned fields through, last, as a method's are.
+        var structResults = new Dictionary<CliValueKind, ImmutableArray<int>.Builder>();
+        foreach (var kind in structResultScratch.Plan(
+                     FilterCapturedSlots.EnumerateInstructions(filter.Method, filter.Clause.FilterBody), memberExecution))
+        {
+            if (!structResults.TryGetValue(kind, out var ofKind)) structResults.Add(kind, ofKind = ImmutableArray.CreateBuilder<int>());
+            ofKind.Add(checked(parameterCount + localTypes.Length));
+            localTypes = localTypes.Add(kind);
+        }
         var context = new MethodEmissionContext(
             rootMap,
             localBase,
@@ -88,6 +101,9 @@ ITargetLayout layouts,
         {
             AnchorLocals = anchorLocals.ToImmutable(),
             ManagedThrowFunction = managedThrowFunction,
+            StructResultLocals = structResults.Count == 0
+                ? StructResultLocals.Empty
+                : new(structResults.ToImmutableDictionary(static pair => pair.Key, static pair => pair.Value.ToImmutable())),
         };
         var output = writers.Create();
         var code = output.Instructions;

@@ -41,8 +41,17 @@ internal static class UnitTargetFingerprint
         answer.Add(target.InlineSmallBlockOperations);
         answer.Add(target.InlineArrayData);
         answer.Add(target.InlineObjectAllocation);
+        answer.Add(target.ReachesFilters);
         answer.Add(target.CollectManagedMethodMemoryMetrics);
         answer.Add(target.EnableAddressTakenAggregatePromotion);
+        // GetType of an object of unknown type checks for the shared arrays and calls their GetType.
+        answer.Add(target.SharedArrays is not null);
+        if (target.SharedArrays is { } shared)
+        {
+            answer.Add(shared.Types.Length);
+            foreach (var type in shared.Types) answer.Add(type);
+            answer.Add(shared.TypeOf.CanonicalName);
+        }
         // Runtime imports and helpers.
         var runtime = target.RuntimeImportSelection;
         answer.Add(runtime.ModuleProfile.ToString());
@@ -62,6 +71,7 @@ internal static class UnitTargetFingerprint
         answer.Add(runtime.IncludeObjectGeneration);
         answer.Add(runtime.IncludeEventLoopCollection);
         answer.Add(runtime.IncludeYoungCollection);
+        answer.Add(runtime.IncludeSharedArrays);
         answer.Add(target.FunctionIndices.ManagedThrowFunctionIndex.IsPresent);
         answer.Add(target.FunctionIndices.ManagedRethrowFunctionIndex.IsPresent);
         // Interop.
@@ -73,6 +83,7 @@ internal static class UnitTargetFingerprint
         answer.Add(interop.ReleaseHandle.IsPresent);
         answer.Add(interop.ReleaseSubscription.IsPresent);
         answer.Add(interop.UseJavaScriptExportBoundary);
+        answer.Add(interop.RequiresExportFailure);
         answer.Add(interop.Conversions.Count);
         foreach (var (name, value) in interop.Conversions.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {

@@ -1168,6 +1168,47 @@ public sealed class RootMapTests
         Assert.Contains(new RootSource(RootSourceKind.Local, 0, 4), map.Safepoints[6].Roots);
     }
 
+    // A call that cannot allocate, in a protected block, collects only while what it throws travels to the handler: of
+    // the locals live after it, it defers the one only the normal path reads and keeps the one the handler reads. A call
+    // that can collect defers nothing, in the block or in the handler.
+    [Fact]
+    public void AThrowOnlyPointDefersWhatOnlyItsNormalPathReads()
+    {
+        var program = new FakeProgram();
+        var reference = CliTypeIdentity.Primitive("object", CliValueKind.ManagedReference, isValueType: false);
+        var definition = Method(EntryKey);
+        var body = new CilMethodBody(definition, 1, [CliValueKind.ManagedReference, CliValueKind.ManagedReference],
+        [
+            I(0, CilOperation.Call, new CilOperand.Entity(LeafKey)),
+            I(1, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(2, CilOperation.Call, new CilOperand.Entity(AllocatorKey)),
+            I(3, CilOperation.Leave, new CilOperand.BranchTarget(8)),
+            I(4, CilOperation.Pop),
+            I(5, CilOperation.LoadLocal, new CilOperand.Index(1)),
+            I(6, CilOperation.Call, new CilOperand.Entity(AllocatorKey)),
+            I(7, CilOperation.Leave, new CilOperand.BranchTarget(8)),
+            I(8, CilOperation.Return),
+        ])
+        {
+            MethodInstance = DirectInstance(program, definition),
+            LocalSignatureTypes = [reference, reference],
+            ExceptionRegions = [new CilExceptionRegion(CilExceptionRegionKind.Catch, 0, 4, 4, 4, TypeKey, null)],
+        };
+        var structured = CreateStructuredMethod(new TypedStackValidator(program, program, program,
+            new StackTypeCompatibilityValidator()).Validate(CreateGraphBuilder().Build(body)));
+
+        var map = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
+            structured, Lookups.Of(new HashSet<EntityKey> { AllocatorKey }), Lookups.Of(new HashSet<string>())));
+
+        var normal = new RootSource(RootSourceKind.Local, 0);
+        var handled = new RootSource(RootSourceKind.Local, 1);
+        Assert.Contains(normal, map.Safepoints[0].Roots);
+        Assert.Contains(handled, map.Safepoints[0].Roots);
+        Assert.Equal([normal], map.Safepoints[0].Deferrable);
+        Assert.Empty(map.Safepoints[2].Deferrable);
+        Assert.Empty(map.Safepoints[6].Deferrable);
+    }
+
     // A method whose only local is a pair, and whose argument, if any, is one.
     private static MethodRootMap AnalyzeExposure(
         FakeProgram program,
@@ -1416,6 +1457,53 @@ public sealed class RootMapTests
             I(1, CilOperation.LoadStaticField, new CilOperand.Entity(StaticFieldKey)), Lookups.Of(methods), Lookups.Of(instances))));
         Assert.False(classifier.Decide(new(caller, 0,
             I(1, CilOperation.LoadStaticField, new CilOperand.Entity(UninitializedStaticFieldKey)), Lookups.Of(methods), Lookups.Of(instances))));
+    }
+
+    // In a protected block a static field access is a decision point only where it may run its type's initializer,
+    // the one thing it can throw from, and there even when that initializer is not known to allocate (one may throw a
+    // cached exception): a runtime-async method's body is one protected block, whose result-slot and request accesses
+    // need no roots. Outside a protected block only an allocating initializer makes the access one.
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public void AStaticAccessInAProtectedBlockDecidesOnlyWhereItMayRunAnInitializer(
+        bool inProtectedBlock, bool hasInitializer, bool expected)
+    {
+        var program = new FakeProgram();
+        var body = new CilMethodBody(Method(EntryKey), 1, [], [
+            I(0, CilOperation.LoadStaticField, new CilOperand.Entity(UninitializedStaticFieldKey)),
+            I(1, CilOperation.Pop),
+            I(2, CilOperation.Leave, new CilOperand.BranchTarget(5)),
+            I(3, CilOperation.Pop),
+            I(4, CilOperation.Leave, new CilOperand.BranchTarget(5)),
+            I(5, CilOperation.Return),
+        ])
+        {
+            ExceptionRegions = [new CilExceptionRegion(CilExceptionRegionKind.Catch, 0, 3, 3, 2, TypeKey, null)],
+        };
+        var graph = CreateGraphBuilder().Build(body);
+        var structured = CreateStructuredMethod(new TypedStackValidator(
+            program, program, program, new StackTypeCompatibilityValidator()).Validate(graph));
+        var block = Assert.Single(graph.Blocks, candidate => candidate.StartOffset == (inProtectedBlock ? 0 : 5)).Index;
+        Assert.Equal(inProtectedBlock, !graph.ExceptionalSuccessors[block].IsEmpty);
+        var classifier = new RootDecisionClassifier(program, program, program, null,
+            new RuntimeAllocationSafepointClassifier(), program,
+            new NetWasm.Compiler.Core.Types.MethodInitializationTriggerClassifier(program),
+            new NetWasm.Compiler.Core.Types.StaticFieldInitializationClassifier(program, program));
+        var field = new CilOperand.Entity(hasInitializer ? StaticFieldKey : UninitializedStaticFieldKey);
+        var none = Lookups.Of(new HashSet<EntityKey>());
+        var noInstances = Lookups.Of(new HashSet<string>());
+
+        foreach (var operation in new[]
+                 {
+                     CilOperation.LoadStaticField, CilOperation.LoadStaticFieldAddress, CilOperation.StoreStaticField,
+                 })
+        {
+            Assert.Equal(expected, ((IRootDecisionClassifier)classifier).Decide(
+                new(structured, block, I(0, operation, field), none, noInstances)));
+        }
     }
 
     // A precise type initializes before its constructors run, so an instance
@@ -2464,8 +2552,12 @@ public sealed class RootMapTests
         }
     }
 
+    // A value argument's references stay visible through the storage the call reads it from, here the argument
+    // itself: a callee that roots its parameters copies one it keeps across its own safepoints into its own frame, so
+    // the call publishes no second root for them on the stack. A value-type receiver passed by address is a managed
+    // address on the stack.
     [Fact]
-    public void RootMapEmbedsValueArgumentsAndRootsValueTypeReceiversAtCalls()
+    public void RootMapLeavesValueArgumentsToTheirStorageAndRootsValueTypeReceiversAtCalls()
     {
         var program = new FakeProgram();
         var method = Method(EntryKey) with
@@ -2496,6 +2588,9 @@ public sealed class RootMapTests
                 Lookups.Of(new HashSet<string>())));
 
         Assert.Contains(
+            new RootSource(RootSourceKind.Argument, 0, 4),
+            map.Safepoints[1].Roots);
+        Assert.DoesNotContain(
             new RootSource(RootSourceKind.EvaluationStack, 0, 4),
             map.Safepoints[1].Roots);
         Assert.Contains(

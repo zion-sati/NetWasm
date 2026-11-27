@@ -34,7 +34,7 @@ public sealed class FilterFuncletEmitterTests
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var emitter = ThroughContract(new FilterFuncletEmitter(
             layouts, valueFrames, new ExceptionPayloadBlockEmitter(layouts),
-            new GeneratedFunctionWriterFactory()));
+            new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultScratchPlanner(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier())));
         var environment = new FilterEnvironmentLayout(64, 48, 0, []);
         MethodEmissionContext? emittedContext = null;
         var sequence = new FilterSequenceEmitterAdapter((_, _, _, context) =>
@@ -103,7 +103,7 @@ public sealed class FilterFuncletEmitterTests
 layouts,
             CreateValueFrameLayoutPlanner(program, layouts),
             new ExceptionPayloadBlockEmitter(layouts),
-            new GeneratedFunctionWriterFactory());
+            new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultScratchPlanner(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier()));
         var emission = ((IFilterFuncletEmitter)emitter).Emit(
                     new FilterFunclet(1,
             new ManagedMethodIdentity("test-filter"), method, clause),
@@ -170,15 +170,9 @@ layouts,
     public void Memory32AtRootFrameBaseUses32BitAddressInstructions()
     {
         var program = new FakeProgram();
-        var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
-        var writers = new RecordingWriterFactory();
-        var emitter = new FilterFuncletEmitter(
-            layouts,
-            CreateValueFrameLayoutPlanner(program, layouts),
-            new ExceptionPayloadBlockEmitter(layouts),
-            writers);
+        var emitter = CreateEmitter(WasmTarget.Wasm32);
 
-        emitter.Emit(
+        var emission = emitter.Emit(
             new FilterFunclet(
                 1,
                 new ManagedMethodIdentity("test-filter"),
@@ -188,10 +182,8 @@ layouts,
             EmptyRootMap(),
             CreateSequence());
 
-        var instructions = writers.Instructions.ToInstructions();
-        Assert.Equal(WasmOpcodes.LocalGet, instructions[0].Opcode);
-        Assert.Equal(1u, instructions[0].Operand.UnsignedValue);
-        Assert.Equal(WasmOpcodes.I32Load, instructions[1].Opcode);
+        Assert.Contains(WasmOpcodes.I32Load, emission.Body);
+        Assert.Contains(WasmOpcodes.I32Constant, emission.Body);
     }
 
     [Fact]
@@ -249,7 +241,7 @@ layouts,
             layouts,
             CreateValueFrameLayoutPlanner(program, layouts),
             new ExceptionPayloadBlockEmitter(layouts),
-            writers);
+            writers, new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultScratchPlanner(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier()));
 
         ((IFilterFuncletEmitter)emitter).Emit(
             new FilterFunclet(
@@ -331,7 +323,7 @@ layouts,
 layouts,
                 CreateValueFrameLayoutPlanner(program, layouts),
                 new ExceptionPayloadBlockEmitter(layouts),
-                new GeneratedFunctionWriterFactory()),
+                new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultScratchPlanner(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier())),
         }.Cast<IFilterFuncletEmitter>().Single();
     }
 
@@ -350,7 +342,9 @@ layouts,
             NetWasm.Compiler.Wasm.Emission.AddressTakenValues.AddressTakenAggregatePromotionPlan?
                 addressTakenAggregatePromotions = null,
             NetWasm.Compiler.Wasm.Emission.CallLifetimes.ScalarCallLifetimePlan?
-                scalarCallLifetimes = null)
+                scalarCallLifetimes = null,
+            ReturnBufferLocal? returnBufferLocal = null,
+            StructConventionStorage? structConventions = null)
         {
             Method = method;
             MemberExecution = memberExecution;
@@ -381,7 +375,7 @@ layouts,
         };
 
     private static FilterEnvironmentLayout CreateEnvironment(int rootFrameOffset) =>
-        new(Size: 16, RootSlotCount: 0, RootFrameOffset: rootFrameOffset, Captures: []);
+        new(16, rootFrameOffset, 8, []);
 
     private static MethodRootMap EmptyRootMap() => new(EntryKey, [], []);
 

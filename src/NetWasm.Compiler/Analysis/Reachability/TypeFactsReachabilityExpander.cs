@@ -43,10 +43,7 @@ internal sealed class TypeFactsReachabilityExpander(
     {
         var required = _typeFactsClosure.Plan(
             [.. session.State.Types.Select(_typeIdentities.GetTypeIdentity), .. session.State.ConstructedTypes],
-            session.State.RequiresGenericArguments,
-            session.State.RequiresDeclaringTypes,
-            session.State.RequiresGenericDefinitions,
-            session.State.RequiresElementTypes);
+            session.TypeFactReads);
         // A pointer or function pointer type in the closure is a generic argument or an element GetElementType can
         // return; either query needs its own identity in the type table.
         var retainElementModifiers = session.State.RequiresGenericArguments || session.State.RequiresElementTypes;

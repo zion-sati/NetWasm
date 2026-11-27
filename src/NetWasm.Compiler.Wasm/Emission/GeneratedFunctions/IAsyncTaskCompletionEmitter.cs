@@ -9,7 +9,9 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 // exception goes to the capture import, whose payload the completion returns.
 internal sealed record AsyncTaskCompletionPlan(
     int ObserveFunctionIndex,
-    int CaptureFunctionIndex);
+    int CaptureFunctionIndex,
+    // A JavaScript export's offer of a JSException's error (JavaScriptConversion.ExportFailure), called in the catch.
+    int? ExceptionObserverFunctionIndex = null);
 
 internal interface IAsyncTaskCompletionEmitter
 {

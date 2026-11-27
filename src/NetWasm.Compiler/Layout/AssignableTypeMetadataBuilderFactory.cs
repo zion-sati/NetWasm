@@ -22,7 +22,7 @@ internal interface IAssignableTypeMetadataBuilderFactory
 
 internal sealed class AssignableTypeMetadataBuilderFactory(
     IImplementedInterfaceResolverFactory implementedInterfaces,
-    ITypeRelationshipClassifierFactory relationships,
+    IUnrememberedTypeRelationshipClassifierFactory relationships,
     ITypeRelationshipKeyResolverFactory relationshipKeys) :
     IAssignableTypeMetadataBuilderFactory
 {
@@ -30,7 +30,7 @@ internal sealed class AssignableTypeMetadataBuilderFactory(
         throw new ArgumentNullException(nameof(relationshipKeys));
     private readonly IImplementedInterfaceResolverFactory _implementedInterfaces =
         implementedInterfaces ?? throw new ArgumentNullException(nameof(implementedInterfaces));
-    private readonly ITypeRelationshipClassifierFactory _relationships = relationships ??
+    private readonly IUnrememberedTypeRelationshipClassifierFactory _relationships = relationships ??
         throw new ArgumentNullException(nameof(relationships));
 
     public IAssignableTypeMetadataBuilder Create(

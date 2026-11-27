@@ -46,8 +46,7 @@ public sealed class AtomicInstructionEmitterTests
         var emitter = ThroughContract(new AtomicInstructionEmitter(
             new RecordingLayoutProvider(layout),
             CreateTypeOperands(new FakeProgram()),
-            new RecordingExceptions(),
-            new RecordingAddresses(layout),
+            new NullDereferenceCheckEmitter(new RecordingExceptions(), new RecordingAddresses(layout)),
             new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(new RecordingLayoutProvider(layout)))));
         var identity = kind == CliValueKind.ManagedReference
             ? CliTypeIdentity.Named(new("Tests"), "Tests", "Reference", isValueType: false)
@@ -85,8 +84,7 @@ public sealed class AtomicInstructionEmitterTests
         var emitter = ThroughContract(new AtomicInstructionEmitter(
             new RecordingLayoutProvider(layout),
             CreateTypeOperands(new FakeProgram()),
-            exceptions,
-            addresses,
+            new NullDereferenceCheckEmitter(exceptions, addresses),
             new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(new RecordingLayoutProvider(layout)))));
         var identity = kind == CliValueKind.ManagedReference
             ? CliTypeIdentity.Named(new("Tests"), "Tests", "Reference", isValueType: false)
@@ -138,9 +136,69 @@ public sealed class AtomicInstructionEmitterTests
             .GetEvaluationStackLocal(request.Context.StackLocals, slot, valueKind, layout);
     }
 
+    // A byte or a short loads at its width, signed or not, against the comparand narrowed to the width; a float loads
+    // as its bits and compares them with the comparand's, stores as itself and leaves the loaded bits as the float.
+    public static TheoryData<WasmTarget, string> NarrowAndFloatValues
+    {
+        get
+        {
+            var rows = new TheoryData<WasmTarget, string>();
+            foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+                foreach (var name in new[] { "u1", "i1", "u2", "i2", "f4", "f8" })
+                {
+                    rows.Add(target, name);
+                }
+            return rows;
+        }
+    }
+
     [Theory]
-    [InlineData(CliValueKind.F4)]
-    [InlineData(CliValueKind.F8)]
+    [MemberData(nameof(NarrowAndFloatValues))]
+    public void CompareExchangeLoadsComparesAndStoresAtTheValuesWidthAndBits(WasmTarget target, string name)
+    {
+        var layout = WasmTargetLayout.For(target);
+        var emitter = ThroughContract(new AtomicInstructionEmitter(
+            new RecordingLayoutProvider(layout),
+            CreateTypeOperands(new FakeProgram()),
+            new NullDereferenceCheckEmitter(new RecordingExceptions(), new RecordingAddresses(layout)),
+            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(new RecordingLayoutProvider(layout)))));
+        var kind = name switch { "f4" => CliValueKind.F4, "f8" => CliValueKind.F8, _ => CliValueKind.I4 };
+        var request = CreateInstructionRequest(
+            CilOperation.CompareExchange,
+            [CliValueKind.ManagedAddress, kind, kind],
+            new CilOperand.TypeIdentity(CliTypeIdentity.Primitive(name, kind)),
+            maxStack: 3);
+
+        Assert.Single(emitter.Commands).Emit(request, GetCodeWriter(request), CreateFunctionIndexResolver());
+
+        Assert.Equal([kind], request.Stack);
+        var (load, comparand, equal, store, result) = name switch
+        {
+            "u1" => (WasmOpcodes.I32Load8Unsigned, new[] { WasmOpcodes.I32Constant, WasmOpcodes.I32And }, WasmOpcodes.I32Equal,
+                WasmOpcodes.I32Store8, Array.Empty<byte>()),
+            "i1" => (WasmOpcodes.I32Load8Signed, [WasmOpcodes.I32Extend8Signed], WasmOpcodes.I32Equal, WasmOpcodes.I32Store8, []),
+            "u2" => (WasmOpcodes.I32Load16Unsigned, [WasmOpcodes.I32Constant, WasmOpcodes.I32And], WasmOpcodes.I32Equal,
+                WasmOpcodes.I32Store16, []),
+            "i2" => (WasmOpcodes.I32Load16Signed, [WasmOpcodes.I32Extend16Signed], WasmOpcodes.I32Equal, WasmOpcodes.I32Store16, []),
+            "f4" => (WasmOpcodes.I32Load, [WasmOpcodes.I32ReinterpretF32], WasmOpcodes.I32Equal, WasmOpcodes.F32Store,
+                [WasmOpcodes.F32ReinterpretI32]),
+            _ => (WasmOpcodes.I64Load, [WasmOpcodes.I64ReinterpretF64], WasmOpcodes.I64Equal, WasmOpcodes.F64Store,
+                [WasmOpcodes.F64ReinterpretI64]),
+        };
+        Assert.Equal(
+            [
+                WasmOpcodes.LocalGet,
+                layout.UsesMemory64 ? WasmOpcodes.I64EqualZero : WasmOpcodes.I32EqualZero,
+                WasmOpcodes.If, WasmOpcodes.Unreachable, WasmOpcodes.End,
+                WasmOpcodes.LocalGet, load, WasmOpcodes.LocalSet, WasmOpcodes.LocalGet, WasmOpcodes.LocalGet,
+                .. comparand, equal,
+                WasmOpcodes.If, WasmOpcodes.LocalGet, WasmOpcodes.LocalGet, store, WasmOpcodes.End,
+                WasmOpcodes.LocalGet, .. result, WasmOpcodes.LocalSet,
+            ],
+            ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions().Select(instruction => instruction.Opcode));
+    }
+
+    [Theory]
     [InlineData(CliValueKind.ValueType)]
     public void CompareExchangeRejectsUnsupportedValueKindsBeforeEmission(CliValueKind kind)
     {
@@ -149,8 +207,7 @@ public sealed class AtomicInstructionEmitterTests
         var emitter = ThroughContract(new AtomicInstructionEmitter(
             new RecordingLayoutProvider(),
             CreateTypeOperands(new FakeProgram()),
-            exceptions,
-            addresses,
+            new NullDereferenceCheckEmitter(exceptions, addresses),
             new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(new RecordingLayoutProvider()))));
         var request = CreateInstructionRequest(
             CilOperation.CompareExchange,

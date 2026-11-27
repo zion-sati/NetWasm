@@ -20,6 +20,7 @@ using NetWasm.Compiler.Analysis.StaticArrays;
 using NetWasm.Compiler.Analysis.DynamicCasts;
 using NetWasm.Compiler.Analysis.Reachability;
 using NetWasm.Compiler.ControlFlow;
+using NetWasm.Compiler.Diagnostics;
 
 namespace NetWasm.Compiler.Analysis;
 
@@ -52,7 +53,9 @@ internal sealed class WholeProgramAnalyzerFactory(
     IReachabilityClosureObserver reachabilityClosureObserver,
     IReachabilityProgressObserver reachabilityProgressObserver,
     ITypeClassifierFactory typeClassifiers,
-    IControlFlowGraphBuilderFactory graphBuilders) : IWholeProgramAnalyzerFactory
+    IControlFlowGraphBuilderFactory graphBuilders,
+    IAnalysisStepRecorder steps,
+    ICompilerMemoryReleaser memory) : IWholeProgramAnalyzerFactory
 {
     public IWholeProgramAnalyzer Create(
         MetadataCompilationSnapshot metadata,
@@ -72,7 +75,9 @@ internal sealed class WholeProgramAnalyzerFactory(
         IRuntimeIntrinsicRegistry intrinsics,
         WasmOptimizationSettings optimizationSettings,
         PlatformWorldCapabilities world,
-        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null)
+        ImmutableHashSet<EntityKey>? inliningExcludedCallers = null,
+        bool reportsReceiverFlow = false,
+        EntityKey? receiverFlowAuditFailure = null)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(typeRepository);
@@ -116,6 +121,8 @@ internal sealed class WholeProgramAnalyzerFactory(
             baseTypeIdentities, implementedInterfaces, methodBodies, methodInstances, methodImplementations, symbols,
             intrinsics, optimizationSettings, world, inliningExcludedCallers);
         var baseTypes = parts.BaseTypes;
+        var typeFactsClosure = new RuntimeTypeFactsClosurePlanner(
+            baseTypes, typeDefinitions, typeIdentities, implementedInterfaces);
         var relationships = parts.Relationships;
         var relationshipKeys = parts.RelationshipKeys;
         var delegateTypeRecognizer = parts.DelegateTypeRecognizer;
@@ -138,6 +145,10 @@ internal sealed class WholeProgramAnalyzerFactory(
         // follows the reductions' rewrites, which can change the program's run-time types: each round lowers the query
         // again.
         growing.Add(parts.RuntimeTypeAttributeQueries);
+        // Correctness too: a lowered method's await of a virtual or interface call asks the override that runs to take
+        // the call directly, and every override it reaches that is not lowered declines the request as it starts.
+        growing.Add(new RuntimeAsync.VirtualDirectCallProgramReducer(typeFinder, methodRepository, delegateTypeRecognizer,
+            intrinsics));
         // Correctness too: a program that allocates a class implementing IDynamicInterfaceCastable has its interface
         // casts, array stores and calls ask such an object, as .NET's runtime does.
         if (metadata.Types.FirstOrDefault(type => type.FullName == "System.Runtime.InteropServices.IDynamicInterfaceCastable" &&
@@ -194,6 +205,24 @@ internal sealed class WholeProgramAnalyzerFactory(
                     new KnownSizeRewriter(calls, world.NativeIntegerSize),
                     ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
                 ])));
+            // A virtual call nothing the program allocates implements throws.
+            reducers.Add(new UnimplementedVirtualCallProgramReducer(delegateTypeRecognizer,
+                new MethodSpecializer([ConstantBranchFoldingFactory.Create(graphBuilders.Create())])));
+            // GetType() of a value the program allocates one type for names that type.
+            reducers.Add(new SoleAllocatedTypeProgramReducer(relationships,
+                new MethodSpecializer([ConstantBranchFoldingFactory.Create(graphBuilders.Create())])));
+            // The same fact about every write answers whether the program can change an ambient context, which decides
+            // whether a direct runtime-async call needs its callee's catch.
+            reducers.Add(new RuntimeAsync.ContextChangeFactProgramReducer(
+                new StaticFieldWriteCollector(fieldRepository),
+                typeFinder,
+                fieldRepository,
+                methodRepository,
+                new MethodSpecializer(
+                [
+                    ConstantCalls(),
+                    ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
+                ])));
         }
         // Only optimizations analyze bodies again so often that every analysis is worth keeping: a compile without one
         // keeps no memo, as before, and analyzes again only if a run-time Type query needs another round.
@@ -230,6 +259,8 @@ internal sealed class WholeProgramAnalyzerFactory(
             symbols,
             genericConstraints);
         var objectDispatchSharing = new ObjectDispatchSharing(optimizationSettings.ObjectDispatch);
+        var exportFailureRooter = new JavaScriptExportFailureRooter(
+            new JavaScriptConversionResolver(typeFinder, methodRepository, methodInstances, symbols));
         var programBuilder = new RequiredTypeDependencyProgramBuilder(programBuilders.Create(
             allocationCapabilities.Create(
                 typeRepository,
@@ -239,7 +270,8 @@ internal sealed class WholeProgramAnalyzerFactory(
                 typeClassifiers.Create(metadata)),
             byRefEffects.Create(methodRepository, intrinsics),
             delegateBindingPlanners.Create(relationships),
-            objectDispatchSharing),
+            objectDispatchSharing,
+            new DispatchSiteTargetSelector(relationships, relationshipKeys)),
             new RequiredTypeDependencyValidator(typeDefinitions, baseTypeIdentities, implementedInterfaces, genericConstraints),
             typeIdentities, new CompilerDiagnosticDependencyPathBinder());
         var dispatchTargetResolver = dispatchTargets.Create(
@@ -252,6 +284,9 @@ internal sealed class WholeProgramAnalyzerFactory(
             symbols,
             relationships,
             baseTypes);
+        var receiverFlowServices = new ReceiverFlow.ReceiverFlowServices(calls, types, fieldRepository,
+            delegateTypeRecognizer, dispatchSiteKeys, relationships, intrinsics,
+            new ReceiverFlow.RuntimeWrittenFields(typeRepository));
         var closure = new ReachabilityClosureBuilder(
             new ReachabilitySessionFactory(
                 ledgers,
@@ -278,11 +313,13 @@ internal sealed class WholeProgramAnalyzerFactory(
                 typeDefinitions,
                 typeFinder,
                 typeIdentities,
-                typeRepository),
+                typeRepository,
+                new EffectFreeTypeInitializerClassifier(new CalleeMethodBodyReader(methodBodies), fieldRepository)),
             new ReachabilityRootSeeder(methodRepository, typeDefinitions, typeIdentities, typeFinder),
             new ReachabilityQueueDrainer(
-                new ReachableMethodApplier(typeIdentities),
-                new ReachabilityImportApplier(typeIdentities),
+                new ReachableMethodApplier(typeIdentities,
+                    new JavaScriptErrorConstructorRecorder(typeFinder, methodRepository, exportFailureRooter)),
+                new ReachabilityImportApplier(typeIdentities, new JavaScriptExportBoundaryRecorder(exportFailureRooter)),
                 dispatchTargetResolver,
                 managedCallSites,
                 new CompilerDiagnosticProvenanceBinder(),
@@ -295,7 +332,9 @@ internal sealed class WholeProgramAnalyzerFactory(
                     delegateTypeRecognizer,
                     new RuntimeIntrinsicTypeRootPlanner(intrinsics, nullableTypes, typeDefinitions,
                         new ArrayCreationRootPlanner(typeDefinitions),
-                        new StructureMarshallingClosure(typeDefinitions, fieldRepository, baseTypes)),
+                        new StructureMarshallingClosure(typeDefinitions, fieldRepository, baseTypes),
+                        new SharedArrayShapeResolver(typeFinder)),
+                    new SharedArrayTypeOfResolver(typeFinder, methodRepository, methodInstances, symbols),
                     typeDefinitions,
                     typeIdentities,
                     new ObjectArrayDelegateAdapterPlanner(
@@ -305,7 +344,8 @@ internal sealed class WholeProgramAnalyzerFactory(
                         typeDefinitions,
                         methodRepository,
                         methodInstances,
-                        symbols)),
+                        symbols),
+                    steps),
                 new MemberReachabilityExpander(
                     new MemberDescriptorPlanner(new MetadataPropertyAccessorResolver(
                         [.. metadata.Assemblies.SelectMany(assembly =>
@@ -322,15 +362,30 @@ internal sealed class WholeProgramAnalyzerFactory(
                         typeDefinitions),
                     dispatchTargetResolver,
                     new DispatchTargetBodyClassifier(intrinsics)),
-                new TypeFactsReachabilityExpander(
-                    new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions, typeIdentities),
-                    typeIdentities)),
+                new TypeFactsReachabilityExpander(typeFactsClosure, typeIdentities),
+                steps),
             programBuilder,
             delegateTypeRecognizer,
             typeTestPlanners.Create(types, relationships, relationshipKeys),
-            new ModuleInitializerOrderer(BuildModuleDependencies(metadata)));
-        return new WholeProgramAnalyzer(new ReducingReachabilityClosureBuilder(closure,
-            new ReachableProgramReductionChain(reducers.ToImmutable())));
+            new ModuleInitializerOrderer(BuildModuleDependencies(metadata)),
+            steps,
+            memory,
+            new ReceiverFlow.ClosureReceiverFlowFactory(receiverFlowServices,
+                optimizationSettings.ReceiverFlowDispatch, failOnUnreachedBodies: receiverFlowAuditFailure is not null));
+        IReachabilityClosureBuilder reduced = new ReducingReachabilityClosureBuilder(closure,
+            new ReachableProgramReductionChain(reducers.ToImmutable()),
+            steps,
+            memory);
+        // The queries the reductions leave to their run-time paths are known once the program settles.
+        reduced = new Attributes.UnplannedAttributeQueryClosureBuilder(reduced, parts.UnplannedAttributeQueries);
+        if (reportsReceiverFlow || receiverFlowAuditFailure is not null)
+        {
+            reduced = new ReceiverFlow.ReceiverFlowReportingClosureBuilder(reduced,
+                new ReceiverFlow.ReceiverFlowAnalyzer(receiverFlowServices),
+                steps,
+                receiverFlowAuditFailure);
+        }
+        return new WholeProgramAnalyzer(reduced);
     }
 
     internal static AnalysisConcurrency SelectConcurrency(

@@ -48,9 +48,7 @@ public sealed class JsonHostToolsPackageManifestReader : IHostToolsPackageManife
                 roles.ToImmutable(),
                 files.ToImmutable())
             {
-                WasmToolsVersion = upstream.TryGetProperty("wasmTools", out var wasmTools)
-                    ? wasmTools.GetString()
-                    : null,
+                WasmToolsVersion = upstream.GetProperty("wasmTools").GetString(),
             };
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException)

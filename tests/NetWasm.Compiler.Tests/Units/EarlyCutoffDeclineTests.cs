@@ -153,8 +153,21 @@ public sealed class EarlyCutoffDeclineTests
         }
         """;
 
+    // A generic virtual call, dispatched by receiver flow.
+    private const string Flowed = """
+        public abstract class Shape { public abstract T Echo<T>(T value); }
+        public sealed class Square : Shape { public override T Echo<T>(T value) => value; }
+        public static class EntryPoint
+        {
+            private static readonly Shape Value = new Square();
+            public static int Run(int input) => Value.Echo(input) + 1;
+        }
+        """;
+
     public static TheoryData<string, string, string, string> Declines => new()
     {
+        { "flow", Flowed, Flowed.Replace("+ 1", "+ 2", StringComparison.Ordinal),
+            "[UnitCutoff]EntryPoint::0x06000005 has a call dispatched by receiver flow" },
         // The edit no longer calls a method it called.
         { "contribution", Plain, Plain.Replace("Twice(input) + 1", "input + 1", StringComparison.Ordinal),
             $"{Run} changed what it adds to the program" },

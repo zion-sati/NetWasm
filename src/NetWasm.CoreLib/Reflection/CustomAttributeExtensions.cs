@@ -19,7 +19,7 @@ public static partial class CustomAttributeExtensions
         Type attributeType,
         bool inherit) => RuntimeCustomAttributes.GetOne(
             TypeTarget(element),
-            attributeType,
+            AttributeFilter(attributeType),
             inherit);
 
     public static T? GetCustomAttribute<T>(this MemberInfo element)
@@ -49,7 +49,7 @@ public static partial class CustomAttributeExtensions
         Type attributeType,
         bool inherit) => RuntimeCustomAttributes.GetMany(
             TypeTarget(element),
-            attributeType,
+            AttributeFilter(attributeType),
             inherit);
 
     public static IEnumerable<T> GetCustomAttributes<T>(this MemberInfo element)
@@ -70,7 +70,7 @@ public static partial class CustomAttributeExtensions
         Type attributeType,
         bool inherit) => RuntimeCustomAttributes.IsDefined(
             TypeTarget(element),
-            attributeType,
+            AttributeFilter(attributeType),
             inherit);
 
     internal static Attribute[] GetCustomAttributesArray(
@@ -78,7 +78,7 @@ public static partial class CustomAttributeExtensions
         Type attributeType,
         bool inherit) => RuntimeCustomAttributes.GetMany(
             TypeTarget(element),
-            attributeType,
+            AttributeFilter(attributeType),
             inherit);
 
     private static Type TypeTarget(MemberInfo element)
@@ -86,6 +86,18 @@ public static partial class CustomAttributeExtensions
         ArgumentNullException.ThrowIfNull(element);
         return element as Type ?? throw new PlatformNotSupportedException(
             "Custom attribute queries are supported only for statically bounded type targets.");
+    }
+
+    // As upstream's Attribute statics check it (the extensions call them): a filter neither Attribute nor derived from it
+    // is an ArgumentException.
+    private static Type AttributeFilter(Type attributeType)
+    {
+        ArgumentNullException.ThrowIfNull(attributeType);
+        if (!attributeType.IsSubclassOf(typeof(Attribute)) && attributeType != typeof(Attribute))
+        {
+            throw new ArgumentException(System.SR.Argument_MustHaveAttributeBaseClass);
+        }
+        return attributeType;
     }
 
     private static PlatformNotSupportedException UnsupportedUnfiltered() => new(

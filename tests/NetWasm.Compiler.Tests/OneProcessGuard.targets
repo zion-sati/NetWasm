@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    Every test here compiles a whole program, so one test process running the project's tests (in parallel, as xUnit
+    does) fragments its large object heap until the GC collects back to back, and runs far slower than several
+    processes. `dotnet test` therefore refuses a run with no filter: eng/run-compiler-tests-sharded.py runs the
+    project, or a filter's selection, in isolated duration-balanced processes. A run with a filter, a listing, and a run
+    with NetWasmTestsInOneProcess=true (which the runner's own processes set) go ahead.
+  -->
+  <Target Name="NetWasmRefuseOneProcessRun"
+          BeforeTargets="VSTest"
+          Condition="'$(NetWasmTestsInOneProcess)' != 'true' and '$(VSTestListTests)' != 'true' and '$(VSTestTestCaseFilter)' == ''">
+    <Error Code="NWTEST001"
+           Text="NetWasm.Compiler.Tests does not run as one test process: every test compiles a whole program, and one process running them all fragments its heap until the GC stalls. Run the project in isolated processes with python3 eng/run-compiler-tests-sharded.py (add --filter to select tests), or select a focused set with dotnet test --filter. -p:NetWasmTestsInOneProcess=true runs it in one process anyway." />
+  </Target>
+</Project>

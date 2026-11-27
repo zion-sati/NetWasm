@@ -437,7 +437,7 @@ public sealed class ExactReceiverDevirtualizerTests
     {
         var fixture = new Fixture(Allocated());
         var graphs = new ControlFlowGraphBuilderFactory().Create();
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
 
         Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(null!, fixture, fixture, fixture, graphs, fixture, dominance, true));
         Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, null!, fixture, fixture, graphs, fixture, dominance, true));
@@ -521,7 +521,7 @@ public sealed class ExactReceiverDevirtualizerTests
             .ToImmutableDictionary(step => step.Offset, step => step.Stack);
 
         public CilMethodBody Rewrite() => new ExactReceiverDevirtualizer(this, this, this, this,
-            new ControlFlowGraphBuilderFactory().Create(), this, new ControlFlowDominanceAnalyzer(), Enabled)
+            new ControlFlowGraphBuilderFactory().Create(), this, new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()), Enabled)
             .Rewrite(Body, KnownStacks ? Stacks : ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty);
 
         public MethodInstanceModel? Resolve(CilInstruction instruction) =>

@@ -14,7 +14,8 @@ internal interface IUnhandledFailureDiagnosticFactory
 
 // The diagnostic for a failure no compiler stage reported. Reading inputs and writing outputs fail with I/O and access
 // errors, the host's failures (NW1014); any other exception is a compiler defect (NW1011), so its type is kept and it
-// is not mistaken for a missing input or an unwritable output.
+// is not mistaken for a missing input or an unwritable output. A defect outside any method's compilation (loading
+// metadata, say) names no method, so its stack trace and inner exceptions come with it, as csc prints them for a crash.
 internal sealed class UnhandledFailureDiagnosticFactory : IUnhandledFailureDiagnosticFactory
 {
     public CompilerDiagnostic Create(Exception exception)
@@ -23,6 +24,6 @@ internal sealed class UnhandledFailureDiagnosticFactory : IUnhandledFailureDiagn
         return exception is IOException or UnauthorizedAccessException
             ? new CompilerDiagnostic(DiagnosticCode.HostFailure, exception.Message)
             : new CompilerDiagnostic(DiagnosticCode.CompilerInvariant,
-                $"the compiler failed with {exception.GetType().FullName}: {exception.Message}");
+                $"the compiler failed with {exception}");
     }
 }

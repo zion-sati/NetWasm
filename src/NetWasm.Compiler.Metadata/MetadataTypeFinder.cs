@@ -56,8 +56,12 @@ internal sealed class MetadataTypeFinder : ITypeFinder
             return matches[0];
         }
 
+        // Name the assemblies that define it, so a duplicate shows where each copy comes from.
         throw new CompilerException(new CompilerDiagnostic(
             DiagnosticCode.AssemblyResolution,
-            $"type '{fullName}' was not found uniquely"));
+            matches.IsDefaultOrEmpty
+                ? $"type '{fullName}' was not found uniquely"
+                : $"type '{fullName}' was not found uniquely: defined in " +
+                  string.Join(", ", matches.Select(type => type.Key.Assembly.Name))));
     }
 }

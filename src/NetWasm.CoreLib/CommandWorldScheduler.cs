@@ -9,15 +9,17 @@ namespace System.Runtime.InteropServices
 
     // The event loop of a command. An asynchronous Main is a callback-lifted wasi:cli/run: its
     // start and each callback run the ready work, then report EXIT once Main's task has completed
-    // or WAIT on the loop's waitable set, and the host delivers that set's events. A delay is an
-    // async-lowered wasi:clocks/monotonic-clock wait-for subtask; its work becomes ready when the
-    // subtask returns. The loop's own timers (its collection's) wait beside the program's work but
-    // never keep the loop waiting.
+    // or WAIT on the loop's waitable set, and the host delivers that set's events. The program's
+    // delays wait in one queue behind one async-lowered wasi:clocks/monotonic-clock wait-for subtask
+    // for the earliest (CommandWorldDelays); a delay's work becomes ready once its deadline has
+    // passed. The loop's own timers (its collection's) wait beside the program's work, each its own
+    // subtask, but never keep the loop waiting.
     internal sealed class CommandWorldScheduler : IPlatformScheduler, IEventLoopTimers
     {
         private const int Returned = 2;
         private const int EventNone = 0;
         private const int CallbackExit = 0;
+        private const int CallbackYield = 1;
         private const int CallbackWait = 2;
         private const int SubtaskEvent = 1;
         private const int LastCopyEvent = 5;
@@ -37,6 +39,11 @@ namespace System.Runtime.InteropServices
         private readonly IWasiWaitableJoinInvoker _join;
         private readonly IWasiSubtaskCancelInvoker _cancel;
         private readonly IWasiSubtaskDropInvoker _drop;
+        // The program's delays, made with its first one, so a program that sets none carries no queue; and what the
+        // loop does before it returns to its host, which the queue sets when it is made (CommandWorldDelays.Disarm).
+        private CommandWorldDelays? _delays;
+        private ICommandWorldTurnHook? _beforeHostTurn;
+        private ICommandWorldBatch _batch = UnboundedBatch.Instance;
         private int _set;
         private int _workSinceFinalizers;
 
@@ -60,11 +67,18 @@ namespace System.Runtime.InteropServices
             _collection = collection ?? throw new ArgumentNullException();
         }
 
-        internal int PendingCount => _ready.Count + _waiting.Count;
+        // The work still to run: ready work, what waits on the host (the delays' armed wait aside) and the delays.
+        internal int PendingCount => _ready.Count + _waiting.Count - (_delays?.Armed ?? 0) + (_delays?.Count ?? 0);
 
         // Whether a JavaScript host runs the loop and can still complete a task through a
         // JavaScript promise the program awaits, with no subtask or copy pending.
         internal bool HostCanComplete { get; init; }
+
+        // How long a turn runs ready work: 30 ms where a JavaScript host runs the loop, else until none is left.
+        internal ICommandWorldBatch Batch
+        {
+            init => _batch = value ?? throw new ArgumentNullException();
+        }
 
         public IPlatformSchedule Schedule(Action continuation, ulong delayNanoseconds)
         {
@@ -75,7 +89,29 @@ namespace System.Runtime.InteropServices
 
             return delayNanoseconds == 0
                 ? Track(continuation, Returned)
-                : Track(continuation, _clock.WaitFor(delayNanoseconds));
+                : Delays().Add(continuation, delayNanoseconds);
+        }
+
+        private CommandWorldDelays Delays()
+        {
+            if (_delays is null)
+            {
+                // The clock that waits also reads the time the deadlines are kept on.
+                _delays = new CommandWorldDelays(this, (IWasiMonotonicNowInvoker)_clock, _clock);
+                _beforeHostTurn = _delays;
+            }
+
+            return _delays;
+        }
+
+        public IPlatformSchedule Post(Action continuation)
+        {
+            if (continuation == null)
+            {
+                throw new ArgumentNullException();
+            }
+
+            return Track(continuation, Returned);
         }
 
         // A timer of the loop's own: like a delay, but the loop ends without waiting for it, and
@@ -215,10 +251,31 @@ namespace System.Runtime.InteropServices
 
         // A task that has returned its result but still has copies or subtasks pending waits for
         // them: WAIT on the waitable set while any is pending, else EXIT.
-        internal int AwaitPending() => _waiting.Count == 0 ? CallbackExit : CallbackWait | (_set << 4);
+        internal int AwaitPending()
+        {
+            _beforeHostTurn?.BeforeHostTurn();
+            if (_ready.Count != 0)
+            {
+                return YieldToHost();
+            }
+
+            return _waiting.Count == 0 ? CallbackExit : CallbackWait | (_set << 4);
+        }
+
+        // The turn's batch ended with work still ready: the loop reports YIELD, with its waitable set if it has one,
+        // and the host calls back after a turn of its own event loop, with an event of that set if one is ready, and
+        // the loop continues its queue.
+        private int YieldToHost() => CallbackYield | (_set << 4);
 
         private int Report(Task task)
         {
+            _beforeHostTurn?.BeforeHostTurn();
+            // Work the batch left ready runs before the loop ends, as it would have in one unbounded turn.
+            if (_ready.Count != 0)
+            {
+                return YieldToHost();
+            }
+
             if (task.IsCompleted)
             {
                 _collection.LoopEnded();
@@ -243,12 +300,17 @@ namespace System.Runtime.InteropServices
             return CallbackWait | (_set << 4);
         }
 
-        // Runs every work item that is ready, including work that ready work schedules: a callback
-        // must not report WAIT while work is ready, since no event would wake it.
+        // Runs the ready work, including work that ready work schedules, until none is left or the turn's batch ends;
+        // the loop then reports YIELD, never WAIT, while work is ready, since no event would wake it. As upstream's
+        // dispatch, the batch is tested after each item, so every turn runs at least one: a host that stalls the
+        // module past the quantum before its first item still gets progress.
         private void RunReady()
         {
-            while (_ready.Count != 0)
+            _batch.Begin();
+            var first = true;
+            while (_ready.Count != 0 && (first || _batch.Continues()))
             {
+                first = false;
                 var work = _ready.Dequeue();
                 if (work.TryStart())
                 {
@@ -268,8 +330,8 @@ namespace System.Runtime.InteropServices
             }
         }
 
-        // Cancelling a delay cancels and drops its subtask; cancelling a copy only stops waiting
-        // for it, since the stream or future's owner cancels or drops the copy.
+        // Cancelling a subtask's work cancels and drops the subtask; cancelling a copy only stops
+        // waiting for it, since the stream or future's owner cancels or drops the copy.
         internal void Cancel(CommandWorldWork work)
         {
             // Work that became ready no longer waits, and its waitable may name newer work.
@@ -325,6 +387,9 @@ namespace System.Runtime.InteropServices
     internal sealed class UnpumpedScheduler : IPlatformScheduler
     {
         public IPlatformSchedule Schedule(Action continuation, ulong delayNanoseconds) =>
+            continuation == null ? throw new ArgumentNullException() : new UnpumpedWork();
+
+        public IPlatformSchedule Post(Action continuation) =>
             continuation == null ? throw new ArgumentNullException() : new UnpumpedWork();
 
         private sealed class UnpumpedWork : IPlatformSchedule

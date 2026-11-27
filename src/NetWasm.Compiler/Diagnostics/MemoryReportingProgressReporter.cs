@@ -17,12 +17,13 @@ internal sealed class MemoryReportingProgressReporter : ICompilerProgressReporte
 
     private const double Gigabyte = 1024d * 1024 * 1024;
 
-    private static readonly Action<ILogger, double, double, double, double, Exception?> LogMemory =
-        LoggerMessage.Define<double, double, double, double>(
+    private static readonly Action<ILogger, double, double, double, double, double, double, Exception?> LogMemory =
+        LoggerMessage.Define<double, double, double, double, double, double>(
             LogLevel.Information,
             new EventId(4003, "CompilerMemory"),
             "Memory: {WorkingSet:F2} GB working set, {PeakWorkingSet:F2} GB peak, " +
-            "{ManagedHeap:F2} GB managed heap ({Elapsed:F1}s elapsed)");
+            "{ManagedHeap:F2} GB managed heap, {Committed:F2} GB committed, {Fragmented:F2} GB fragmented " +
+            "({Elapsed:F1}s elapsed)");
 
     private readonly ICompilerProgressReporter _inner;
     private readonly ICompilerMemoryReader _memory;
@@ -84,7 +85,8 @@ internal sealed class MemoryReportingProgressReporter : ICompilerProgressReporte
             if (!_logger.IsEnabled(LogLevel.Information)) return;
             var memory = _memory.Read();
             LogMemory(_logger, memory.WorkingSet / Gigabyte, memory.PeakWorkingSet / Gigabyte,
-                memory.ManagedHeap / Gigabyte, _timeProvider.GetElapsedTime(_startedAt).TotalSeconds, null);
+                memory.ManagedHeap / Gigabyte, memory.Committed / Gigabyte, memory.Fragmented / Gigabyte,
+                _timeProvider.GetElapsedTime(_startedAt).TotalSeconds, null);
         }
     }
 

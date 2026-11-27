@@ -38,6 +38,7 @@ export function createRawComponentModel(options) {
   let failure = null;
   let closed = false;
   let woken = false;
+  const hostTurn = createHostTurn();
   const waiters = new Set();
   const contexts = [0, 0];
 
@@ -432,7 +433,8 @@ export function createRawComponentModel(options) {
   }
 
   // Runs a callback-lifted export to completion: each WAIT hands the callback the next
-  // event of the set the export waits on.
+  // event of the set the export waits on. A YIELD waits for a turn of the host's own event
+  // loop, then hands the callback an event of the set it names, if one is ready, or none.
   async function drive(code, callback) {
     for (;;) {
       throwIfFailed();
@@ -443,8 +445,8 @@ export function createRawComponentModel(options) {
       if (kind === callbackWait) event = await nextEvent(set);
       else if (kind === callbackPoll) event = takeEvent(set) ?? { code: eventNone, index: 0, payload: 0 };
       else if (kind === callbackYield) {
-        await new Promise(resolve => setTimeout(resolve, 0));
-        event = { code: eventNone, index: 0, payload: 0 };
+        await hostTurn();
+        event = (set === 0 ? null : takeEvent(set)) ?? { code: eventNone, index: 0, payload: 0 };
       } else {
         throw new WebAssembly.RuntimeError(`invalid callback code ${code}`);
       }
@@ -500,6 +502,34 @@ export function createRawComponentModel(options) {
       table.clear();
     },
   });
+}
+
+// A turn of the host's event loop, after which the page has rendered, handled input and run its
+// timers if they were due: Node.js's setImmediate, else a MessageChannel message. Some hosts
+// (WebKit's workers) run every pending message before their timers, so at least once a frame the
+// turn is a zero-delay timer instead. A timer for every turn would be clamped to 4 ms once timers
+// nest, and scheduler.yield() runs its continuation ahead of the page's other tasks, so a loop of
+// yields would starve the page's timers.
+const timerTurnMilliseconds = 16;
+
+export function createHostTurn(host = globalThis, now = () => performance.now()) {
+  if (typeof host.setImmediate === "function") return () => new Promise(resolve => host.setImmediate(resolve));
+  if (typeof host.MessageChannel === "function") {
+    const channel = new host.MessageChannel();
+    const turns = [];
+    channel.port1.onmessage = () => turns.shift()?.();
+    let timerTurnAt = now();
+    return () => new Promise(resolve => {
+      if (now() - timerTurnAt >= timerTurnMilliseconds) {
+        timerTurnAt = now();
+        host.setTimeout(resolve, 0);
+        return;
+      }
+      turns.push(resolve);
+      channel.port2.postMessage(null);
+    });
+  }
+  return () => new Promise(resolve => host.setTimeout(resolve, 0));
 }
 
 function readCodec(codec) {

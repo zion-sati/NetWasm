@@ -311,7 +311,7 @@ public sealed class ReceiverProverTests
     }
 
     private static ConstructedReceiverPlanner Planner(Calls calls) =>
-        new(new ControlFlowDominanceAnalyzer(), new StackEffectResolver(calls), calls);
+        new(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()), new StackEffectResolver(calls), calls);
 
     private sealed class Calls : ICalledMethodResolver
     {

@@ -65,6 +65,8 @@ internal static class RenumberedInstructions
         for (var index = 0; index < body.Instructions.Length; index++)
         {
             var source = body.Instructions[index].SourceOffset;
+            // What an instruction becomes reports its line, as it keeps where it came from.
+            var line = body.Instructions[index].SequencePointOffset;
             var listStart = rewritten.Count;
             foreach (var instruction in replacements[index])
             {
@@ -74,6 +76,7 @@ internal static class RenumberedInstructions
                         : Operand(instruction.Operand, starts))
                 {
                     OriginalOffset = source,
+                    SequencePointOffset = instruction.SequencePointOffset ?? line,
                 });
             }
         }

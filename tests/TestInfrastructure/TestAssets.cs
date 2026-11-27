@@ -199,6 +199,21 @@ public sealed class TestAssets : IDisposable
         return output;
     }
 
+    // The SDK compiler's assembly with its portable PDB, for a test that reads the sequence points.
+    public string CompileSourceWithCompilerAndPdb(
+        string assemblyName,
+        string source,
+        IReadOnlyList<string>? features = null,
+        bool allowUnsafe = false)
+    {
+        var sourcePath = Path.Combine(Directory, assemblyName + ".cs");
+        var output = Path.Combine(Directory, assemblyName + ".dll");
+        File.WriteAllText(sourcePath, source);
+        Compile(Root, CoreLib, output, [sourcePath], allowUnsafe, optimize: false, [], RepositorySdkVersion, "latest",
+            features, emitPortablePdb: true);
+        return output;
+    }
+
     public string CompileSourceWithDesktopFramework(
         string assemblyName,
         string source,

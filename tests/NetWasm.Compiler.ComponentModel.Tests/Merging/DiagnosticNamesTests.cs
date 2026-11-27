@@ -5,13 +5,19 @@ using NetWasm.Compiler.ComponentModel.Merging;
 
 namespace NetWasm.Compiler.ComponentModel.Tests.Merging;
 
-// NETWASM_KEEP_NAMES asks for names with any value but an empty one.
+// Debug information keeps names, and NETWASM_KEEP_NAMES asks for them with any value but an empty one.
 public sealed class DiagnosticNamesTests
 {
     [Theory]
-    [InlineData(null, false)]
-    [InlineData("", false)]
-    [InlineData("1", true)]
-    [InlineData("0", true)]
-    public void AnyNonEmptyValueKeepsNames(string? value, bool kept) => Assert.Equal(kept, DiagnosticNames.KeptFor(value));
+    [InlineData(null, false, false)]
+    [InlineData("", false, false)]
+    [InlineData("1", false, true)]
+    [InlineData("0", false, true)]
+    [InlineData(null, true, true)]
+    [InlineData("1", true, true)]
+    public void DebugInformationOrAnyNonEmptyValueKeepsNames(string? value, bool debugInformation, bool kept) =>
+        Assert.Equal(kept, DiagnosticNames.KeptFor(value, debugInformation));
+
+    [Fact]
+    public void DebugInformationKeepsNamesWhateverTheEnvironmentSays() => Assert.True(DiagnosticNames.KeptWith(true));
 }

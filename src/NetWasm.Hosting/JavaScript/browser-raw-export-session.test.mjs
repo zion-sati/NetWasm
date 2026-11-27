@@ -41,7 +41,10 @@ export function createAdapter(request) {
 }
 `);
 const runtimeLayout = encoder.encode(JSON.stringify({
-  schemaVersion: 2,
+  schemaVersion: 3,
+  runtimeFeatures: [],
+  nativeImports: [],
+  importModules: [],
   target: "wasm32",
   applicationStaticDataEnd: 0,
   managedExecutableEntryPoint: null,

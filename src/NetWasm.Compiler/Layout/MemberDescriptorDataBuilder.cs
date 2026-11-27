@@ -61,12 +61,9 @@ internal sealed class MemberDescriptorDataBuilder : IMemberDescriptorDataBuilder
             .OrderBy(value => value.CanonicalName, StringComparer.Ordinal)
             .Select(method =>
             {
-                var typeName = method.Definition.Name is ".ctor" or ".cctor"
-                    ? "System.Reflection.RuntimeConstructorInfo"
-                    : "System.Reflection.RuntimeMethodInfo";
                 return Reserve(
                     method,
-                    _typeFinder.FindType(typeName),
+                    _typeFinder.FindType(MemberDescriptorTypes.Of(method.Definition)),
                     _state.MethodDescriptors,
                     method.CanonicalName);
             })
@@ -75,7 +72,7 @@ internal sealed class MemberDescriptorDataBuilder : IMemberDescriptorDataBuilder
             .OrderBy(value => value.CanonicalName, StringComparer.Ordinal)
             .Select(field => Reserve(
                 field,
-                _typeFinder.FindType("System.Reflection.RuntimeFieldInfo"),
+                _typeFinder.FindType(MemberDescriptorTypes.Field),
                 _state.FieldDescriptors,
                 field.CanonicalName))
             .ToArray();
@@ -83,7 +80,7 @@ internal sealed class MemberDescriptorDataBuilder : IMemberDescriptorDataBuilder
             .OrderBy(value => value.CanonicalName, StringComparer.Ordinal)
             .Select(property => Reserve(
                 property,
-                _typeFinder.FindType("System.Reflection.RuntimePropertyInfo"),
+                _typeFinder.FindType(MemberDescriptorTypes.Property),
                 _state.PropertyDescriptors,
                 property.CanonicalName))
             .ToArray();

@@ -10,6 +10,9 @@
   <ItemGroup>
     <NetWasmJavaScriptModule Include="notifications.mjs" Module="app.host" />
     <NetWasmJavaScriptModule Include="optional.mjs" Module="app.optional" />
+    <NetWasmJavaScriptModule Include="../shared/cells.mjs" Module="app.cells" />
+    <Compile Include="../shared/InteropCells.cs" />
+    <Content Include="../shared/check-cells.mjs" Link="check-cells.mjs" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="index.html;app.mjs" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

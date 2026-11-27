@@ -23,7 +23,8 @@ internal sealed class LocalsArgumentsEmitter(
     IFilterEnvironmentRootEmitter filterEnvironmentRoots,
     IValueCopyEmitter valueCopies,
     IAddressTakenAggregateSynchronizationEmitter aggregateSynchronizations,
-    IArrayMetadataSnapshotEmitter arraySnapshots) :
+    IArrayMetadataSnapshotEmitter arraySnapshots,
+    ILazyRootFrameEmitter lazyRootFrames) :
     InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
@@ -46,6 +47,12 @@ internal sealed class LocalsArgumentsEmitter(
     private void EmitLoadArgument(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
         var index = CilOperandReader.GetIndex(request.Instruction);
+        // An argument in place, forwarded whole to a call that pushes its parameters: nothing here.
+        if (request.Context.ForwardedArgumentLoads.Contains(request.Instruction.Offset))
+        {
+            request.Stack.Add(CliValueKind.ValueType);
+            return;
+        }
         if (TryLoadAuthoritative(request, code, new(RootSourceKind.Argument, index))) return;
         if (TryGetFilterCapture(request.Context, true, index, out var capture))
         {
@@ -102,7 +109,7 @@ internal sealed class LocalsArgumentsEmitter(
             return;
         }
         PushFromLocal(
-            request, code, index + request.Context.ParameterOffset,
+            request, code, request.Context.ArgumentLocal(index),
             argumentTypes.Resolve(request.Header, index));
     }
 
@@ -114,7 +121,7 @@ internal sealed class LocalsArgumentsEmitter(
     {
         if (!selected)
         {
-            EmitLocalGet(code, argumentIndex + request.Context.ParameterOffset);
+            EmitLocalGet(code, request.Context.ArgumentLocal(argumentIndex));
             return;
         }
         if (!request.Context.ValueLayout.ArgumentOffsets.TryGetValue(
@@ -130,6 +137,13 @@ internal sealed class LocalsArgumentsEmitter(
     private void EmitLoadLocal(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
         var index = CilOperandReader.GetIndex(request.Instruction);
+        // The ret returns a lane local's lanes; its load pushes nothing.
+        if (request.Context.ReturnLanes?.WholeLoads.Contains(request.Instruction.Offset) == true ||
+            request.Context.ArgumentLanes.WholeLoads.ContainsKey(request.Instruction.Offset))
+        {
+            request.Stack.Add(CliValueKind.ValueType);
+            return;
+        }
         if (TryLoadAuthoritative(request, code, new(RootSourceKind.Local, index))) return;
         if (request.Context.TransientAggregatePromotions.Plan.LocalTransferOffsets.Contains(
                 request.Instruction.Offset))
@@ -200,6 +214,12 @@ internal sealed class LocalsArgumentsEmitter(
     private void EmitStoreLocal(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
         var localIndex = CilOperandReader.GetIndex(request.Instruction);
+        // A call's result in lanes is stored nowhere; its reads take the lanes.
+        if (request.Context.CallResultLanes.Stores.Contains(request.Instruction.Offset))
+        {
+            request.Stack.RemoveAt(request.Stack.Count - 1);
+            return;
+        }
         if (TryStoreAuthoritative(request, code, new(RootSourceKind.Local, localIndex))) return;
         var slot = request.Stack.Count - 1;
         if (request.Context.TransientAggregatePromotions.Plan.LocalTransferOffsets.Contains(
@@ -266,7 +286,7 @@ internal sealed class LocalsArgumentsEmitter(
         var argumentIndex = CilOperandReader.GetIndex(request.Instruction);
         if (TryStoreAuthoritative(request, code, new(RootSourceKind.Argument, argumentIndex)) ||
             TryStoreAuthoritative(request, code, new(RootSourceKind.ManagedAddressArgument, argumentIndex))) return;
-        var targetLocal = argumentIndex + request.Context.ParameterOffset;
+        var targetLocal = request.Context.ArgumentLocal(argumentIndex);
         var type = argumentSignatureTypes.Resolve(request.Header, argumentIndex);
         if (TryGetFilterCapture(request.Context, true, argumentIndex, out var capture))
         {
@@ -319,8 +339,8 @@ internal sealed class LocalsArgumentsEmitter(
         if (!request.Context.AuthoritativeRootSlots.ContainsKey(source)) return false;
         // Nonmoving collection leaves this cache valid. Addressable/captured
         // references are excluded by the storage selector.
-        EmitLocalGet(code, source.Index + (source.Kind == RootSourceKind.Argument
-            ? request.Context.ParameterOffset : request.Context.LocalBase));
+        EmitLocalGet(code, source.Kind == RootSourceKind.Argument
+            ? request.Context.ArgumentLocal(source.Index) : request.Context.LocalBase + source.Index);
         PushLocal(request, code, CliValueKind.ManagedReference);
         return true;
     }
@@ -329,12 +349,27 @@ internal sealed class LocalsArgumentsEmitter(
     {
         if (!request.Context.AuthoritativeRootSlots.TryGetValue(source, out var slot)) return false;
         var top = request.Stack.Count - 1;
+        var variable = (uint)(source.Kind == RootSourceKind.Local
+            ? request.Context.LocalBase + source.Index : request.Context.ArgumentLocal(source.Index));
+        if (request.Context.LazyRootFrame is { } lazy && !lazy.Entered.Contains(request.Instruction.Offset))
+        {
+            // A lazy frame not yet entered on every path: the slot is written only in a frame the method has entered,
+            // whose entry copies the variable's value in.
+            EmitLocalGet(code, GetStackLocal(request.Context, top, request.Stack[top]));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned(variable)));
+            lazyRootFrames.Emit(code, LazyRootFrameStep.Test, request.Context);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+            EmitLocalGet(code, request.Context.RootFrame);
+            EmitLocalGet(code, (int)variable);
+            ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target,
+                checked(slot * layouts.Target.ObjectReferenceSize), layouts.Target.ObjectReferenceSize);
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            request.Stack.RemoveAt(top);
+            return true;
+        }
         EmitLocalGet(code, request.Context.RootFrame);
         EmitLocalGet(code, GetStackLocal(request.Context, top, request.Stack[top]));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee,
-            WasmInstructionOperand.Unsigned((uint)(source.Index +
-                (source.Kind == RootSourceKind.Local
-                    ? request.Context.LocalBase : request.Context.ParameterOffset)))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee, WasmInstructionOperand.Unsigned(variable)));
         ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target,
             checked(slot * layouts.Target.ObjectReferenceSize), layouts.Target.ObjectReferenceSize);
         request.Stack.RemoveAt(top);
@@ -344,6 +379,14 @@ internal sealed class LocalsArgumentsEmitter(
     private void EmitLoadLocalAddress(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
         var localIndex = CilOperandReader.GetIndex(request.Instruction);
+        // A returned local in lanes has no address; its consumers use the lanes.
+        if (request.Context.ReturnLanes?.Addresses.Contains(request.Instruction.Offset) == true ||
+            request.Context.CallResultLanes.Addresses.Contains(request.Instruction.Offset) ||
+            request.Context.ArgumentLanes.Addresses.Contains(request.Instruction.Offset))
+        {
+            request.Stack.Add(CliValueKind.ManagedAddress);
+            return;
+        }
         if (request.Context.TransientAggregatePromotions.Plan.LocalTransferOffsets.Contains(
                 request.Instruction.Offset))
         {
@@ -383,6 +426,12 @@ internal sealed class LocalsArgumentsEmitter(
 
     private void EmitLoadArgumentAddress(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
+        // A field argument read in place has no address; the field load takes its parameter.
+        if (request.Context.FieldArgumentAddresses.Contains(request.Instruction.Offset))
+        {
+            request.Stack.Add(CliValueKind.ManagedAddress);
+            return;
+        }
         var argumentIndex = CilOperandReader.GetIndex(request.Instruction);
         if (TryGetFilterCapture(request.Context, true, argumentIndex, out var capture))
         {
@@ -406,11 +455,9 @@ internal sealed class LocalsArgumentsEmitter(
                 $"IL_{request.Instruction.Offset:x4}: address-taking a scalar argument " +
                 "requires an address spill"));
         }
-        var parameterOffset = (request.Header.MethodInstance?.Signature ??
-                request.Header.Method.Signature).ReturnSignatureType.StackKind ==
-            CliValueKind.ValueType ? 1 : 0;
+        // A struct argument passed by its address holds that address in its parameter.
         PushFromLocal(
-            request, code, argumentIndex + parameterOffset,
+            request, code, request.Context.ArgumentLocal(argumentIndex),
             CliValueKind.ManagedAddress);
     }
 

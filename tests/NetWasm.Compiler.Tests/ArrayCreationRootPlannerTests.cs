@@ -99,7 +99,8 @@ public sealed class ArrayCreationRootPlannerTests
         Assert.Contains(value, plan.RuntimeTypes);
         Assert.DoesNotContain(byrefLike, plan.RuntimeTypes);
         Assert.DoesNotContain(CliTypeIdentity.SzArray(integer), plan.AllocatedTypes);
-        Assert.Throws<ArgumentException>(() => planner.Plan([integer], [1]));
+        Assert.Equal([CliTypeIdentity.Array(integer, 1)], planner.Plan([integer], [1]).AllocatedTypes);
+        Assert.Throws<ArgumentException>(() => planner.Plan([integer], [0]));
         Assert.Throws<ArgumentException>(() => planner.Plan([integer], default));
         Assert.Throws<ArgumentException>(() => planner.Plan(default, [2]));
         Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty, planner.Plan([], [2]));

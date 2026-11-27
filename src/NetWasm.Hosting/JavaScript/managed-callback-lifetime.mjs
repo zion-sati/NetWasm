@@ -6,15 +6,16 @@ import { NetWasmHostError } from "./managed-errors.mjs";
 // A callback passed to an import that returns no JSSubscription belongs to JavaScript, as a delegate passed through
 // .NET's browser runtime does: its managed handle lives until JavaScript collects the function the import received,
 // or ends at once when the import fails. Without a FinalizationRegistry the handle lives as long as the program.
-export function createManagedCallbackLifetime(release, Registry = globalThis.FinalizationRegistry) {
-  if (typeof release !== "function") {
+export function createManagedCallbackLifetime(release, isClosed, Registry = globalThis.FinalizationRegistry) {
+  if (typeof release !== "function" || typeof isClosed !== "function") {
     throw new TypeError("managed callback release is invalid");
   }
-  // A collected function's program may have ended; its handle then has nothing to release.
-  const releaseQuietly = handle => {
-    try { release(handle); } catch { }
+  // A function JavaScript collects after its program ended has no handle left to release; any other failure to
+  // release one is the host's error and is thrown.
+  const releaseCollected = handle => {
+    if (!isClosed()) release(handle);
   };
-  const registry = typeof Registry === "function" ? new Registry(releaseQuietly) : null;
+  const registry = typeof Registry === "function" ? new Registry(releaseCollected) : null;
   return Object.freeze({
     // The function JavaScript receives for one callback. keep() hands its handle to the registry once the import
     // succeeds; drop() stops it calling a handle its failed import released.
@@ -32,6 +33,6 @@ export function createManagedCallbackLifetime(release, Registry = globalThis.Fin
         drop() { live = false; },
       });
     },
-    release: releaseQuietly,
+    release,
   });
 }

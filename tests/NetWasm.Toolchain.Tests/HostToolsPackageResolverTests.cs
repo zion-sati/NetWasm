@@ -24,50 +24,12 @@ public sealed class HostToolsPackageResolverTests
         Assert.Equal("26.7.0", result.NodeVersion);
         Assert.Equal("24.0.0", result.WasmLdVersion);
         Assert.Equal("132", result.BinaryenVersion);
-        Assert.Equal(4, result.Roles.Count);
+        Assert.Equal("1.256.0", result.WasmToolsVersion);
+        Assert.Equal(5, result.Roles.Count);
         Assert.Equal(Path.Combine(Root, "tools", "bin", "node"), result.Roles["node"]);
         Assert.Equal(Path.Combine(Root, "tools", "bin", "nwc"), result.Roles["nwc"]);
-        Assert.Equal(15, fixture.Files.ReadPaths.Count);
-    }
-
-    [Fact]
-    public void ResolvesAnOlderPackageThatCarriesWasmMergeWithoutUsingIt()
-    {
-        var fixture = Fixture.Create("with-legacy-merge");
-
-        var result = fixture.Resolver.Resolve(Request());
-
-        // The copy is verified with the rest of the package; the compiler merges modules itself.
-        Assert.Equal(4, result.Roles.Count);
-        Assert.False(result.Roles.ContainsKey("wasm-merge"));
-        Assert.Contains(Path.Combine(Root, "tools", "bin", "wasm-merge"), fixture.Files.ReadPaths);
-        Assert.Equal(16, fixture.Files.ReadPaths.Count);
-    }
-
-    [Fact]
-    public void ResolvesAnOlderPackageThatCarriesNoCompiler()
-    {
-        var fixture = Fixture.Create("without-compiler");
-
-        var result = fixture.Resolver.Resolve(Request());
-
-        Assert.Equal(3, result.Roles.Count);
-        Assert.False(result.Roles.ContainsKey("nwc"));
-        Assert.Equal(12, fixture.Files.ReadPaths.Count);
-    }
-
-    [Fact]
-    public void ResolvesTheNativeWasmToolsOfAPackageThatCarriesIt()
-    {
-        var fixture = Fixture.Create("with-wasm-tools");
-
-        var result = fixture.Resolver.Resolve(Request());
-
-        Assert.Equal(5, result.Roles.Count);
         Assert.Equal(Path.Combine(Root, "tools", "bin", "wasm-tools"), result.Roles["wasm-tools"]);
-        Assert.Equal("1.256.0", result.WasmToolsVersion);
         Assert.Equal(19, fixture.Files.ReadPaths.Count);
-        Assert.Null(Fixture.Create().Resolver.Resolve(Request()).WasmToolsVersion);
     }
 
     [Fact]
@@ -76,8 +38,8 @@ public sealed class HostToolsPackageResolverTests
         var request = Request("linux-x64");
         var valid = Fixture.Create(rid: "linux-x64");
 
-        Assert.Equal(4, valid.Resolver.Resolve(request).Roles.Count);
-        Assert.Equal(19, valid.Files.ReadPaths.Count);
+        Assert.Equal(5, valid.Resolver.Resolve(request).Roles.Count);
+        Assert.Equal(23, valid.Files.ReadPaths.Count);
         Assert.Throws<InvalidDataException>(() =>
             Fixture.Create("missing-libatomic", "linux-x64").Resolver.Resolve(request));
         Assert.Throws<InvalidDataException>(() =>
@@ -90,7 +52,11 @@ public sealed class HostToolsPackageResolverTests
     [InlineData("wrong-host")]
     [InlineData("bad-tool-version")]
     [InlineData("missing-role")]
+    // Shapes of packages before 0.12: wasm-merge carried, no nwc, no native wasm-tools.
+    [InlineData("with-legacy-merge")]
     [InlineData("legacy-merge-elsewhere")]
+    [InlineData("without-compiler")]
+    [InlineData("without-wasm-tools")]
     [InlineData("compiler-without-notices")]
     [InlineData("missing-notice")]
     [InlineData("duplicate-file")]
@@ -147,7 +113,7 @@ public sealed class HostToolsPackageResolverTests
     }
 
     [Fact]
-    public void JsonReaderReadsTheWasmToolsVersionOfAPackageThatCarriesIt()
+    public void JsonReaderRequiresTheWasmToolsVersion()
     {
         var reader = new JsonHostToolsPackageManifestReader();
         static byte[] Manifest(string wasmTools) => System.Text.Encoding.UTF8.GetBytes(
@@ -157,13 +123,12 @@ public sealed class HostToolsPackageResolverTests
             "\"files\":[{\"path\":\"tools/bin/node\",\"size\":4,\"sha256\":\"00\"}]}");
 
         var carrying = reader.Read(Manifest(",\"wasmTools\":\"1.256.0\""));
-        var older = reader.Read(Manifest(""));
 
         Assert.Equal(("26.7.0", "24.0.0", "132", "1.256.0"),
             (carrying.NodeVersion, carrying.WasmLdVersion, carrying.BinaryenVersion, carrying.WasmToolsVersion));
         Assert.Equal("tools/bin/node", Assert.Single(carrying.Roles).Value);
         Assert.Equal(4, Assert.Single(carrying.Files).Size);
-        Assert.Null(older.WasmToolsVersion);
+        Assert.Throws<InvalidDataException>(() => reader.Read(Manifest("")));
     }
 
     private static HostToolsPackageRequest Request(string rid = "osx-arm64") =>
@@ -204,8 +169,7 @@ public sealed class HostToolsPackageResolverTests
             {
                 roles = roles.Remove("nwc");
             }
-            var carriesWasmTools = defect is "with-wasm-tools" or "wasm-tools-without-notices"
-                or "wasm-tools-without-version" or "wasm-tools-bad-version";
+            var carriesWasmTools = defect is not ("without-wasm-tools" or "version-without-wasm-tools");
             if (carriesWasmTools)
             {
                 roles = roles.Add("wasm-tools", "tools/bin/wasm-tools");
@@ -276,9 +240,9 @@ public sealed class HostToolsPackageResolverTests
             {
                 WasmToolsVersion = defect switch
                 {
-                    "with-wasm-tools" or "wasm-tools-without-notices" or "version-without-wasm-tools" => "1.256.0",
+                    "wasm-tools-without-version" or "without-wasm-tools" => null,
                     "wasm-tools-bad-version" => "bad",
-                    _ => null,
+                    _ => "1.256.0",
                 },
             };
             var content = payload.ToDictionary(

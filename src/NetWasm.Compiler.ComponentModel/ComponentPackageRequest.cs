@@ -5,6 +5,7 @@ namespace NetWasm.Compiler.ComponentModel;
 
 using NetWasm.Compiler.Core.ManagedExecutables;
 using NetWasm.Compiler.ComponentModel.Optimization;
+using NetWasm.Compiler.ComponentModel.Debugging;
 
 public sealed record ComponentPackageRequest(
     string CoreModulePath,
@@ -18,6 +19,9 @@ public sealed record ComponentPackageRequest(
     bool StructuredDiagnostics = false)
 {
     public WasmOptimizationOverrides? OptimizationOverrides { get; init; }
+
+    // Debug information (NetWasmDebugInfo): the module's names, and DWARF lines with the program's method symbols.
+    public WasmDebugInformation? DebugInformation { get; init; }
 
     // Write the linked core module itself (the program's world imports only, no WASI) rather
     // than a component.

@@ -18,6 +18,9 @@ public enum PackedSimdShape
     ReplaceLane,
     LoadLane,
     StoreLane,
+    // Upstream's internal i8x16.shuffle with its lane indices in a vector, which
+    // need not be constant: two swizzles, one of each source.
+    Shuffle,
 }
 
 // The 64-bit-lane form a native-width overload takes on wasm64. Wasm has no

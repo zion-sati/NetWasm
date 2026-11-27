@@ -36,6 +36,7 @@ internal sealed class CompilationAnalysisBuilder(
     IReceiverProverFactory receivers,
     IUnlinkedNativeImportReporter unlinkedNativeImports,
     IMissingMemberReporter missingMembers,
+    IUnplannedAttributeQueryReporter unplannedAttributeQueries,
     IMissingMemberBodyReaderFactory missingMemberBodies,
     IYoungConstructorProverFactory youngConstructors) : ICompilationAnalysisBuilder
 {
@@ -85,6 +86,8 @@ internal sealed class CompilationAnalysisBuilder(
         throw new ArgumentNullException(nameof(unlinkedNativeImports));
     private readonly IMissingMemberReporter _missingMembers = missingMembers ??
         throw new ArgumentNullException(nameof(missingMembers));
+    private readonly IUnplannedAttributeQueryReporter _unplannedAttributeQueries = unplannedAttributeQueries ??
+        throw new ArgumentNullException(nameof(unplannedAttributeQueries));
     private readonly IMissingMemberBodyReaderFactory _missingMemberBodies = missingMemberBodies ??
         throw new ArgumentNullException(nameof(missingMemberBodies));
 
@@ -104,7 +107,9 @@ internal sealed class CompilationAnalysisBuilder(
         var identities = _identities.Create(metadata);
         var baseTypeIdentities = _baseTypeIdentities.Create(metadata);
         var implementedInterfaces = _implementedInterfaces.Create(metadata);
-        var bodies = _missingMemberBodies.Create(_bodies.Create(metadata), preparation.MissingApiAsError);
+        var bodies = _missingMemberBodies.Create(_bodies.Create(metadata,
+            preparation.OptimizationSettings.RuntimeAsyncSuspension == RuntimeAsyncSuspensionPolicy.WholeProgram),
+            preparation.MissingApiAsError);
         var methodInstances = _methodInstances.Create(metadata);
         var methodImplementations = _methodImplementations.Create(metadata);
         var symbols = _symbols.Create(metadata);
@@ -137,7 +142,9 @@ internal sealed class CompilationAnalysisBuilder(
             runtimeIntrinsics,
             preparation.OptimizationSettings,
             world,
-            preparation.InliningExcludedMethods).Analyze(
+            preparation.InliningExcludedMethods,
+            preparation.ReportsReceiverFlow,
+            preparation.ReceiverFlowAuditFailure).Analyze(
             preparation.Entry.EntryPoint,
             preparation.Exports,
             preparation.ReachabilityRoots);
@@ -156,6 +163,7 @@ internal sealed class CompilationAnalysisBuilder(
             symbols);
         _unlinkedNativeImports.Report(program, symbols);
         _missingMembers.Report(program);
+        _unplannedAttributeQueries.Report(program);
         // Whether a method's this can be null depends on every call of it, so its
         // proof waits for the whole program.
         var proven = _receivers.Create(types, fields, methods, methodInstances, symbols,

@@ -67,7 +67,8 @@ public sealed class CorpusCompilerRequestFactoryTests
         Assert.Null(request.InteropManifestPath);
         Assert.Null(request.DiagnosticTracePath);
         Assert.Null(request.MethodSymbolsPath);
-        Assert.False(request.EmitStackTrace);
+        // A Debug cell records managed stack traces, as the SDK's Debug configuration does.
+        Assert.Equal(sourceKind != 1, request.EmitStackTrace);
         Assert.Empty(request.Exports);
     }
 

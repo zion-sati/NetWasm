@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 import { createWorker } from "./browser/BrowserWorker.worker-client.mjs";
+import { checkInteropCells } from "./check-cells.mjs";
 
 function check(condition, label) {
   if (!condition) throw new Error(label);
@@ -69,6 +70,16 @@ try {
   const halves = await first.halves(Int32Array.of(2, 5));
   check(halves instanceof Float64Array && halves[0] === 1 && halves[1] === 2.5,
     "ValueTask<double[]> worker result failed.");
+  await checkInteropCells(first, check);
+  // From a worker the original error arrives as the worker's failure, with its message, not as a managed failure.
+  document.body.dataset.testCase = "export-js-error";
+  const exportError = await rejection(() => first.failingExport("rejectError"));
+  check(exportError.message === "gone" && exportError.managed === null,
+    `An export's JSException reached the page as ${exportError?.category}: ${exportError?.message}.`);
+  document.body.dataset.testCase = "sync-export-js-error";
+  const syncExportError = await rejection(() => first.failingSyncExport("syncDom"));
+  check(syncExportError.message === "denied" && syncExportError.managed === null,
+    `A sync export's JSException reached the page as ${syncExportError?.category}: ${syncExportError?.message}.`);
   const draining = first.task(41);
   await first.dispose();
   check(await draining === 42, "Graceful disposal did not drain the pending call.");

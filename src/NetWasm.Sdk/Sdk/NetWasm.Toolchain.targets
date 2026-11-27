@@ -564,9 +564,6 @@
     <Error Code="NWSDK004"
            Condition="'$(NetWasmPublishTargetNormalized)' != 'portable' AND '$(NetWasmPublishTargetNormalized)' != 'browser'"
            Text="NetWasmPublishTarget must be 'portable' or 'browser'." />
-    <Error Code="NWSDK025"
-           Condition="'$(NetWasmComponentContract)' != ''"
-           Text="NetWasmComponentContract is no longer used: a command's asynchronous Main needs no setting. Remove it." />
     <Error Code="NWSDK006"
            Condition="'$(NetWasmOutputPath)' == '' OR !$([System.IO.Path]::IsPathFullyQualified('$(NetWasmOutputPath)'))"
            Text="NetWasmOutputPath must be an absolute path." />
@@ -1099,13 +1096,6 @@
     <Error Code="NWSDK076"
            Condition="'@(_NetWasmJavaScriptHost)' == '' OR '@(_NetWasmUnknownJavaScriptHost)' != '' OR '@(_NetWasmJavaScriptHost->Count())' != '@(_NetWasmUniqueJavaScriptHost->Count())'"
            Text="NetWasmJavaScriptHosts must list page, worker or node, each at most once. Found '$(NetWasmJavaScriptHosts)'." />
-  </Target>
-
-  <Target Name="NetWasmSdkRejectRenamedJavaScriptModuleItem"
-          BeforeTargets="CoreCompile;Publish"
-          Condition="'$(NetWasmGuestFramework)' == 'true' AND '@(NetWasmWorkerJavaScriptModule)' != ''">
-    <Error Code="NWSDK075"
-           Text="The NetWasmWorkerJavaScriptModule item was renamed to NetWasmJavaScriptModule. Rename '@(NetWasmWorkerJavaScriptModule)' in the project file." />
   </Target>
 
   <!-- A JsModule's deployment: its files, and the manifest, modules and JavaScript runtime generated for them

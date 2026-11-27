@@ -242,7 +242,7 @@ internal sealed class WasmMergePlan
                 var module = _modules[index];
                 if (module.NameSection is not { } range) continue;
                 var imported = module.ImportsOfKind[WasmMergeModule.FunctionKind].Count;
-                foreach (var (function, name) in FunctionNames(module.Bytes, range))
+                foreach (var (function, name) in WasmFunctionNames.Read(module.Bytes, range))
                 {
                     if (function < imported == definitions) continue;
                     names.TryAdd(WasmExpressionRemapper.Mapped(_indices[index].Functions!, function), name);
@@ -263,30 +263,6 @@ internal sealed class WasmMergePlan
         _section.Unsigned((uint)functions.Length);
         _section.Write(functions.Written);
         _output.Section(0, _section);
-    }
-
-    // The function name subsection's entries; the module and local name subsections are not kept.
-    private static List<(uint Function, string Name)> FunctionNames(byte[] bytes, WasmMergeRange range)
-    {
-        var result = new List<(uint, string)>();
-        var at = range.Start;
-        var end = range.Start + range.Length;
-        while (at < end)
-        {
-            var id = WasmMergeRead.Byte(bytes, ref at);
-            var size = (int)WasmMergeRead.Unsigned(bytes, ref at);
-            var next = at + size;
-            if (id == 1)
-            {
-                for (var count = WasmMergeRead.Unsigned(bytes, ref at); count > 0; count--)
-                {
-                    var function = WasmMergeRead.Unsigned(bytes, ref at);
-                    result.Add((function, WasmMergeRead.Name(bytes, ref at)));
-                }
-            }
-            at = next;
-        }
-        return result;
     }
 
     private int Type(ReadOnlySpan<byte> type)

@@ -12,6 +12,7 @@ using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using NetWasm.Compiler.Metadata.RuntimeProvidedMembers.RuntimeAsync;
 
 namespace NetWasm.Compiler.Metadata.Inputs;
 
@@ -66,12 +67,25 @@ public sealed class CompilationInputReader : ICompilationInputReader
         shape.Resources(assembly.PortableExecutableReader);
         var bodies = new Dictionary<int, InputFingerprint>(reader.MethodDefinitions.Count);
         var body = new XxHash128();
+        // An async method compiled to a state machine compiles from its MoveNext too (StateMachineRewriter), so its
+        // fingerprint covers MoveNext's body: an edit to the method's code changes only MoveNext's IL.
+        var stateMachines = AsyncStateMachineKickoffs.Find(reader);
+        // So do an async iterator machine's MoveNextAsync and DisposeAsync (AsyncIteratorBodyBuilder).
+        var iterators = AsyncStateMachineKickoffs.FindIteratorMembers(reader);
         foreach (var handle in reader.MethodDefinitions)
         {
             var method = reader.GetMethodDefinition(handle);
             if (method.RelativeVirtualAddress == 0) continue;
             body.Reset();
             BodyHash.Append(body, reader, assembly.PortableExecutableReader.GetMethodBody(method.RelativeVirtualAddress));
+            var compiledFrom = stateMachines.TryGetValue(handle, out var stateMachine) ? stateMachine.MoveNext
+                : iterators.TryGetValue(handle, out var iterator) ? iterator.MoveNext
+                : default;
+            if (!compiledFrom.IsNil &&
+                reader.GetMethodDefinition(compiledFrom).RelativeVirtualAddress is var moveNext && moveNext != 0)
+            {
+                BodyHash.Append(body, reader, assembly.PortableExecutableReader.GetMethodBody(moveNext));
+            }
             var digest = body.GetCurrentHashAsUInt128();
             bodies[MetadataTokens.GetToken(handle)] = new((ulong)(digest >> 64), (ulong)digest);
         }

@@ -38,7 +38,7 @@ internal static class NwcCompilerComposition
 
     public static NwcCompilerSession CreateSession(IConsole console, ExternalToolCommand? wasmTools, string? cacheDirectory)
     {
-        var services = new ServiceCollection().AddNetWasmCompiler();
+        var services = new ServiceCollection().AddNetWasmCompiler().WatchCompilerMemory();
         services.AddLogging(logging => logging
             .AddProvider(new NwcConsoleLoggerProvider(console))
             .AddFilter<NwcConsoleLoggerProvider>(NwcConsoleLoggerProvider.Shows));

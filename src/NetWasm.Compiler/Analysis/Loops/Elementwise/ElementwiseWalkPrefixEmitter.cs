@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using NetWasm.Compiler.Analysis.NullChecks;
 using NetWasm.Compiler.Core;
 using static NetWasm.Compiler.Analysis.Loops.Elementwise.ElementwiseCil;
 using static NetWasm.Compiler.Analysis.Loops.Elementwise.ElementwiseNodes;
@@ -46,6 +47,23 @@ internal sealed class ElementwiseWalkPrefixEmitter(IVectorLoopMethodResolver met
         code.Constant(lanes);
         var skip = prefix.Count;
         code.Add(CilOperation.BranchIfLessThanUnsigned);
+        // The vector loop reads the elements the reference walks without the checks O0 makes, so it runs only where
+        // none of the n elements from the reference is at address 0; elsewhere the walk runs them all and throws where
+        // O0 does.
+        var guard = prefix.Count;
+        var pending = new CilOperand.BranchTarget(int.MinValue);
+        NonZeroAddressRange.BranchUnlessNonZero(
+            code.Add,
+            () => code.Add(CilOperation.LoadLocal, new CilOperand.Index(walk.Reference)),
+            () =>
+            {
+                Count();
+                code.Constant(1);
+                code.Add(CilOperation.Subtract);
+            },
+            code.Lane,
+            pending);
+        var guardEnd = prefix.Count;
         foreach (var fold in walk.Folds) code.Hoist(fold.Value);
         var folded = code.Identities(walk.Folds);
 
@@ -72,6 +90,10 @@ internal sealed class ElementwiseWalkPrefixEmitter(IVectorLoopMethodResolver met
         Count();
         code.Add(CilOperation.BranchIfFalse, new CilOperand.BranchTarget(exit));
         prefix[skip] = prefix[skip] with { Operand = RenumberedInstructions.Local(prefix.Count) };
+        for (var index = guard; index < guardEnd; index++)
+        {
+            if (prefix[index].Operand == pending) prefix[index] = prefix[index] with { Operand = RenumberedInstructions.Local(prefix.Count) };
+        }
 
         depth = Depth([], walk.Folds);
         return prefix;

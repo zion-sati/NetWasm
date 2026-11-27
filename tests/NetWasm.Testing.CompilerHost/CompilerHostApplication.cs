@@ -67,7 +67,7 @@ internal sealed class CompilerHostApplication(
             };
             var result = _compiler.Compile(options);
             _artifactWriter.Write(_artifactFormatter.Format(request, result));
-            unitVerification?.Verify(options);
+            unitVerification?.Verify(options, result.ApplicationModule);
 
             using var metadata = request.ReferenceAssemblyAliases.Count == 0
                 ? _metadataLoader.Load(request.EntryAssemblyPath, request.ReferencePaths)

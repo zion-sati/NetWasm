@@ -29,6 +29,7 @@ internal sealed class CompilationPipelineExecutor(
     ICompilerInitialDiagnosticArtifactWriter initialArtifacts,
     ICompilerEntryDiagnosticArtifactWriter entryArtifacts,
     ICompilerProgramDiagnosticArtifactWriter programArtifacts,
+    ICompilerReceiverFlowReportWriter receiverFlowReports,
     ICompilerLayoutDiagnosticArtifactWriter layoutArtifacts,
     ICompilerRootMapDiagnosticArtifactWriter rootMapArtifacts,
     ICompilerEmissionDiagnosticArtifactWriter emissionArtifacts,
@@ -81,6 +82,8 @@ internal sealed class CompilationPipelineExecutor(
         throw new ArgumentNullException(nameof(entryArtifacts));
     private readonly ICompilerProgramDiagnosticArtifactWriter _programArtifacts = programArtifacts ??
         throw new ArgumentNullException(nameof(programArtifacts));
+    private readonly ICompilerReceiverFlowReportWriter _receiverFlowReports = receiverFlowReports ??
+        throw new ArgumentNullException(nameof(receiverFlowReports));
     private readonly ICompilerLayoutDiagnosticArtifactWriter _layoutArtifacts = layoutArtifacts ??
         throw new ArgumentNullException(nameof(layoutArtifacts));
     private readonly ICompilerRootMapDiagnosticArtifactWriter _rootMapArtifacts = rootMapArtifacts ??
@@ -222,6 +225,7 @@ internal sealed class CompilationPipelineExecutor(
                     options,
                     symbolFormatter,
                     analyzed.Program);
+                _receiverFlowReports.Write(options, analyzed.Program.ReceiverFlow);
                 metrics?.Counters.Count("methods", analyzed.Program.Methods.Count);
                 metrics?.Counters.Count("constructedMethods", analyzed.Program.ConstructedMethods.Count);
                 metrics?.Counters.Count("types", analyzed.Program.Types.Count);

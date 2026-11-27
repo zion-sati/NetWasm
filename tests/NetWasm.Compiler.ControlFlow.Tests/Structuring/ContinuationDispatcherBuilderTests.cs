@@ -27,7 +27,7 @@ public sealed class ContinuationDispatcherBuilderTests
     }
 
     [Fact]
-    public void BuildUsesTheMethodEndForTargetsBeyondTheContinuationBoundary()
+    public void BuildTakesTheBlocksTheTargetsReachUpToTheEnd()
     {
         var state = ControlFlowStructuringStateTestFactory.Create();
         var controlFlow = new RecordingStructuredControlFlowBuilder(state, [11, 99]);
@@ -36,7 +36,7 @@ public sealed class ContinuationDispatcherBuilderTests
             controlFlow,
             reachable);
 
-        var result = Build(actor, state, [99, 11, 99], 22, 103);
+        var result = Build(actor, state, [99, 11, 99], 103);
 
         Assert.Equal([11, 99], reachable.Entries);
         var call = Assert.Single(controlFlow.DispatcherCalls);
@@ -49,7 +49,7 @@ public sealed class ContinuationDispatcherBuilderTests
     }
 
     [Fact]
-    public void BuildUsesTheContinuationBoundaryWhenEveryTargetPrecedesIt()
+    public void BuildStopsBeforeTheEnd()
     {
         var state = ControlFlowStructuringStateTestFactory.Create();
         var controlFlow = new RecordingStructuredControlFlowBuilder(state, [11]);
@@ -57,7 +57,7 @@ public sealed class ContinuationDispatcherBuilderTests
             controlFlow,
             new RecordingReachableBlockFinder());
 
-        Build(actor, state, [11], 22, 103);
+        Build(actor, state, [11], 22);
 
         var allowed = Assert.Single(controlFlow.DispatcherCalls).Allowed;
         Assert.Contains(11, allowed);
@@ -144,8 +144,7 @@ public sealed class ContinuationDispatcherBuilderTests
         TBuilder builder,
         ControlFlowStructuringState state,
         IEnumerable<int> targets,
-        int continuationBoundary,
-        int methodEnd)
+        int end)
         where TBuilder : IContinuationDispatcherBuilder =>
-        builder.Build(state, targets, continuationBoundary, methodEnd);
+        builder.Build(state, targets, end);
 }

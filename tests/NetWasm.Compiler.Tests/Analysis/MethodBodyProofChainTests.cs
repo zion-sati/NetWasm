@@ -17,16 +17,17 @@ public sealed class MethodBodyProofChainTests
     public void RejectsMissingPasses()
     {
         var calls = new List<string>();
-        Assert.Throws<ArgumentNullException>(() => new MethodBodyProofChain(null!, new Pass(calls, "repeated"), new Pass(calls, "objects"), new Pass(calls, "integers")));
-        Assert.Throws<ArgumentNullException>(() => new MethodBodyProofChain(new Pass(calls, "bounds"), null!, new Pass(calls, "objects"), new Pass(calls, "integers")));
-        Assert.Throws<ArgumentNullException>(() => new MethodBodyProofChain(new Pass(calls, "bounds"), new Pass(calls, "repeated"), null!, new Pass(calls, "integers")));
-        Assert.Throws<ArgumentNullException>(() => new MethodBodyProofChain(new Pass(calls, "bounds"), new Pass(calls, "repeated"), new Pass(calls, "objects"), null!));
-        var chain = new MethodBodyProofChain(new Pass(calls, "bounds"), new Pass(calls, "repeated"), new Pass(calls, "objects"), new Pass(calls, "integers"));
+        Assert.Throws<ArgumentNullException>(() => new MethodBodyProofChain(null!, new Pass(calls, "repeated"), new Pass(calls, "objects"), new Pass(calls, "byrefs"), new Pass(calls, "integers")));
+        Assert.Throws<ArgumentNullException>(() => new MethodBodyProofChain(new Pass(calls, "bounds"), null!, new Pass(calls, "objects"), new Pass(calls, "byrefs"), new Pass(calls, "integers")));
+        Assert.Throws<ArgumentNullException>(() => new MethodBodyProofChain(new Pass(calls, "bounds"), new Pass(calls, "repeated"), null!, new Pass(calls, "byrefs"), new Pass(calls, "integers")));
+        Assert.Throws<ArgumentNullException>(() => new MethodBodyProofChain(new Pass(calls, "bounds"), new Pass(calls, "repeated"), new Pass(calls, "objects"), null!, new Pass(calls, "integers")));
+        Assert.Throws<ArgumentNullException>(() => new MethodBodyProofChain(new Pass(calls, "bounds"), new Pass(calls, "repeated"), new Pass(calls, "objects"), new Pass(calls, "byrefs"), null!));
+        var chain = new MethodBodyProofChain(new Pass(calls, "bounds"), new Pass(calls, "repeated"), new Pass(calls, "objects"), new Pass(calls, "byrefs"), new Pass(calls, "integers"));
         Assert.Throws<ArgumentNullException>(() => chain.Prove(null!));
         Assert.Empty(calls);
     }
 
-    // The bounds proof is planned first, as the repeated access and constructed object proofs add to it; each pass
+    // The bounds proof is planned first, as the repeated access, constructed object and managed address proofs add to it; each pass
     // takes the body the one before it returned.
     [Fact]
     public void PlansTheBoundsProofFirstAndHandsEachPassThePreviousBody()
@@ -35,22 +36,25 @@ public sealed class MethodBodyProofChainTests
         var bounds = new Pass(calls, "bounds");
         var repeated = new Pass(calls, "repeated");
         var objects = new Pass(calls, "objects");
+        var byRefs = new Pass(calls, "byrefs");
         var integers = new Pass(calls, "integers");
-        var chain = new MethodBodyProofChain(bounds, repeated, objects, integers);
+        var chain = new MethodBodyProofChain(bounds, repeated, objects, byRefs, integers);
         var body = Body();
 
         var proved = chain.Prove(body);
 
-        Assert.Equal(["bounds", "repeated", "objects", "integers"], calls);
+        Assert.Equal(["bounds", "repeated", "objects", "byrefs", "integers"], calls);
         Assert.Same(body, bounds.Input);
         Assert.Same(bounds.Output, repeated.Input);
         Assert.Same(repeated.Output, objects.Input);
-        Assert.Same(objects.Output, integers.Input);
+        Assert.Same(objects.Output, byRefs.Input);
+        Assert.Same(byRefs.Output, integers.Input);
         Assert.Same(integers.Output, proved);
     }
 
     private sealed class Pass(List<string> calls, string name) :
-        IArrayBoundsCheckEliminator, IRepeatedArrayAccessEliminator, IConstructedObjectNullCheckEliminator, IIntegerCheckEliminator
+        IArrayBoundsCheckEliminator, IRepeatedArrayAccessEliminator, IConstructedObjectNullCheckEliminator, IByRefNullCheckEliminator,
+        IIntegerCheckEliminator
     {
         public CilMethodBody? Input { get; private set; }
         public CilMethodBody? Output { get; private set; }

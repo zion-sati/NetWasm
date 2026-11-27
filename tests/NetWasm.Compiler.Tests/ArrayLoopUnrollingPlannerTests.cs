@@ -268,7 +268,7 @@ public sealed class ArrayLoopUnrollingPlannerTests
             })],
         };
         var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
         return (new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance),
             new(graph, graph.Blocks.ToImmutableDictionary(block => block.Index, _ => ImmutableArray<CliValueKind>.Empty), []));
     }

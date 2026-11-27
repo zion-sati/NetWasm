@@ -365,6 +365,32 @@ public sealed class ConstantCallEvaluatorTests
         Assert.Null(evaluator.Evaluate(new(Predicate(), [new ScalarConstant.Null()])));
     }
 
+    // RuntimeHelpers.IsKnownConstant is true for an argument the evaluation knows, called directly or from a method
+    // it evaluates, and is left to run time (false there) for one it does not; its placeholder body is never read.
+    [Fact]
+    public void IsKnownConstantIsTrueForAKnownArgument()
+    {
+        var facts = new MethodFacts();
+        var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4);
+        var known = Method(2) with { Signature = signature };
+        known = known with { Definition = known.Definition with { Name = "IsKnownConstant", Signature = signature } };
+        facts.Intrinsics[known.Definition.Key] = RuntimeIntrinsic.IsKnownConstant;
+        var helper = Method(3) with { Signature = signature };
+        helper = helper with { Definition = helper.Definition with { Signature = signature } };
+        facts.Bodies[helper.Definition.Key] = new(helper.Definition, 1, [],
+        [
+            Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            Instruction(1, CilOperation.Call, new CilOperand.MethodInstance(known)),
+            Instruction(2, CilOperation.Return),
+        ]);
+        var evaluator = AsEvaluator(Evaluator(facts));
+
+        Assert.Equal(new ScalarConstant.Int32(1), evaluator.Evaluate(new(known, [new ScalarConstant.Int32(7)])));
+        Assert.Null(evaluator.Evaluate(new(known, [null])));
+        Assert.Equal(new ScalarConstant.Int32(1), evaluator.Evaluate(new(helper, [new ScalarConstant.Int32(7)])));
+        Assert.Null(evaluator.Evaluate(new(helper, [null])));
+    }
+
     [Fact]
     public void FoldsCoreComparisonsWithoutReadingABody()
     {

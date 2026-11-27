@@ -30,9 +30,25 @@ public sealed class VirtualDispatchCasePlannerTests
         ImmutableArray<DispatchTargetModel> receivers = [.. enums, int32];
 
         var cases = Planner(receivers.Select(target => target.ReceiverType)
-            .Zip<CliTypeIdentity, int>([10, 11, 13, 15, 3])).Plan(receivers, receivers);
+            .Zip<CliTypeIdentity, int>([10, 11, 13, 15, 3])).Plan(receivers, receivers, exhaustive: true);
 
         VirtualDispatchCase[] expected = [new(int32, 3, 3), new(enums[0], 10, 15)];
+        Assert.Equal(expected, cases);
+    }
+
+    // Receivers the flow found are not every receiver the site can have: a run spans only consecutive ids, so a missed
+    // receiver's id between two of them reaches the fallback, which throws.
+    [Fact]
+    public void ReceiversTheFlowFoundAreRunsOfConsecutiveIdsOnly()
+    {
+        int[] ids = [10, 11, 13, 15];
+        var enums = ids.Select(id => new DispatchTargetModel(Value("Enums", $"E{id}"), EnumToInt64)).ToArray();
+        ImmutableArray<DispatchTargetModel> receivers = [.. enums];
+
+        var cases = Planner(receivers.Select(target => target.ReceiverType).Zip<CliTypeIdentity, int>(ids))
+            .Plan(receivers, receivers, exhaustive: false);
+
+        VirtualDispatchCase[] expected = [new(enums[0], 10, 11), new(enums[2], 13, 13), new(enums[3], 15, 15)];
         Assert.Equal(expected, cases);
     }
 
@@ -50,7 +66,7 @@ public sealed class VirtualDispatchCasePlannerTests
         ImmutableArray<DispatchTargetModel> receivers = [first, between, last];
         var planner = Planner(receivers.Select(target => target.ReceiverType).Zip<CliTypeIdentity, int>([30, 31, 32]));
 
-        var cases = planner.Plan(checkedReceiver ? receivers : [first, last], receivers);
+        var cases = planner.Plan(checkedReceiver ? receivers : [first, last], receivers, exhaustive: true);
 
         VirtualDispatchCase[] expected = checkedReceiver
             ? [new(first, 30, 30), new(between, 31, 31), new(last, 32, 32)]
@@ -75,7 +91,7 @@ public sealed class VirtualDispatchCasePlannerTests
             new Intrinsics(intrinsic is { } value ? new() { [method.Definition.Key] = value } : new()));
 
         VirtualDispatchCase[] expected = [new(first, 20, 20), new(second, 21, 21)];
-        Assert.Equal(expected, planner.Plan(receivers, receivers));
+        Assert.Equal(expected, planner.Plan(receivers, receivers, exhaustive: true));
     }
 
     [Fact]
@@ -83,7 +99,7 @@ public sealed class VirtualDispatchCasePlannerTests
     {
         var target = new DispatchTargetModel(Value("Enums", "E1"), EnumToInt64);
 
-        var cases = Planner([(target.ReceiverType, 10)]).Plan([target, target], [target, target]);
+        var cases = Planner([(target.ReceiverType, 10)]).Plan([target, target], [target, target], exhaustive: true);
 
         Assert.Equal(new VirtualDispatchCase(target, 10, 10), Assert.Single(cases));
     }

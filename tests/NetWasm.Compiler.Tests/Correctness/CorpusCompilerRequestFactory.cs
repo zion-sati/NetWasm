@@ -91,7 +91,7 @@ internal sealed class CorpusCompilerRequestFactory(
             compilation.Fixture.RequiresReactor
                 ? "netwasm:platform/platform@1.0.0"
                 : null,
-            modulePath, compilation.Fixture.EmitStackTrace, methodSymbolsPath,
+            modulePath, compilation.EmitsStackTrace, methodSymbolsPath,
             runtimeLayoutPath, interopManifestPath,
             StructuredDiagnostics: true,
             Optimization: compilation.Fixture.Optimization,

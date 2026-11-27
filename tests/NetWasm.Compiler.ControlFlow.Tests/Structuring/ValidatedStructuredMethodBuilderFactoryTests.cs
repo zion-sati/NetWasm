@@ -12,9 +12,9 @@ public sealed class ValidatedStructuredMethodBuilderFactoryTests
     {
         var actor = Assert.IsAssignableFrom<IValidatedStructuredMethodBuilderFactory>(
             new ValidatedStructuredMethodBuilderFactory(
-                new ControlFlowPostDominanceAnalyzer(),
+                new ControlFlowPostDominanceAnalyzer(new DominatorTreeBuilder()),
                 new ControlFlowComponentAnalyzer(),
-                new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer()),
+                new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder())),
                 new ReachableSetOverlapClassifier(),
                 new LoopConditionChooser(),
                 new DispatcherBoundaryClipper()));
@@ -25,9 +25,9 @@ public sealed class ValidatedStructuredMethodBuilderFactoryTests
     [Fact]
     public void ConstructorRequiresEveryAnalysisCapability()
     {
-        var postDominance = new ControlFlowPostDominanceAnalyzer();
+        var postDominance = new ControlFlowPostDominanceAnalyzer(new DominatorTreeBuilder());
         var components = new ControlFlowComponentAnalyzer();
-        var naturalLoops = new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer());
+        var naturalLoops = new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()));
         var overlaps = new ReachableSetOverlapClassifier();
         var loopConditions = new LoopConditionChooser();
         var dispatcherBoundaries = new DispatcherBoundaryClipper();

@@ -121,6 +121,66 @@ public sealed class StaticReferenceTypeAnalyzerTests
         Assert.Equal([null], types[33]);
     }
 
+    // A string literal is a string, and a null literal takes the type of the values it meets, as an argument written
+    // with ?: or ?. does, on whichever path it comes; met with nothing typed it stays unknown.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void LiteralsDeclareAStringAndNullTakesTheTypeItMeets(bool nullFallsThrough)
+    {
+        var body = Body(
+            null,
+            (CilOperation.LoadArgument, new CilOperand.Index(0), 0),
+            (CilOperation.BranchIfTrue, new CilOperand.BranchTarget(4), 1),
+            nullFallsThrough
+                ? (CilOperation.LoadNull, new CilOperand.None(), 0)
+                : (CilOperation.LoadLocal, new CilOperand.Index(0), 0),
+            (CilOperation.Branch, new CilOperand.BranchTarget(5), 1),
+            nullFallsThrough
+                ? (CilOperation.LoadLocal, new CilOperand.Index(0), 0)
+                : (CilOperation.LoadNull, new CilOperand.None(), 0),
+            (CilOperation.Pop, new CilOperand.None(), 1),
+            (CilOperation.LoadString, new CilOperand.UserString("text"), 0),
+            (CilOperation.Pop, new CilOperand.None(), 1),
+            (CilOperation.LoadNull, new CilOperand.None(), 0),
+            (CilOperation.Pop, new CilOperand.None(), 1),
+            (CilOperation.Return, new CilOperand.None(), 0));
+
+        var types = Analyzer(new()).Analyze(body.Graph);
+
+        Assert.Equal([A], types[5]);
+        Assert.Equal([CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false)], types[7]);
+        Assert.Equal([null], types[9]);
+    }
+
+    // An element read from an array has the array's element type, by ldelem.ref from the array's static type and by
+    // ldelem from its operand.
+    [Fact]
+    public void AnArraysElementHasItsElementType()
+    {
+        var calls = new Dictionary<int, MethodInstanceModel>
+        {
+            [0] = Method(B, "Items", isStatic: true, CliTypeIdentity.SzArray(A)),
+        };
+        var body = Body(
+            null,
+            (CilOperation.Call, new CilOperand.None(), 0),
+            (CilOperation.LoadInt32, new CilOperand.ConstantI4(0), 1),
+            (CilOperation.LoadArrayElementReference, new CilOperand.None(), 2),
+            (CilOperation.Pop, new CilOperand.None(), 1),
+            (CilOperation.LoadNull, new CilOperand.None(), 0),
+            (CilOperation.LoadInt32, new CilOperand.ConstantI4(0), 1),
+            (CilOperation.LoadArrayElement, new CilOperand.TypeIdentity(B), 2),
+            (CilOperation.Pop, new CilOperand.None(), 1),
+            (CilOperation.Return, new CilOperand.None(), 0));
+
+        var types = Analyzer(calls).Analyze(body.Graph);
+
+        Assert.Equal([CliTypeIdentity.SzArray(A), null], types[2]);
+        Assert.Equal([A], types[3]);
+        Assert.Equal([B], types[7]);
+    }
+
     // A filter's handler is not an exceptional successor of anything: the filter decides. When the protected code
     // always throws, the code after the handler follows only the handler, and is analyzed all the same.
     [Fact]

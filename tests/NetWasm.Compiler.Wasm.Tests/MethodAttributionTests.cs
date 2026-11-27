@@ -114,16 +114,19 @@ public sealed class MethodAttributionTests
             new LoweringStub(() => throw canceled), new MethodDefectExceptionFactory()).Lower(managed)));
     }
 
-    // A compile from stored units catches a replay miss to lower the method afresh; reported as a defect, it would
-    // fail the compile instead.
+    // A compiled unit's replay miss is the signal to compile the method afresh: wrapped as a defect, it failed an
+    // incremental build (NW1011 "No unit of the last compile asked ...") where the method only needed emitting again.
     [Fact]
-    public void LoweringLetsAUnitReplayMissThrough()
+    public void AReplayMissPassesThroughLoweringAndEmission()
     {
         var managed = WasmMethodLowererTests.CreateManagedMethodBody();
-        var miss = new UnitReplayMissException("No unit of the last compile asked StackTraceDirectMethodId 'Run'.");
+        var miss = new UnitReplayMissException("No unit of the last compile asked this.");
 
         Assert.Same(miss, Assert.Throws<UnitReplayMissException>(() => new MethodAttributingWasmMethodLowerer(
             new LoweringStub(() => throw miss), new MethodDefectExceptionFactory()).Lower(managed)));
+        Assert.Same(miss, Assert.Throws<UnitReplayMissException>(() => new MethodAttributingManagedMethodBodyEmitter(
+            new EmissionStub(() => throw miss), new MethodDefectExceptionFactory())
+            .Emit(Definition, default!, default!, default!, default!, default!)));
     }
 
     [Fact]
@@ -182,18 +185,6 @@ public sealed class MethodAttributionTests
         Assert.Same(canceled, Assert.Throws<OperationCanceledException>(() =>
             new MethodAttributingManagedMethodBodyEmitter(
                 new EmissionStub(() => throw canceled), new MethodDefectExceptionFactory())
-            .Emit(Definition, default!, default!, default!, default!, default!)));
-    }
-
-    // A compile from stored units catches a replay miss to emit the method afresh; reported as a defect, it would fail
-    // the compile instead, as every compiled-unit replay across edits did.
-    [Fact]
-    public void EmissionLetsAUnitReplayMissThrough()
-    {
-        var miss = new UnitReplayMissException("No unit of the last compile asked StackTraceDirectMethodId 'Run'.");
-
-        Assert.Same(miss, Assert.Throws<UnitReplayMissException>(() => new MethodAttributingManagedMethodBodyEmitter(
-            new EmissionStub(() => throw miss), new MethodDefectExceptionFactory())
             .Emit(Definition, default!, default!, default!, default!, default!)));
     }
 

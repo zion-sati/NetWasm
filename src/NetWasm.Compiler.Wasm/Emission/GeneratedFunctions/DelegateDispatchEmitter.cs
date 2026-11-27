@@ -11,6 +11,8 @@ using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 // The delegate holds its target's function index. A few targets are tested in turn;
@@ -26,7 +28,8 @@ internal sealed class DelegateDispatchEmitter(
     IDelegateInvocationTargetSelector targets,
     IStaticInitializationEmitter initialization,
     IMethodInitializationTriggerClassifier initializationTriggers,
-    IDelegateArgumentRootEmitter roots) : IDelegateDispatchEmitter
+    IDelegateArgumentRootEmitter roots,
+    IStructResultClassifier? structResults = null) : IDelegateDispatchEmitter
 {
     private const int TableSpread = 4;
 
@@ -159,7 +162,7 @@ internal sealed class DelegateDispatchEmitter(
         ManagedDelegateBinding binding)
     {
         var target = binding.Target;
-        var signature = DelegateInvokeSignature.Of(dispatch.Invoke);
+        var signature = DelegateInvokeSignature.Of(dispatch.Invoke, structResults);
         // A type initializer may allocate before the call reads the delegate
         // and the arguments, so they stay rooted while it runs.
         if (initializationTriggers.Classify(target.Definition))
@@ -191,15 +194,15 @@ internal sealed class DelegateDispatchEmitter(
                     layouts.Target.UsesMemory64 ? WasmOpcodes.I64Add : WasmOpcodes.I32Add));
             }
         }
-        for (var index = 0; index < dispatch.Invoke.Signature.ParameterTypes.Length; index++)
+        // Every Wasm parameter after the delegate, so a struct passed by its fields passes each field.
+        var parameterCount = signature.FirstArgument + dispatch.Invoke.Signature.ParameterSignatureTypes.Sum(type =>
+            StructParameters.Shape(structResults, type)?.Results.Length ?? 1);
+        for (var local = signature.FirstArgument; local < parameterCount; local++)
         {
-            WriteLocalGet(code, signature.FirstArgument + index);
+            WriteLocalGet(code, local);
         }
         WriteCall(code, functionIndices.Resolve(target));
-        if (signature.ReturnsScalar)
-        {
-            WriteLocalSet(code, dispatch.ResultLocal);
-        }
+        signature.EmitKeep(code, dispatch.ResultLocal);
     }
 
     private static void WriteLoad(

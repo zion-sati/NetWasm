@@ -39,6 +39,9 @@ internal sealed class StructLocalScalarReplacer(
     ITypeDefinitionResolver typeDefinitions,
     IFieldRepository fields,
     IVectorLaneFields lanes,
+    IStructLocalJoinFinder joins,
+    IStructJoinSplitConstraint joinSplits,
+    IStackDepthFitter depths,
     bool enabled) : IStructLocalScalarReplacer
 {
     // More fields than this are more locals than registers to keep them in.
@@ -51,6 +54,10 @@ internal sealed class StructLocalScalarReplacer(
         throw new ArgumentNullException(nameof(typeDefinitions));
     private readonly IFieldRepository _fields = fields ?? throw new ArgumentNullException(nameof(fields));
     private readonly IVectorLaneFields _lanes = lanes ?? throw new ArgumentNullException(nameof(lanes));
+    private readonly IStructLocalJoinFinder _joins = joins ?? throw new ArgumentNullException(nameof(joins));
+    private readonly IStructJoinSplitConstraint _joinSplits = joinSplits ??
+        throw new ArgumentNullException(nameof(joinSplits));
+    private readonly IStackDepthFitter _depths = depths ?? throw new ArgumentNullException(nameof(depths));
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -77,9 +84,12 @@ internal sealed class StructLocalScalarReplacer(
         return
         [
             .. body.Instructions
+                // Every struct argument, not only addressed ones: a split one is read from its fields,
+                // which the convention passes as parameters.
                 .Select(instruction => instruction is
                 {
-                    Operation: CilOperation.LoadArgumentAddress, Operand: CilOperand.Index { Value: var argument },
+                    Operation: CilOperation.LoadArgumentAddress or CilOperation.LoadArgument or CilOperation.StoreArgument,
+                    Operand: CilOperand.Index { Value: var argument },
                 } && argument >= first && argument - first < parameters.Length ? argument : -1)
                 .Where(argument => argument >= 0)
                 .Distinct()
@@ -142,6 +152,19 @@ internal sealed class StructLocalScalarReplacer(
             {
                 layouts.Add(local, localFields);
                 if (declaredSize) sized.Add(local);
+            }
+        }
+        // A struct local only stored and loaded whole, as a method's return local is (Roslyn stores each returned value
+        // into it before a leave and loads it for the one ret), splits when a candidate's value is copied into it.
+        var copyOnly = new HashSet<int>();
+        foreach (var instruction in body.Instructions)
+        {
+            if (instruction is { Operation: CilOperation.StoreLocal or CilOperation.LoadLocal, Operand: CilOperand.Index { Value: var local } } &&
+                (uint)local < (uint)body.LocalSignatureTypes.Length && !layouts.ContainsKey(local) &&
+                Fields(body.LocalSignatureTypes[local], out var declaredSize) is { } localFields && !declaredSize)
+            {
+                layouts.Add(local, localFields);
+                copyOnly.Add(local);
             }
         }
         if (layouts.Count == 0) return body;
@@ -275,15 +298,23 @@ internal sealed class StructLocalScalarReplacer(
                 _ when !Operates(instruction, type) => null,
                 CilOperation.InitializeObject => new Clear(local),
                 CilOperation.LoadObject => new LoadWhole(local),
+                // Stobj of a value read whole from memory just before (a static field's, as
+                // ArraySegment<T>.Empty is), which loads each field from the source's address.
+                CilOperation.StoreObject when index > 0 && !plans.ContainsKey(index - 1) && !producers.Enters(index) &&
+                    producers.FindTop(index) == index - 1 &&
+                    entryStacks.TryGetValue(instructions[index - 1].Offset, out var storedStack) &&
+                    IsMemorySource(instructions, index - 1, type, storedStack) => new StoreFromSource(local),
                 // stobj, the last access the slot above takes.
                 _ => new StoreWhole(local),
             };
             if (plan is null) continue;
+            if (plan is StoreFromSource) plans[index - 1] = new SourceAddress(local);
             plans[producer] = new Removed(local);
             plans[index] = plan;
             if (address) consumed[producer] = consumed.GetValueOrDefault(producer) + 1;
             if (plan is FieldAddress pushed) fieldAddresses[index] = pushed;
-            if (plan is LoadField or StoreField or FieldAddress) accessed.Add(local);
+            // A clear stores each field's zero, as a split local does.
+            if (plan is LoadField or StoreField or FieldAddress or Clear) accessed.Add(local);
         }
 
         // A whole value read field by field through dups is gone once each dup's
@@ -305,6 +336,7 @@ internal sealed class StructLocalScalarReplacer(
             .Concat(wholeDuplicates
                 .Where(pair => duplicateConsumers.Count(edge => edge.Duplicate == pair.Key) != 2)
                 .Select(pair => pair.Value.Local))
+            .Concat(AddressesLeavingBlocks(graph, instructions, entryStacks, producers, addresses, fieldAddresses))
             .ToHashSet();
         // Whole loads and stores, and the copies between two candidates of one type.
         for (var index = 0; index < instructions.Length; index++)
@@ -319,7 +351,20 @@ internal sealed class StructLocalScalarReplacer(
             switch (instruction.Operation)
             {
                 case CilOperation.LoadLocal:
-                    plans[index] = new LoadWhole(local);
+                    // A whole value stored straight into a field or an address of its own type, as a suspension saves
+                    // an awaited value task into its frame, stores each of its fields there.
+                    if (index + 1 < instructions.Length && !plans.ContainsKey(index + 1) &&
+                        entryStacks.ContainsKey(instructions[index + 1].Offset) && !producers.Enters(index + 1) &&
+                        producers.FindTop(index + 1) == index &&
+                        WholeDestination(instructions[index + 1], body.LocalSignatureTypes[local]) is { } destination)
+                    {
+                        plans[index] = new LoadInto(local);
+                        plans[index + 1] = new StoreInto(local, destination.Field);
+                    }
+                    else
+                    {
+                        plans[index] = new LoadWhole(local);
+                    }
                     break;
                 case CilOperation.StoreLocal:
                     // A copy from another candidate, also when other locals' loads
@@ -335,9 +380,24 @@ internal sealed class StructLocalScalarReplacer(
                         plans[copied] = new CopySource(from, local);
                         plans[index] = new CopyTarget(from, local);
                     }
+                    // A join of whole values, as an inlined conditional construction leaves one (AsSpan's empty span
+                    // or the span it builds): each path copies its candidate into this one where it loaded it, and
+                    // the join stores nothing.
+                    else if (producers.Enters(index) && _joins.Find(instructions, index, producer =>
+                        entryStacks.ContainsKey(instructions[producer].Offset) &&
+                        plans.TryGetValue(producer, out var loaded) && loaded is LoadWhole { Local: var from } &&
+                        from != local && body.LocalSignatureTypes[from].Equals(body.LocalSignatureTypes[local])) is { } sources)
+                    {
+                        foreach (var source in sources)
+                        {
+                            plans[source] = new JoinCopy(plans[source].Local, local);
+                        }
+                        plans[index] = new JoinStore(local);
+                    }
                     else if (index > 0 && !plans.ContainsKey(index - 1) && !producers.Enters(index) &&
                         producers.FindTop(index) == index - 1 &&
-                        IsMemorySource(instructions, index - 1, body.LocalSignatureTypes[local]))
+                        entryStacks.TryGetValue(instructions[index - 1].Offset, out var sourceStack) &&
+                        IsMemorySource(instructions, index - 1, body.LocalSignatureTypes[local], sourceStack))
                     {
                         plans[index - 1] = new SourceAddress(local);
                         plans[index] = new StoreFromSource(local);
@@ -349,19 +409,38 @@ internal sealed class StructLocalScalarReplacer(
                     break;
             }
         }
+        // A whole store of a call's result, which a call returning the value in results leaves in lanes.
+        var callResultStores = plans
+            .Where(pair => pair.Value is StoreWhole && !producers.Enters(pair.Key) &&
+                producers.FindTop(pair.Key) is { } producer &&
+                instructions[producer].Operation is CilOperation.Call or CilOperation.CallVirtual)
+            .Select(pair => pair.Key)
+            .ToHashSet();
         // A struct of declared size keeps bytes beyond its fields, which only
         // a whole read of the value could expose.
         // Each copy's target sits with its source.
         rejected.UnionWith(sized.Where(local => plans.Values.Any(plan => plan switch
         {
             LoadWhole load => load.Local == local,
+            LoadInto load => load.Local == local,
             CopySource copy => copy.From == local || copy.To == local,
             _ => false,
         })));
-        split = layouts.Keys.Where(local => accessed.Contains(local) && !rejected.Contains(local)).ToHashSet();
+        // A candidate whose whole value only goes into a join is used through the join's target.
+        var joinSources = plans.Values.OfType<JoinCopy>().ToLookup(static copy => copy.To, static copy => copy.From);
+        split = layouts.Keys.Where(local => !rejected.Contains(local) && (accessed.Contains(local) ||
+            plans.Values.OfType<JoinCopy>().Any(copy => copy.From == local && accessed.Contains(copy.To)) ||
+            copyOnly.Contains(local) && plans.Values.Any(plan => plan is CopyTarget { To: var to } && to == local ||
+                plan is JoinStore { Local: var joined } && joined == local) ||
+            // A local cleared or built only to be copied into or out of an accessed one (`initobj V; ldloc V; stloc W`)
+            // splits with it, or the copy would be a transfer keeping both whole.
+            plans.Values.Any(plan => plan is CopySource { From: var from, To: var into } && from == local && accessed.Contains(into) ||
+                plan is CopyTarget { From: var source, To: var target } && target == local && accessed.Contains(source)))).ToHashSet();
+        _joinSplits.Apply(split, joinSources);
+        if (split.Count != 0) KeepAmortizedTransfers(graph, instructions, plans, split, callResultStores, body.LocalSignatureTypes);
         if (split.Count == 0) return body;
-        KeepAmortizedTransfers(graph, instructions, plans, split);
-        return split.Count == 0 ? body : WithTheStackItReaches(Splice(body, layouts, split, plans));
+        _joinSplits.Apply(split, joinSources);
+        return split.Count == 0 ? body : _depths.Fit(Splice(body, layouts, split, plans, callResultStores));
 
         // The candidate's whole load a field read's dup copies, through the
         // chain of dups a deconstruction makes, recording who takes each copy.
@@ -397,6 +476,51 @@ internal sealed class StructLocalScalarReplacer(
         }
     }
 
+    // Whether the whole load at the index is an argument of a call that follows it, with only pushes of
+    // locals, arguments and constants between: a call taking the struct by its fields passes them from lanes.
+    private bool ArgumentOfCall(ImmutableArray<CilInstruction> instructions, int index, CliTypeIdentity type)
+    {
+        // Only a struct the convention passes by its fields (at most four scalars), to a method with a body, with nothing
+        // between that branches, calls or could collect: the call then takes it from lanes.
+        if (Fields(type, out var declaredSize) is not { Length: <= 4 } || declaredSize) return false;
+        var above = 0;
+        for (var next = index + 1; next < instructions.Length; next++)
+        {
+            var instruction = instructions[next];
+            if (instruction.Operation is CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject)
+            {
+                if (instruction.Operand is not CilOperand.MethodInstance { Value: var called }) return false;
+                var pops = called.Signature.ParameterTypes.Length +
+                    (!called.Definition.IsStatic && instruction.Operation != CilOperation.NewObject ? 1 : 0);
+                return pops > above && !called.Definition.IsIntrinsic && called.Definition.HasManagedBody;
+            }
+            if (!KeepsLanes(instruction.Operation) || CilStackEffects.Of(instruction) is not { } effect ||
+                effect.Pops > above)
+            {
+                return false;
+            }
+            above += effect.Pushes - effect.Pops;
+        }
+        return false;
+    }
+
+    // Whether the instruction neither branches, calls, allocates, throws nor runs a class constructor.
+    private static bool KeepsLanes(CilOperation operation) => operation is
+        CilOperation.Nop or CilOperation.LoadArgument or CilOperation.LoadArgumentAddress or CilOperation.StoreArgument or
+        CilOperation.LoadLocal or CilOperation.LoadLocalAddress or CilOperation.StoreLocal or CilOperation.LoadInt32 or
+        CilOperation.LoadInt64 or CilOperation.LoadFloat32 or CilOperation.LoadFloat64 or CilOperation.LoadNull or
+        CilOperation.Duplicate or CilOperation.Pop or CilOperation.LoadField or CilOperation.LoadFieldAddress or
+        CilOperation.StoreField or CilOperation.InitializeObject or
+        CilOperation.Add or CilOperation.Subtract or CilOperation.Multiply or CilOperation.BitwiseAnd or
+        CilOperation.BitwiseOr or CilOperation.BitwiseXor or CilOperation.ShiftLeft or CilOperation.ShiftRightSigned or
+        CilOperation.ShiftRightUnsigned or CilOperation.Negate or CilOperation.OnesComplement or
+        CilOperation.ConvertInt32 or CilOperation.ConvertInt32Unsigned or CilOperation.ConvertInt64 or
+        CilOperation.ConvertInt64Unsigned or CilOperation.ConvertNativeInt or CilOperation.ConvertNativeUInt or
+        CilOperation.ConvertFloat32 or CilOperation.ConvertFloat64 or CilOperation.ConvertFloatUnsigned or
+        CilOperation.ConvertNumeric or CilOperation.CompareEqual or CilOperation.CompareGreaterThanSigned or
+        CilOperation.CompareGreaterThanUnsigned or CilOperation.CompareLessThanSigned or
+        CilOperation.CompareLessThanUnsigned or CilOperation.LoadArrayLength or CilOperation.Select;
+
     // A whole load or store through the temporary copies the struct and every
     // field, so it pays off only where the fields are accessed in a loop it
     // sits outside of, as an enumerator assigned before the loop that moves it.
@@ -406,7 +530,9 @@ internal sealed class StructLocalScalarReplacer(
         ControlFlowGraph graph,
         ImmutableArray<CilInstruction> instructions,
         Dictionary<int, Plan> plans,
-        HashSet<int> split)
+        HashSet<int> split,
+        HashSet<int> callResultStores,
+        ImmutableArray<CliTypeIdentity> localTypes)
     {
         var blocks = graph.Blocks
             .SelectMany(block => block.Instructions.Select(instruction => (instruction.Offset, block.Index)))
@@ -425,7 +551,7 @@ internal sealed class StructLocalScalarReplacer(
                     .Select(pair => Depth(pair.Key))
                     .DefaultIfEmpty(-1)
                     .Max();
-                if (plans.Any(pair => Transfers(pair.Value, local) && Depth(pair.Key) >= deepestAccess))
+                if (plans.Any(pair => Transfers(pair.Key, pair.Value, local) && Depth(pair.Key) >= deepestAccess))
                 {
                     split.Remove(local);
                     changed = true;
@@ -434,11 +560,18 @@ internal sealed class StructLocalScalarReplacer(
         }
         while (changed);
 
-        bool Transfers(Plan plan, int local) => plan switch
+        bool Transfers(int index, Plan plan, int local) => plan switch
         {
+            // The ret's whole load builds the value field by field where the convention returns it.
+            LoadWhole when index + 1 < instructions.Length && instructions[index + 1].Operation == CilOperation.Return => false,
+            LoadWhole when ArgumentOfCall(instructions, index, localTypes[plan.Local]) => false,
+            StoreWhole when callResultStores.Contains(index) => false,
             LoadWhole or StoreWhole => plan.Local == local,
             CopySource copy => copy.From == local && !split.Contains(copy.To),
             CopyTarget copy => copy.To == local && !split.Contains(copy.From),
+            JoinCopy copy => copy.From == local && !split.Contains(copy.To),
+            JoinStore store => store.Local == local && plans.Values.OfType<JoinCopy>()
+                .Any(copy => copy.To == local && !split.Contains(copy.From)),
             _ => false,
         };
     }
@@ -507,12 +640,80 @@ internal sealed class StructLocalScalarReplacer(
             CilOperation.LoadNull,
     };
 
-    // Whether the instruction reads a whole value of the type from memory, an
-    // unprefixed ldobj or ldelem. Either follows the address or array it reads.
-    private static bool IsMemorySource(ImmutableArray<CilInstruction> instructions, int index, CliTypeIdentity type) =>
-        instructions[index].Operation is CilOperation.LoadObject or CilOperation.LoadArrayElement &&
-        Operates(instructions[index], type) &&
-        instructions[index - 1].Operation is not (CilOperation.Volatile or CilOperation.Unaligned);
+    // Whether the instruction reads a whole value of the type from memory, unprefixed: an ldobj or ldelem, which follows
+    // the address or array it reads, or an ldfld of a field of the type through an object or an address (not from a
+    // struct value, whose field has no address), as a resumed suspension restores an awaited value task from its frame.
+    private static bool IsMemorySource(
+        ImmutableArray<CilInstruction> instructions,
+        int index,
+        CliTypeIdentity type,
+        ImmutableArray<CliValueKind> entryStack) =>
+        (instructions[index].Operation is CilOperation.LoadObject or CilOperation.LoadArrayElement &&
+                Operates(instructions[index], type) ||
+            instructions[index] is { Operation: CilOperation.LoadField, Operand: CilOperand.FieldInstance { Value: var field } } &&
+                !field.Definition.IsStatic && field.FieldType.Equals(type) &&
+                entryStack.Length > 0 && IsAddressOrObject(entryStack[^1]) ||
+            // A static field's value, read through the address ldsflda takes.
+            instructions[index] is { Operation: CilOperation.LoadStaticField, Operand: CilOperand.FieldInstance { Value: var staticField } } &&
+                staticField.FieldType.Equals(type)) &&
+        // A volatile or unaligned prefix keeps the access whole; the method's first instruction has none.
+        (index == 0 || instructions[index - 1].Operation is not (CilOperation.Volatile or CilOperation.Unaligned));
+
+    // The candidates whose address, or the address of one of their fields, is still on the stack where control leaves a
+    // block for another: a consumer past a branch target is one the walk back from it cannot find (Roslyn's `x?.M()` on a
+    // nullable local dups the address, then reads HasValue, pops one copy on the null path and calls through the other on
+    // the value path), so counting the consumers it does find cannot prove every copy reaches a planned access.
+    private static IEnumerable<int> AddressesLeavingBlocks(ControlFlowGraph graph, ImmutableArray<CilInstruction> instructions,
+        ImmutableDictionary<int, ImmutableArray<CliValueKind>> entryStacks, StackSlotProducers producers,
+        Dictionary<int, int> addresses, Dictionary<int, FieldAddress> fieldAddresses)
+    {
+        var indices = new Dictionary<int, int>(instructions.Length);
+        for (var index = 0; index < instructions.Length; index++) indices[instructions[index].Offset] = index;
+        foreach (var block in graph.Blocks)
+        {
+            var successors = graph.Successors[block.Index];
+            if (successors.IsDefaultOrEmpty || !indices.TryGetValue(block.Terminator.Offset, out var last) ||
+                !entryStacks.TryGetValue(block.Terminator.Offset, out var entry))
+            {
+                continue;
+            }
+            var exitDepth = successors
+                .Select(successor => entryStacks.TryGetValue(graph.Blocks[successor].StartOffset, out var stack) ? stack.Length : 0)
+                .DefaultIfEmpty(0)
+                .Max();
+            if (exitDepth == 0) continue;
+            // The slots below the operands the last instruction takes are the ones it leaves untouched; one it pushed
+            // itself is its own. For a call, whose effect its method decides, every slot it could leave is searched,
+            // which can only reject more.
+            var effect = CilStackEffects.Of(instructions[last]);
+            var untouched = effect is { } known ? entry.Length - known.Pops : Math.Min(entry.Length, exitDepth);
+            for (var slot = 0; slot < exitDepth; slot++)
+            {
+                var producer = slot < untouched
+                    ? producers.Find(last, slot, duplicates: true)
+                    : effect is { Pushes: > 0 } ? last : null;
+                if (producer is not { } at) continue;
+                if (addresses.TryGetValue(at, out var local)) yield return local;
+                else if (fieldAddresses.TryGetValue(at, out var field)) yield return field.Local;
+            }
+        }
+    }
+
+    private static bool IsAddressOrObject(CliValueKind kind) =>
+        kind is CliValueKind.ManagedReference or CliValueKind.ManagedAddress or CliValueKind.NativeInt;
+
+    // Where a whole store of a value of the type puts it, when that is a field of the type (the field, through an
+    // object or an address on the stack below the value) or the address an stobj of the type writes (no field).
+    private static Destination? WholeDestination(CilInstruction consumer, CliTypeIdentity type) =>
+        consumer switch
+        {
+            { Operation: CilOperation.StoreField, Operand: CilOperand.FieldInstance { Value: var field } }
+                when !field.Definition.IsStatic && field.FieldType.Equals(type) => new(field),
+            { Operation: CilOperation.StoreObject } when Operates(consumer, type) => new(null),
+            _ => null,
+        };
+
+    private sealed record Destination(FieldInstanceModel? Field);
 
     // Whether an indirect load, store or initobj reads, writes or clears
     // exactly a field of the given type, as an access to its own local would.
@@ -565,17 +766,13 @@ internal sealed class StructLocalScalarReplacer(
 
     // A split local pushes each of its fields where it pushed the whole value,
     // so the stack can grow past the depth the body declared.
-    private CilMethodBody WithTheStackItReaches(CilMethodBody body)
-    {
-        var depth = _stacks.Validate(_graphs.Build(body with { MaxStack = int.MaxValue })).MaximumStackDepth;
-        return depth > body.MaxStack ? body with { MaxStack = depth } : body;
-    }
 
-    private static CilMethodBody Splice(
+    private CilMethodBody Splice(
         CilMethodBody body,
         Dictionary<int, ImmutableArray<Field>> layouts,
         HashSet<int> split,
-        Dictionary<int, Plan> plans)
+        Dictionary<int, Plan> plans,
+        HashSet<int> callResultStores)
     {
         var locals = body.Locals.ToBuilder();
         var localTypes = body.LocalSignatureTypes.ToBuilder();
@@ -630,9 +827,11 @@ internal sealed class StructLocalScalarReplacer(
                     }
                     break;
                 case CopySource:
+                case JoinStore:
                     replacement.Add(instruction with { Operation = CilOperation.Nop, Operand = new CilOperand.None() });
                     break;
-                case CopyTarget copy:
+                // A copy field by field: at a copy's store, or where a join's path loaded its value.
+                case FieldCopy copy:
                     foreach (var (from, to) in fieldLocals[copy.From].Zip(fieldLocals[copy.To]))
                     {
                         replacement.Add(Local(CilOperation.LoadLocal, from));
@@ -641,7 +840,14 @@ internal sealed class StructLocalScalarReplacer(
                     break;
                 case LoadWhole load:
                     {
-                        var temporary = Temporary(load.Local);
+                        var argument = ArgumentOfCall(body.Instructions, index, body.LocalSignatureTypes[load.Local]);
+                        // A call's argument gets a temporary of its own, built here and read only by the call.
+                        var temporary = argument ? Add(body.LocalSignatureTypes[load.Local]) : Temporary(load.Local);
+                        if (argument || index + 1 < body.Instructions.Length && body.Instructions[index + 1].Operation == CilOperation.Return)
+                        {
+                            replacement.Add(Local(CilOperation.LoadLocalAddress, temporary));
+                            replacement.Add(Synthetic(CilOperation.InitializeObject, new CilOperand.TypeIdentity(body.LocalSignatureTypes[load.Local])));
+                        }
                         foreach (var (field, local) in Pairs(load.Local))
                         {
                             replacement.Add(Local(CilOperation.LoadLocalAddress, temporary));
@@ -652,12 +858,38 @@ internal sealed class StructLocalScalarReplacer(
                         break;
                     }
                 case SourceAddress:
-                    // The element's address replaces its value: ldelema, or
-                    // the address ldobj would have read.
-                    replacement.Add(instruction.Operation == CilOperation.LoadArrayElement
-                        ? instruction with { Operation = CilOperation.LoadArrayElementAddress }
-                        : instruction with { Operation = CilOperation.Nop, Operand = new CilOperand.None() });
+                    // The element's address replaces its value: ldelema, the
+                    // field's ldflda, or the address ldobj would have read.
+                    replacement.Add(instruction.Operation switch
+                    {
+                        CilOperation.LoadArrayElement => instruction with { Operation = CilOperation.LoadArrayElementAddress },
+                        CilOperation.LoadField => instruction with { Operation = CilOperation.LoadFieldAddress },
+                        CilOperation.LoadStaticField => instruction with { Operation = CilOperation.LoadStaticFieldAddress },
+                        _ => instruction with { Operation = CilOperation.Nop, Operand = new CilOperand.None() },
+                    });
                     break;
+                case LoadInto:
+                    replacement.Add(instruction with { Operation = CilOperation.Nop, Operand = new CilOperand.None() });
+                    break;
+                case StoreInto store:
+                    {
+                        // The destination's address, then each field stored through it.
+                        if (store.Field is { } destination)
+                        {
+                            replacement.Add(Synthetic(CilOperation.LoadFieldAddress, new CilOperand.FieldInstance(destination)));
+                        }
+                        var pairs = Pairs(store.Local).ToArray();
+                        for (var field = 0; field < pairs.Length; field++)
+                        {
+                            if (field < pairs.Length - 1)
+                            {
+                                replacement.Add(Synthetic(CilOperation.Duplicate, new CilOperand.None()));
+                            }
+                            replacement.Add(Local(CilOperation.LoadLocal, pairs[field].Local));
+                            replacement.Add(Synthetic(CilOperation.StoreField, new CilOperand.FieldInstance(pairs[field].Field.Instance)));
+                        }
+                        break;
+                    }
                 case StoreFromSource store:
                     {
                         var loaded = Loaded(store.Local);
@@ -674,7 +906,8 @@ internal sealed class StructLocalScalarReplacer(
                     }
                 case StoreWhole store:
                     {
-                        var temporary = Temporary(store.Local);
+                        // A call's result gets a temporary of its own, read only here.
+                        var temporary = callResultStores.Contains(index) ? Add(body.LocalSignatureTypes[store.Local]) : Temporary(store.Local);
                         replacement.Add(Local(CilOperation.StoreLocal, temporary));
                         foreach (var (field, local) in Pairs(store.Local))
                         {
@@ -725,6 +958,8 @@ internal sealed class StructLocalScalarReplacer(
             CopySource copy => split.Contains(copy.From) ? new LoadWhole(copy.From) : null,
             CopyTarget copy when split.Contains(copy.To) && split.Contains(copy.From) => copy,
             CopyTarget copy => split.Contains(copy.To) ? new StoreWhole(copy.To) : null,
+            JoinCopy copy when split.Contains(copy.To) => copy,
+            JoinCopy copy => split.Contains(copy.From) ? new LoadWhole(copy.From) : null,
             _ => split.Contains(plan.Local) ? plan : null,
         };
         int FieldLocal(int local, Field field) => fieldLocals[local][layouts[local].IndexOf(field)];
@@ -737,7 +972,9 @@ internal sealed class StructLocalScalarReplacer(
         {
             var effective = plans.Values.Select(Effective).OfType<Plan>().ToArray();
             if (effective.Any(plan => plan is LoadWhole { Local: var whole } && whole == local ||
-                    plan is CopySource { From: var from } && from == local))
+                    plan is LoadInto { Local: var into } && into == local ||
+                    plan is CopySource { From: var from } && from == local ||
+                    plan is JoinCopy { From: var joined } && joined == local))
             {
                 return [.. Pairs(local)];
             }
@@ -803,7 +1040,22 @@ internal sealed class StructLocalScalarReplacer(
 
     private sealed record StoreFromSource(int Local) : Plan(Local);
 
+    // A whole load that a store of its own type takes, which now pushes nothing.
+    private sealed record LoadInto(int Local) : Plan(Local);
+
+    // That store: each field into the destination field's address (or the stobj's address when Field is null).
+    private sealed record StoreInto(int Local, FieldInstanceModel? Field) : Plan(Local);
+
     private sealed record CopySource(int From, int To) : Plan(From);
 
-    private sealed record CopyTarget(int From, int To) : Plan(To);
+    // A plan that copies From's fields into To's where it stands.
+    private abstract record FieldCopy(int From, int To, int Local) : Plan(Local);
+
+    private sealed record CopyTarget(int From, int To) : FieldCopy(From, To, To);
+
+    // A whole load of From whose value reaches To's store only through a join.
+    private sealed record JoinCopy(int From, int To) : FieldCopy(From, To, From);
+
+    // The join's store into To, which the copies on its paths have made.
+    private sealed record JoinStore(int To) : Plan(To);
 }

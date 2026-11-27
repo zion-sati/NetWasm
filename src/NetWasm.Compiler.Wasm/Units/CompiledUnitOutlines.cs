@@ -150,6 +150,7 @@ internal static class UnitExceptionGroups
                     region.FilterOffset, Empty, null)
                 {
                     CatchTypeIdentity = region.CatchTypeIdentity,
+                    PassThroughLocal = region.PassThroughLocal,
                     HandlerBlock = new(-1),
                 });
             }

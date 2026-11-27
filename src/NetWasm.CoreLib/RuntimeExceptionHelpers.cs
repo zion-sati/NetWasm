@@ -92,6 +92,10 @@ namespace System
         internal static Exception GetNotSupportedException() => new NotSupportedException();
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal static Exception GetJSException() => new JSException();
+        internal static Exception GetJSException() => new System.Runtime.InteropServices.JavaScript.JSException();
+
+        // A failed JavaScript import's exception, carrying what the import threw or rejected with.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static Exception GetJSImportFailureException() => System.Runtime.InteropServices.JavaScript.JSHostError.TakeFailure();
     }
 }

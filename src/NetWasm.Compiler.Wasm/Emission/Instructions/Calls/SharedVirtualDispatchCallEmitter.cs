@@ -7,6 +7,7 @@ using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Emission.StructResults;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 
@@ -16,7 +17,9 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 internal sealed class SharedVirtualDispatchCallEmitter(
     ITargetLayout layouts,
     IImplicitExceptionEmitter exceptions,
-    IConstrainedReferenceReceiverEmitter constrainedReceivers) : ICallEmitter
+    IConstrainedReferenceReceiverEmitter constrainedReceivers,
+    IValueTypeArgumentConventionFactory argumentConventions,
+    IValueTypeResultConventionFactory resultConventions) : ICallEmitter
 {
     public void Emit(CallEmissionRequest request, IWasmInstructionWriter code, IFunctionIndexResolver functionIndices)
     {
@@ -40,17 +43,37 @@ internal sealed class SharedVirtualDispatchCallEmitter(
         }
         var signature = request.Method.Signature;
         var returnsValue = signature.ReturnSignatureType.StackKind == CliValueKind.ValueType;
-        var returnOffset = returnsValue ? context.ValueLayout.TemporaryOffsets[instruction.Instruction.Offset] : 0;
-        if (returnsValue)
-            EmitValueFrameAddress(code, context, returnOffset);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)receiverLocal)));
-        for (var index = 1; index < request.Consumed; index++)
+        var lanes = context.CallResultLanes.Calls.ContainsKey(instruction.Instruction.Offset);
+        var returnOffset = returnsValue && !lanes ? context.ValueLayout.TemporaryOffsets[instruction.Instruction.Offset] : 0;
+        void EmitCall(IWasmInstructionWriter code)
         {
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)StackLocal(
-                context, request.ArgumentBase + index, instruction.Stack[request.ArgumentBase + index]))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)receiverLocal)));
+            for (var index = 1; index < request.Consumed; index++)
+            {
+                var local = StackLocal(context, request.ArgumentBase + index, instruction.Stack[request.ArgumentBase + index]);
+                argumentConventions.Create(StructParameters.Parameter(signature, false, index)).Emit(code,
+                    writer => writer.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local))), new(context, instruction.Instruction.Offset, index, context.VectorScratch));
+            }
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)shared.Value)));
         }
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)shared.Value)));
+        // The shared body returns as the declaration's signature does.
+        if (returnsValue)
+        {
+            resultConventions.Create(signature.ReturnSignatureType).Emit(code,
+                writer => EmitValueFrameAddress(writer, context, returnOffset), new(context.StructResultLocals, context.VectorScratch, lanes),
+                EmitCall);
+        }
+        else
+        {
+            EmitCall(code);
+        }
         instruction.Stack.RemoveRange(request.ArgumentBase, request.Consumed);
+        if (returnsValue && lanes)
+        {
+            // The results stay in the shape's lanes.
+            instruction.Stack.Add(CliValueKind.ValueType);
+            return;
+        }
         if (returnsValue)
         {
             EmitValueFrameAddress(code, context, returnOffset);

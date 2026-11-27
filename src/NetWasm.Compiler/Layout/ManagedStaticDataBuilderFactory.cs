@@ -4,6 +4,7 @@
 using System;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Layout;
@@ -11,9 +12,11 @@ namespace NetWasm.Compiler.Layout;
 internal sealed class ManagedStaticDataBuilderFactory(
     IExceptionTypeNameResolver exceptionTypeNames,
     IAssignableTypeMetadataBuilderFactory assignableTypeMetadata,
-    IImplementedInterfaceResolverFactory implementedInterfaces) :
+    IImplementedInterfaceResolverFactory implementedInterfaces,
+    IAnalysisStepRecorder? steps = null) :
     IManagedStaticDataBuilderFactory
 {
+    private readonly IAnalysisStepRecorder _steps = steps ?? UnrecordedAnalysisStepRecorder.Instance;
     private readonly IImplementedInterfaceResolverFactory _implementedInterfaces = implementedInterfaces ??
         throw new ArgumentNullException(nameof(implementedInterfaces));
     private readonly IExceptionTypeNameResolver _exceptionTypeNames = exceptionTypeNames ??
@@ -112,6 +115,8 @@ internal sealed class ManagedStaticDataBuilderFactory(
             new StructMarshallingDataCollector(typeDefinitions, fields, metadata.Methods, identityBaseTypes,
                 new CompilationNativeStructSource(typeDefinitions, fields), program, types, state),
             new StructMarshallingDataBuilder(program, types, state),
-            program.UninitializedObjectTypes);
+            program.UninitializedObjectTypes,
+            _steps,
+            new SharedArrayTargetDataBuilder(program, typeDefinitions, types, types.Target, state));
     }
 }

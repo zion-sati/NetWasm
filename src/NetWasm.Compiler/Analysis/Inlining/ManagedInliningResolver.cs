@@ -122,10 +122,17 @@ internal sealed class ManagedInliningResolver(
     public ManagedInliningPlan? Resolve(ManagedInliningRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (_policy == ManagedMethodInliningPolicy.Disabled ||
+        return _policy == ManagedMethodInliningPolicy.Disabled ||
             request.Call.Operation is not (CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject) ||
-            _calledMethods.Resolve(request.Call) is not { } method ||
-            !method.Definition.HasManagedBody ||
+            _calledMethods.Resolve(request.Call) is not { } method
+            ? null
+            : Resolve(request, method, forwarded: false);
+    }
+
+    // The plan for the call as a call to the method; a forwarder's call resolves once more, as a call to its callee.
+    private ManagedInliningPlan? Resolve(ManagedInliningRequest request, MethodInstanceModel method, bool forwarded)
+    {
+        if (!method.Definition.HasManagedBody ||
             method.Definition.IsNoInlining ||
             // The compiler replaces these calls; their bodies are placeholders or stubs.
             _intrinsics.TryGetIntrinsic(method.Definition.Key, out _) ||
@@ -146,6 +153,11 @@ internal sealed class ManagedInliningResolver(
         if (candidate is null)
         {
             return null;
+        }
+        // The speed policy takes a forwarder's call as the call to the callee it forwards to (see ForwardTarget).
+        if (!forwarded && _policy == ManagedMethodInliningPolicy.Speed && candidate.ForwardsTo is { } target)
+        {
+            return Resolve(request, target, forwarded: true);
         }
         // A wrapper that counts as small once the next round composes its priority callees into it does so only for a
         // call in the caller's own body (see IsSmall).
@@ -169,11 +181,13 @@ internal sealed class ManagedInliningResolver(
                 : small && !(request.Nested && candidate.Allocates) ||
                   (candidate.Leaf || candidate.LoopBody) && request.InLoop ||
                   (request.Nested
-                      ? candidate.Requested
+                      // A by-reference callee passed a local's address keeps the local in memory for the
+                      // whole method, however deep the round that exposed the call.
+                      ? candidate.Requested || candidate.TakesAnAddress && candidate.WithinByReferenceBudget &&
+                        TakesPastTheBudget(request.LocalAddressArguments, request.InLoop, candidate.LoopLoadedParameters)
                       : candidate.Priority ||
                         candidate.TakesAnAddress &&
-                        (!request.LocalAddressArguments.IsEmpty && !request.InLoop ||
-                            request.LocalAddressArguments.Overlaps(candidate.LoopLoadedParameters)))) ||
+                        TakesPastTheBudget(request.LocalAddressArguments, request.InLoop, candidate.LoopLoadedParameters))) ||
             // A callvirt checks its receiver for null before the callee runs.
             !method.Definition.IsStatic && request.Call.Operation == CilOperation.CallVirtual &&
             !DereferencesReceiverFirst(candidate.Plan.Body))
@@ -211,20 +225,32 @@ internal sealed class ManagedInliningResolver(
         // software fallback, which the JIT calls.
         var requested = method.Definition.IsAggressiveInlining || method.Definition.IsIntrinsic && CountsAsSmall(body);
         var priority = requested || (method.Definition.IsStatic ? IsPriorityCandidate(method, body, RemainingILBytes(read, body)) : accessor);
-        var takesAnAddress = method.Definition.IsStatic && TakesAnArgumentByReference(method);
-        var small = IsSmall(body, _smallBodyInstructionLimit);
-        var composesSmall = _policy == ManagedMethodInliningPolicy.Speed ? IsSmall(body, ComposedBodyInstructionLimit) : small;
+        // A value type's instance method receives its instance by address, as a by-reference static
+        // method receives its argument, within the JIT's 100 bytes.
+        var takesAnAddress = method.Definition.IsStatic
+            ? TakesAnArgumentByReference(method)
+            : method.DeclaringType.IsValueType && RemainingILBytes(read, body) <= ByReferenceBodyILBytes;
+        var withinByReferenceBudget = RemainingILBytes(read, body) <= ByReferenceBodyILBytes;
+        var stacks = new Lazy<ImmutableDictionary<int, ImmutableArray<CliValueKind>>>(() => _bodyValidator.Validate(body));
+        var small = IsSmall(body, _smallBodyInstructionLimit, stacks);
+        var composesSmall = _policy == ManagedMethodInliningPolicy.Speed
+            ? IsSmall(body, ComposedBodyInstructionLimit, stacks)
+            : small;
         var ilBytes = RemainingILBytes(read, body);
         var leaf = IsLeaf(body, ilBytes);
         var loopBody = !leaf && IsLoopBody(body);
         var allocates = Enumerable.Range(0, body.Instructions.Length).Any(index => Allocates(body, index));
         var always = !allocates && ilBytes <= AlwaysInlineILBytes &&
             !body.Instructions.Any(static instruction => instruction.Operation is CilOperation.Throw or CilOperation.Rethrow);
-        return priority || takesAnAddress || composesSmall || leaf || loopBody
-            ? new(new(method, body) { InstructionEntryStacks = _bodyValidator.Validate(body) }, requested, priority,
+        var forwardsTo = requested || _policy != ManagedMethodInliningPolicy.Speed ? null : ForwardTarget(method, body);
+        return priority || takesAnAddress || composesSmall || leaf || loopBody || forwardsTo is not null
+            ? new(new(method, body) { InstructionEntryStacks = stacks.Value }, requested, forwardsTo, priority,
                 accessor, small, composesSmall, leaf, loopBody, allocates, always,
                 TakesAnArgumentByReference(method) || !method.Definition.IsStatic && method.DeclaringType.IsValueType,
                 takesAnAddress, takesAnAddress ? LoopLoadedParameters(body) : [])
+            {
+                WithinByReferenceBudget = withinByReferenceBudget,
+            }
             : null;
     }
 
@@ -247,6 +273,8 @@ internal sealed class ManagedInliningResolver(
     // ComposesSmall: under the speed policy, the callee is small once the next round composes its large priority
     // callees into it; under the others, as Small.
     // Requested: the callee asks to be inlined, by AggressiveInlining or as a small intrinsic.
+    // ForwardsTo: the callee asking to be inlined that this static callee only passes its arguments to, if any (see
+    // ForwardTarget).
     // Always: the callee is within the JIT's always-inline size (ALWAYS_INLINE_SIZE, 16 IL bytes) and neither
     // allocates nor throws.
     // ReceivesAnAddress: the callee takes an argument by reference, or is a value type's instance method, which
@@ -258,9 +286,13 @@ internal sealed class ManagedInliningResolver(
     // call outside the caller's loops passes it the address of one of the caller's locals, or a call inside them passes
     // one in one of its LoopLoadedParameters (see ByReferenceBodyILBytes).
     private sealed record Candidate(
-        ManagedInliningPlan Plan, bool Requested, bool Priority, bool Accessor, bool Small, bool ComposesSmall, bool Leaf,
+        ManagedInliningPlan Plan, bool Requested, MethodInstanceModel? ForwardsTo, bool Priority, bool Accessor, bool Small, bool ComposesSmall, bool Leaf,
         bool LoopBody, bool Allocates, bool Always, bool ReceivesAnAddress, bool TakesAnAddress,
-        ImmutableHashSet<int> LoopLoadedParameters);
+        ImmutableHashSet<int> LoopLoadedParameters)
+    {
+        // Within the JIT's 100 bytes, so a later round may take it where a call passes a local's address.
+        public bool WithinByReferenceBudget { get; init; }
+    }
 
     // The IL bytes of a body as read whose code specialization left, as .NET's JIT measures a callee after ILLink has
     // removed the branches a feature switch decides: a branch a switch or constant decides leaves the code it cuts off
@@ -360,6 +392,16 @@ internal sealed class ManagedInliningResolver(
     // earlier round exposed does not: the rounds after the first take only what a
     // callee asks for, and the last ones only small callees, so the wrapper's
     // callees stay calls while its own code joins the inlined code around it.
+    // A by-reference callee past the priority tier's budget stays a call in a
+    // later round too, but under the speed policy the wrapper's own body takes
+    // it where its call, outside the wrapper's loops, passes the address of one
+    // of the wrapper's locals or arguments (see ByReferenceBodyILBytes), so such
+    // a wrapper is not small either: inlined, it would leave in every caller a
+    // call its own body composes, and the value whose address it passes in the
+    // caller's memory. MemoryMarshal.TryGetArray (173 bytes of IL) called with
+    // the address of its caller's out local stayed a call in a benchmark's
+    // lambda, which then entered frames for the segment and for the callee:
+    // 383 instructions a call, against 314 with the wrapper a call.
     // ValueStringBuilder.ToString (12 instructions around a 21-instruction
     // Span.Slice) inlined that way into a benchmark sink's formatting branch,
     // which never ran, and made every call of the sink 0.6 ns slower: the engine
@@ -370,15 +412,20 @@ internal sealed class ManagedInliningResolver(
     // other small callee in a later round, a by-reference callee past the tier's
     // budget stays a call, and a call that the compiler replaces with
     // instructions stays small.
-    private bool IsSmall(CilMethodBody body, int limit)
+    private bool IsSmall(
+        CilMethodBody body,
+        int limit,
+        Lazy<ImmutableDictionary<int, ImmutableArray<CliValueKind>>> stacks)
     {
         if (!CountsAsSmall(body))
         {
             return false;
         }
         var composed = InstructionCount(body);
-        foreach (var instruction in body.Instructions)
+        StackSlotProducers? producers = null;
+        for (var index = 0; index < body.Instructions.Length; index++)
         {
+            var instruction = body.Instructions[index];
             if (instruction.Operation is not (CilOperation.Call or CilOperation.CallVirtual) ||
                 _calledMethods.Resolve(instruction) is not { } target ||
                 !(target.Definition.IsAggressiveInlining || TakesAnArgumentByReference(target)) ||
@@ -390,8 +437,25 @@ internal sealed class ManagedInliningResolver(
             {
                 return false;
             }
-            if (CountsAsSmall(callee) || !IsExplicitPriorityCandidate(target, RemainingILBytes(callee, callee)))
+            if (CountsAsSmall(callee))
             {
+                continue;
+            }
+            // Under the speed policy, whose priority tier takes such a callee, the budget is weighed on the callee as
+            // specialized, as the tier weighs it (see Examine); the other policies keep the body as read.
+            var specialized = new Lazy<CilMethodBody>(() => _specializer.Rewrite(callee));
+            if (!IsExplicitPriorityCandidate(target, RemainingILBytes(callee, callee)) &&
+                !(_policy == ManagedMethodInliningPolicy.Speed &&
+                    IsExplicitPriorityCandidate(target, RemainingILBytes(callee, specialized.Value))))
+            {
+                if (_policy == ManagedMethodInliningPolicy.Speed && target.Definition.IsStatic &&
+                    TakesPastTheBudget(
+                        LocalAddressArguments.Of(body, index, target, stacks.Value, producers ??= new(body, stacks.Value)),
+                        LoopSpans.Contain(LoopSpans.Of(body), instruction.Offset),
+                        LoopLoadedParameters(specialized.Value)))
+                {
+                    return false;
+                }
                 continue;
             }
             // The next round takes only what a callee asks for, so a large by-reference callee that does not ask
@@ -407,6 +471,40 @@ internal sealed class ManagedInliningResolver(
     }
 
     private bool CountsAsSmall(CilMethodBody body) => InstructionCount(body) <= _smallBodyInstructionLimit;
+
+    // The callee a static method's body only passes its arguments to, in order and unchanged, when that callee asks to
+    // be inlined and has the same signature: `=> Callee(arguments)`, as float.SinCos is to MathF.SinCos. A call to the
+    // forwarder is then the call to its callee, so the speed policy resolves it as that call. Inlined as a body of its
+    // own, the forwarder only exposed its callee's call to the next round, a round deeper, where Matrix4x4's rotations
+    // reached MathF.SinCos past the depth at which nested rounds take only small callees; kept a call, it returned
+    // its pair through a value frame its caller allocated.
+    private MethodInstanceModel? ForwardTarget(MethodInstanceModel method, CilMethodBody body)
+    {
+        if (!method.Definition.IsStatic)
+        {
+            return null;
+        }
+        var operations = body.Instructions.Where(static instruction => instruction.Operation != CilOperation.Nop).ToArray();
+        var parameters = method.Signature.ParameterSignatureTypes;
+        if (operations.Length != parameters.Length + 2 ||
+            operations[^1].Operation != CilOperation.Return ||
+            operations[^2].Operation != CilOperation.Call ||
+            Enumerable.Range(0, parameters.Length).Any(index =>
+                operations[index] is not { Operation: CilOperation.LoadArgument, Operand: CilOperand.Index { Value: var argument } } ||
+                argument != index) ||
+            _calledMethods.Resolve(operations[^2]) is not { Definition: { IsStatic: true, HasManagedBody: true } } target ||
+            !target.Signature.ReturnSignatureType.Equals(method.Signature.ReturnSignatureType) ||
+            !target.Signature.ParameterSignatureTypes.SequenceEqual(parameters) ||
+            _intrinsics.TryGetIntrinsic(target.Definition.Key, out _) ||
+            !_methodBodies.TryReadMethodBody(target, out var callee))
+        {
+            return null;
+        }
+        return target.Definition.IsAggressiveInlining ||
+            target.Definition.IsIntrinsic && CountsAsSmall(_specializer.Rewrite(callee))
+            ? target
+            : null;
+    }
 
     private static int InstructionCount(CilMethodBody body) =>
         body.Instructions.Count(static instruction => instruction.Operation != CilOperation.Nop);
@@ -491,6 +589,15 @@ internal sealed class ManagedInliningResolver(
     private static bool IsExplicitPriorityCandidate(MethodInstanceModel method, int ilBytes) =>
         method.Definition.IsAggressiveInlining ||
         TakesAnArgumentByReference(method) && ilBytes <= ByReferenceBodyILBytes;
+
+    // Past its budget the priority tier takes a static by-reference callee only where the call, outside the caller's
+    // loops, passes the address of one of the caller's locals or arguments, or, inside them, passes one in a parameter
+    // the callee loads in a loop of its own (see ByReferenceBodyILBytes).
+    private static bool TakesPastTheBudget(
+        ImmutableHashSet<int> localAddressArguments,
+        bool inLoop,
+        ImmutableHashSet<int> loopLoadedParameters) =>
+        !localAddressArguments.IsEmpty && !inLoop || localAddressArguments.Overlaps(loopLoadedParameters);
 
     private static bool TakesAnArgumentByReference(MethodInstanceModel method) =>
         method.Signature.ParameterSignatureTypes.Any(

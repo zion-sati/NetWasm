@@ -22,7 +22,6 @@ public sealed class JavaScriptImportArgumentEmitterTests
             code,
             CliTypeIdentity.FromStackKind(CliValueKind.I4),
             7,
-            EmitterTestSupport.CreateMethodEmissionContext(),
             new InteropImportPlan([], default, default, default, default));
 
         Assert.Empty(addresses.Values);
@@ -49,7 +48,6 @@ public sealed class JavaScriptImportArgumentEmitterTests
             code,
             type,
             7,
-            EmitterTestSupport.CreateMethodEmissionContext(),
             new InteropImportPlan([], default, default, default, default));
 
         Assert.Equal(
@@ -57,6 +55,35 @@ public sealed class JavaScriptImportArgumentEmitterTests
             addresses.Values);
         Assert.Contains(WasmOpcodes.If, code.ToArray());
         Assert.Contains(WasmOpcodes.I32Load, code.ToArray());
+    }
+
+    // An async import once kept its task's handle in a method local that a JSObject argument then overwrote with the
+    // object's own handle, so the import completed whichever task that number named and the awaited one never did. The
+    // handle is the if's value: the argument writes no local at all.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void HostObjectArgumentWritesNoLocal(bool memory64)
+    {
+        var target = memory64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32;
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+        var type = CliTypeIdentity.Named(
+            new AssemblyIdentity("Tests"),
+            "System.Runtime.InteropServices.JavaScript",
+            "JSObject",
+            isValueType: false);
+
+        CreateEmitter(new RecordingLayoutProvider(target), new RecordingAddressEmitter()).Emit(
+            code,
+            type,
+            7,
+            new InteropImportPlan([], default, default, default, default));
+
+        var instructions = code.ToInstructions();
+        Assert.DoesNotContain(instructions, instruction =>
+            instruction.Opcode is WasmOpcodes.LocalSet or WasmOpcodes.LocalTee);
+        var conditional = Assert.Single(instructions, instruction => instruction.Opcode == WasmOpcodes.If);
+        Assert.Equal((byte)WasmValueType.I32, conditional.Operand.BlockTypeValue);
     }
 
     private static IJavaScriptImportArgumentEmitter CreateEmitter(

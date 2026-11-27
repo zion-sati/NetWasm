@@ -305,6 +305,7 @@ public sealed class CompilationPipelineExecutorTests
                 Capability<ICompilerInitialDiagnosticArtifactWriter>("initial-artifact"),
                 Capability<ICompilerEntryDiagnosticArtifactWriter>("entry-artifact"),
                 Capability<ICompilerProgramDiagnosticArtifactWriter>("program-artifact"),
+                Capability<ICompilerReceiverFlowReportWriter>("receiver-flow-artifact"),
                 Capability<ICompilerLayoutDiagnosticArtifactWriter>("layout-artifact"),
                 Capability<ICompilerRootMapDiagnosticArtifactWriter>("root-artifact"),
                 new RecordingEmissionArtifacts((options, bytes) => Calls.Add(("emission-artifact", [options, bytes]))),
@@ -367,6 +368,7 @@ public sealed class CompilationPipelineExecutorTests
             yield return "entry-artifact";
             yield return "analysis";
             yield return "program-artifact";
+            yield return "receiver-flow-artifact";
             yield return "layouts";
             yield return "layout-artifact";
             yield return "units-open";

@@ -213,12 +213,14 @@ internal sealed class CompilationEmissionBuilder(
         {
             ModuleInitializers = analysis.Program.ModuleInitializers,
             JavaScriptConversions = analysis.Program.JavaScriptConversions,
+            ProducesJavaScriptErrors = analysis.Program.ProducesJavaScriptErrors,
             ManagedCallSites = analysis.Program.ManagedCallSites,
             DelegateBindings = analysis.Program.DelegateBindings,
             ManagedByRefEffects = analysis.Program.ManagedByRefEffects,
             ObjectArrayDelegateAdapters = analysis.Program.ObjectArrayDelegateAdapters,
             MemberExecution = analysis.Program.MemberExecution,
             SharedObjectDispatch = analysis.Program.SharedObjectDispatch,
+            SharedArrays = analysis.Program.SharedArrays,
             NativeCallbacks = nativeCallbacks,
             AddressedNativeCallbacks = addressedNativeCallbacks,
             EntryPointArgumentFactory = preparation.EntryPointArgumentFactory,
@@ -262,6 +264,8 @@ internal sealed class CompilationEmissionBuilder(
             InlineMulticastDispatch =
                 preparation.OptimizationSettings.MulticastDispatch ==
                 MulticastDispatchPolicy.Inline,
+            ReachesFilters = analysis.Program.Methods.Values.Concat(analysis.Program.ConstructedMethods.Values)
+                .Any(body => body.Body.ExceptionRegions.Any(region => region.Kind == CilExceptionRegionKind.Filter)),
             SourceLocations = _stackTraceSourceLocations.Read(metadata, options),
         };
         var typeSymbols = _typeSymbols.Build(layouts.Snapshot, _typeIdentities.Create(metadata), typeDefinitions,

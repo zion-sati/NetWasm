@@ -23,7 +23,7 @@ public sealed class UnitStoreDamageTests
         var writer = new UnitSegmentWriter();
         foreach (var identity in identities) Assert.True(writer.Add(Unit(identity)));
         var entries = writer.Entries.Select(entry => new UnitManifestEntry(entry.Hash, 0, entry.Offset)).ToArray();
-        var change = new UnitStoreChange([new(1, writer)],
+        var change = new UnitStoreChange([UnitStoreSegment.Of(1, writer)],
             UnitManifestFormat.Write([new(1, writer.Count, writer.Length)], entries, 2), new HashSet<int> { 1 }, "summary");
         var memory = new UnitStoreMemory();
         new MemoryUnitStoreCommitter(memory).Commit("app", change);
@@ -183,7 +183,7 @@ public sealed class UnitStoreDamageTests
         Assert.True(writer.Add(unit));
         var entries = writer.Entries.Select(entry => new UnitManifestEntry(entry.Hash, 0, entry.Offset)).ToArray();
         var memory = new UnitStoreMemory();
-        new MemoryUnitStoreCommitter(memory).Commit("app", new([new(1, writer)],
+        new MemoryUnitStoreCommitter(memory).Commit("app", new([UnitStoreSegment.Of(1, writer)],
             UnitManifestFormat.Write([new(1, writer.Count, writer.Length)], entries, 2), new HashSet<int> { 1 }, ""));
         var bytes = Pinned(memory.Segment("app", 1)!);
         var offset = entries[0].Offset;
@@ -388,7 +388,7 @@ public sealed class UnitStoreMediaTests
         var writer = new UnitSegmentWriter();
         writer.Add(new CompiledUnit("Program::Run", new(1, 2), [], [0x00, 0x0B], [], 1) { FunctionName = "run" });
         var entries = writer.Entries.Select(entry => new UnitManifestEntry(entry.Hash, 0, entry.Offset)).ToArray();
-        return new([new(sequence, writer)], UnitManifestFormat.Write([new(sequence, writer.Count, writer.Length)], entries, sequence + 1),
+        return new([UnitStoreSegment.Of(sequence, writer)], UnitManifestFormat.Write([new(sequence, writer.Count, writer.Length)], entries, sequence + 1),
             new HashSet<int> { sequence }, "summary");
     }
 }

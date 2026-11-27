@@ -74,7 +74,7 @@ internal sealed record UnitRuntimeObjectLayout(
 internal static class UnitPlanCodec
 {
     private const uint Magic = 0x4C504E4E; // "NNPL"
-    private const int Version = 17;
+    private const int Version = 19;
 
     public static byte[] Encode(InstructionModuleTarget target, IRuntimeObjectLayout runtimeObjects, UnitProgramFacts program)
     {
@@ -132,12 +132,21 @@ internal static class UnitPlanCodec
         writer.Bool(target.InlineSmallBlockOperations);
         writer.Bool(target.InlineArrayData);
         writer.Bool(target.InlineObjectAllocation);
+        writer.Bool(target.ReachesFilters);
         // The shared object dispatch bodies a sharing call site calls, by the declaration it dispatches.
         writer.Int(target.SharedObjectDispatch.Count);
         foreach (var (declaration, body) in target.SharedObjectDispatch.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
             writer.String(declaration);
             writer.Method(body);
+        }
+        // The shared arrays and their GetType.
+        writer.Bool(target.SharedArrays is not null);
+        if (target.SharedArrays is { } shared)
+        {
+            writer.Int(shared.Types.Length);
+            foreach (var type in shared.Types) writer.Type(type);
+            writer.Method(shared.TypeOf);
         }
         writer.Int(runtimeObjects.StringLengthOffset);
         writer.Int(runtimeObjects.StringDataOffset);
@@ -215,13 +224,23 @@ internal static class UnitPlanCodec
             InlineSmallBlockOperations = reader.Bool(),
             InlineArrayData = reader.Bool(),
             InlineObjectAllocation = reader.Bool(),
+            ReachesFilters = reader.Bool(),
             SharedObjectDispatch = SharedObjectDispatch(reader),
+            SharedArrays = SharedArrays(reader),
         };
         var runtimeObjects = new UnitRuntimeObjectLayout(reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int(),
             reader.Int(), reader.Int(), reader.Int(), reader.Int());
         var program = Program(reader);
         if (!reader.AtEnd) throw new InvalidDataException("A compile's kept plans are longer than they read.");
         return new(target, runtimeObjects, program) { StackTraces = numbering };
+    }
+
+    private static SharedArrayPlan? SharedArrays(UnitModelReader reader)
+    {
+        if (!reader.Bool()) return null;
+        var types = ImmutableArray.CreateBuilder<CliTypeIdentity>();
+        for (var count = reader.Int(); count > 0; count--) types.Add(reader.Type()!);
+        return new(types.ToImmutable(), reader.Method());
     }
 
     private static ImmutableDictionary<string, MethodInstanceModel> SharedObjectDispatch(UnitModelReader reader)
@@ -415,6 +434,7 @@ internal static class UnitPlanCodec
         Optional(writer, plan.ReleaseSubscription);
         writer.Bool(plan.UseJavaScriptExportBoundary);
         Named(writer, plan.Conversions);
+        writer.Bool(plan.RequiresExportFailure);
     }
 
     private static InteropImportPlan Interop(UnitModelReader reader)
@@ -426,6 +446,7 @@ internal static class UnitPlanCodec
             Optional(reader), reader.Bool())
         {
             Conversions = Named(reader).ToImmutableDictionary(StringComparer.Ordinal),
+            RequiresExportFailure = reader.Bool(),
         };
     }
 
@@ -619,12 +640,13 @@ internal static class UnitPlanCodec
         writer.Bool(selection.IncludeObjectGeneration);
         writer.Bool(selection.IncludeEventLoopCollection);
         writer.Bool(selection.IncludeYoungCollection);
+        writer.Bool(selection.IncludeSharedArrays);
     }
 
     private static RuntimeImportSelection Runtime(UnitModelReader reader) => new(
         (WasmModuleProfile)reader.Byte(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(),
         reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(),
-        reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool());
+        reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool());
 
     private static void Adapters(UnitModelWriter writer, ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan> adapters)
     {

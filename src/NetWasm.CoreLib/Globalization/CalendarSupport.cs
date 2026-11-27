@@ -56,5 +56,13 @@ namespace System
             get =>
                 AppContext.TryGetSwitch("Switch.System.Globalization.EnforceLegacyJapaneseDateParsing", out bool enabled) && enabled;
         }
+
+        // Encoding.UTF7 and GetEncoding(65000) read it, as upstream's Encoding and EncodingTable do.
+        internal static bool EnableUnsafeUTF7Encoding
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get =>
+                AppContext.TryGetSwitch("System.Text.Encoding.EnableUnsafeUTF7Encoding", out bool enabled) && enabled;
+        }
     }
 }

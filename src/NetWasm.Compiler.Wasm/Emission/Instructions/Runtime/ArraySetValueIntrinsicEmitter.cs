@@ -53,7 +53,8 @@ internal sealed class ArraySetValueIntrinsicEmitter(
         Get(code, request.Local(2, CliValueKind.ManagedReference));
         Get(code, underlying); Get(code, offset);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)imports.Resolve(RuntimeImportSymbol.ArraySetValue,
+            WasmInstructionOperand.Unsigned((uint)imports.Resolve(
+                request.Instruction.Target.RuntimeImportSelection.ArraySetValue,
                 request.Instruction.Target.RuntimeImportSelection))));
         Set(code, request.Local(0, CliValueKind.I4));
     }

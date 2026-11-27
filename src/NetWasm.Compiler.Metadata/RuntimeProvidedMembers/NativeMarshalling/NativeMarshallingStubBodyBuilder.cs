@@ -91,7 +91,7 @@ internal sealed class NativeMarshallingStubBodyBuilder(
             new(
                 [.. arguments.SelectMany(argument => argument.Locals), .. result.Locals, .. locals],
                 [.. elements],
-                cleanup ? [new CilBodyFinally(tryStart, handlerStart, end)] : []),
+                cleanup ? [new CilBodyRegion(CilExceptionRegionKind.Finally, tryStart, handlerStart, handlerStart, end)] : []),
             method,
             maxStack: Math.Max(method.Signature.ParameterSignatureTypes.Length, stub.Variadic is null ? 3 : 6) + 1);
     }

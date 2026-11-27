@@ -13,7 +13,7 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
         get
         {
             var data = new TheoryData<int, string?>();
-            for (var feature = 0; feature < 31; feature++)
+            for (var feature = 0; feature < 32; feature++)
                 foreach (var value in new string?[] { null, "Auto", "Disabled", "Enabled", "enabled", "", "2" })
                     data.Add(feature, value);
             return data;
@@ -56,7 +56,8 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
             loopStrengthReduction: feature == 27 ? value : null,
             rangeBranchFolding: feature == 28 ? value : null,
             unwrittenStaticFieldFolding: feature == 29 ? value : null,
-            conditionalSelects: feature == 30 ? value : null);
+            conditionalSelects: feature == 30 ? value : null,
+            byRefNullCheckElimination: feature == 31 ? value : null);
         if (value is null or "Auto")
         {
             Assert.Null(Parse());
@@ -130,8 +131,10 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
                 ? ManagedRangeBranchFolding.Enabled : ManagedRangeBranchFolding.Disabled),
             29 => new WasmOptimizationOverrides(UnwrittenStaticFieldFolding: enabled
                 ? ManagedUnwrittenStaticFieldFolding.Enabled : ManagedUnwrittenStaticFieldFolding.Disabled),
-            _ => new WasmOptimizationOverrides(ConditionalSelects: enabled
+            30 => new WasmOptimizationOverrides(ConditionalSelects: enabled
                 ? ManagedConditionalSelects.Enabled : ManagedConditionalSelects.Disabled),
+            _ => new WasmOptimizationOverrides(ByRefNullCheckElimination: enabled
+                ? ManagedByRefNullCheckElimination.Enabled : ManagedByRefNullCheckElimination.Disabled),
         };
         Assert.Equal(expected, Parse());
     }

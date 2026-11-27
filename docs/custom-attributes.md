@@ -3,9 +3,10 @@
 Status: available.
 
 NetWasm can resolve a custom attribute query during compilation when its target
-and attribute filter each identify one exact, closed type. The resulting program
-executes ordinary constructor calls and assignments for the selected attributes.
-It does not need a runtime attribute database.
+is a type, an assembly or a module the compiler can name and its filter is known:
+an attribute type, an interface attributes implement, or none. The resulting
+program executes ordinary constructor calls and assignments for the selected
+attributes. It does not need a runtime attribute database.
 
 ```csharp
 using System.ComponentModel;
@@ -46,6 +47,9 @@ automatic localization.
 | `type.GetCustomAttributes(typeof(A), inherit)` | Returns an array of selected instances. |
 | Filtered non-generic `CustomAttributeExtensions` and `Attribute` helpers | The same bounds apply to singular, plural and existence overloads. |
 | Filtered calls through `MemberInfo` or `ICustomAttributeProvider` | The receiver must still be proven to identify a type declaration. |
+| `type.GetCustomAttributes(inherit)`, `Attribute.GetCustomAttributes(target[, inherit])` and the unfiltered extensions | Return every attribute: `object[]` from the target's own method, `Attribute[]` from the others. |
+| A filter of `Attribute` or `object`, or an interface | Selects every attribute assignable to it. An interface filter is a target's own query (an array of the interface); `Attribute`'s statics and the extensions throw `ArgumentException` for it, as on .NET. |
+| Assembly and module targets | `typeof(T).Assembly`, `Assembly.GetExecutingAssembly()`, `typeof(T).Module` and a known assembly's `ManifestModule`, through every overload, with any filter. |
 
 `[inherit]` above denotes an optional overload argument. Omitted inheritance
 arguments use the API's normal default of true. A runtime Boolean is allowed;
@@ -97,7 +101,11 @@ outside these bounds.
 Selection honors attribute assignability, `AttributeUsage`, class inheritance and
 multiplicity. Implemented interfaces do not contribute inherited attributes.
 Filters may name an abstract attribute base class; matching derived attributes
-are selected without constructing the filter itself.
+are selected without constructing the filter itself. As on .NET, a type's query
+with no filter, or a filter of `Attribute`, `object`, `SerializableAttribute` or
+`ComImportAttribute`, also returns the attributes .NET synthesizes from the type's
+flags (`SerializableAttribute`, `ComImportAttribute`); `StructLayoutAttribute` is
+not one of them. Assemblies and modules have none.
 
 Retrieval creates fresh attribute instances and argument arrays on each call.
 Constructors and named field/property assignments execute normally, including
@@ -122,23 +130,31 @@ Retention follows reachable queries:
   argument can retain both bounded result paths.
 - A query on a target known only at run time constructs its filter attribute
   only for the run-time types that carry it, and adds no type to the program.
+- A query with no filter, or a filter that is not sealed, constructs every
+  matching attribute on its target. Where one of those, an attribute the program
+  never names, cannot be built at compile time, the query keeps its fallback.
 
 ## Queries outside these bounds
 
 A reachable call to one of these APIs outside the bounds compiles, and throws
 `PlatformNotSupportedException` with a message naming the query when it runs, so
 code that catches it, or never reaches it, keeps working, as a library built for
-.NET Standard expects. Such a query never silently returns incomplete results,
-and nothing needs a preserve-everything option.
+.NET Standard expects. The build warns `NW1019` for each such call, as well as
+for a delegate, function pointer or expression tree that calls a query, naming
+the method, the query, the reason and a fix (see
+[diagnostics](diagnostics.md)). Such a query never silently returns incomplete
+results, and nothing needs a preserve-everything option.
 
 - Filters known only at run time, and targets known only at run time that are
   not typed `Type`, such as a `MethodInfo` or an `ICustomAttributeProvider`.
-- Unfiltered enumeration and the catch-all `System.Attribute` filter.
-- Open generic targets, array/pointer/byref targets, and member, parameter,
-  module or assembly targets. Closed generic type declarations are eligible.
+- On a target known only at run time, no filter, the catch-all `System.Attribute`
+  or `object` filter, and interface filters: they would construct every attribute
+  of every type the program has.
+- Open generic targets, array/pointer/byref targets, and member and parameter
+  targets, which only run-time member lookup reaches. Closed generic type
+  declarations are eligible.
 - Attribute query method handles and delegates; use a direct bounded call.
-- `CustomAttributeData` discovery and synthesized metadata attributes such as
-  `SerializableAttribute`, `ComImportAttribute` and `StructLayoutAttribute`.
+- `CustomAttributeData` discovery.
 
 A query the program never reaches costs nothing. General runtime reflection and
 runtime type discovery remain outside this feature. See [CoreLib/runtime compatibility](corelib-runtime.md)

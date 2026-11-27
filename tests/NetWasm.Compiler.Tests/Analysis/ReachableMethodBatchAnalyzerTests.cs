@@ -375,7 +375,7 @@ public sealed class ReachableMethodBatchAnalyzerTests
 
     private static ReachableMethodAnalysis CreateAnalysis(
         ReachableMethodRequest request) =>
-        new(request.Method, null!, [], [], null!);
+        new(request.Method, null!, [], [], null!) { ReachableRegions = [] };
 
     private static MethodInstanceModel CreateMethod() =>
         (MethodInstanceModel)RuntimeHelpers.GetUninitializedObject(

@@ -100,6 +100,21 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
                         loopDepth,
                         dispatcherDepth);
                     break;
+                case StructuredSwitch table:
+                    // The head ends in its first case's test; every other chain block is a case's test or a pop.
+                    ValidateOccurrence(table.Head, method, activeGroup, allowConditional: true);
+                    RequireConditional(table.Head.Block, method);
+                    foreach (var block in table.Chain)
+                    {
+                        ValidateOccurrence(block, method, activeGroup, allowConditional: true);
+                    }
+                    foreach (var target in table.Cases.Append(table.Default))
+                    {
+                        if (!labels.Contains(target))
+                            throw new InvalidOperationException(
+                                "A structured switch has no enclosing labeled block for a target.");
+                    }
+                    break;
                 case StructuredIf conditional:
                     ValidateOccurrence(conditional.Condition, method, activeGroup, allowConditional: true);
                     RequireConditional(conditional.Condition.Block, method);
@@ -193,6 +208,8 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
             if (clause.FilterBody is not null)
                 Visit(clause.FilterBody, method, groupId, 0, 0, visitedGroups, labels: []);
             Visit(clause.HandlerBody, method, groupId, 0, 0, visitedGroups, labels: []);
+            if (clause.Kind is CilExceptionRegionKind.Finally or CilExceptionRegionKind.Fault)
+                RequireEndFinallyAtEnd(clause.HandlerBody, ends: true, method);
         }
         if (group.ContinuationDispatcher is null)
         {
@@ -247,6 +264,48 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
         }
     }
 
+    // A finally or fault handler is left by falling out of its end: emission writes no branch for endfinally. So an
+    // endfinally ends its handler, where falling out of it reaches the handler's end: the last region of the handler,
+    // or of an if arm, a loop's exit body or a labeled loop's body that ends it. Falling out of a loop's body or
+    // continuation loops back, and out of a labeled block's body reaches the block after it. A dispatcher branches
+    // out of the handler on its own, and a nested exception region's parts are its own group's.
+    private static void RequireEndFinallyAtEnd(StructuredSequence sequence, bool ends, StructuredMethod method)
+    {
+        for (var index = 0; index < sequence.Regions.Length; index++)
+        {
+            var last = ends && index == sequence.Regions.Length - 1;
+            switch (sequence.Regions[index])
+            {
+                case StructuredCode code when !last &&
+                    method.Blocks[code.Occurrence.Block].Exit is StructuredTerminalExit
+                    {
+                        Instruction.Operation: CilOperation.EndFinally,
+                    }:
+                    throw new InvalidOperationException("An endfinally does not end its handler.");
+                case StructuredIf conditional:
+                    RequireEndFinallyAtEnd(conditional.WhenTrue, last, method);
+                    RequireEndFinallyAtEnd(conditional.WhenFalse, last, method);
+                    break;
+                case StructuredLoop loop:
+                    RequireEndFinallyAtEnd(loop.Body, ends: false, method);
+                    RequireEndFinallyAtEnd(loop.ContinueBody, ends: false, method);
+                    RequireEndFinallyAtEnd(loop.ExitBody, last, method);
+                    break;
+                case StructuredPostTestLoop loop:
+                    RequireEndFinallyAtEnd(loop.Body, ends: false, method);
+                    RequireEndFinallyAtEnd(loop.ContinueBody, ends: false, method);
+                    RequireEndFinallyAtEnd(loop.ExitBody, last, method);
+                    break;
+                case StructuredLabeledBlock block:
+                    RequireEndFinallyAtEnd(block.Body, ends: false, method);
+                    break;
+                case StructuredLabeledLoop loop:
+                    RequireEndFinallyAtEnd(loop.Body, last, method);
+                    break;
+            }
+        }
+    }
+
     // Control leaving a labeled loop's end would leave the loop, so every
     // path through its body ends in a transfer.
     private static void RequireTransferAtEnd(StructuredSequence sequence, StructuredMethod method)
@@ -259,7 +318,7 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
         !sequence.Regions.IsEmpty && sequence.Regions[^1] switch
         {
             StructuredLabelBranch or StructuredLoopBreak or StructuredLoopContinue or
-                StructuredDispatcherContinue or StructuredLabeledLoop => true,
+                StructuredDispatcherContinue or StructuredLabeledLoop or StructuredSwitch => true,
             StructuredCode code => method.Blocks[code.Occurrence.Block].Exit is StructuredTerminalExit,
             StructuredIf conditional =>
                 EndsInTransfer(conditional.WhenTrue, method) && EndsInTransfer(conditional.WhenFalse, method),

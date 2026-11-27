@@ -27,8 +27,53 @@ internal readonly record struct UnitStoreChange(
     IReadOnlySet<int> LiveSequences,
     string Summary);
 
-/// <summary>A segment a compile adds, under its sequence.</summary>
-internal sealed record UnitStoreSegment(int Sequence, UnitSegmentWriter Writer);
+/// <summary>
+/// A segment a compile adds, under its sequence: its unit count, length and entries, and its writer while its bytes
+/// are still to be written. A segment sealed while the compile ran (it filled before emission ended) is already in the
+/// store's medium under its sequence, unlisted until the manifest names it, and has no writer.
+/// </summary>
+internal sealed record UnitStoreSegment(
+    int Sequence,
+    int Count,
+    long Length,
+    IReadOnlyList<(ulong Hash, int Offset)> Entries,
+    UnitSegmentWriter? Writer)
+{
+    internal static UnitStoreSegment Of(int sequence, UnitSegmentWriter writer) =>
+        new(sequence, writer.Count, writer.Length, writer.Entries, writer);
+}
+
+internal interface IUnitSegmentSealer
+{
+    // Writes a full segment into the store's medium under its sequence, before the compile commits; the manifest the
+    // commit writes is what makes it part of the store, and a compile that never commits leaves it for the next
+    // commit to drop.
+    void Seal(string location, int sequence, UnitSegmentWriter writer);
+}
+
+// A desktop compile writes the segment where the store keeps it, beside its final name and moved into place.
+internal sealed class FileUnitSegmentSealer : IUnitSegmentSealer
+{
+    public void Seal(string location, int sequence, UnitSegmentWriter writer)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(location);
+        ArgumentNullException.ThrowIfNull(writer);
+        var directory = UnitStoreFiles.Directory(location);
+        System.IO.Directory.CreateDirectory(directory);
+        FileUnitStoreCommitter.WriteAside(UnitStoreFiles.Segment(directory, sequence), writer.WriteTo);
+    }
+}
+
+// A browser session keeps the segment as the store keeps its segments, a pinned array.
+internal sealed class MemoryUnitSegmentSealer(UnitStoreMemory memory) : IUnitSegmentSealer
+{
+    public void Seal(string location, int sequence, UnitSegmentWriter writer)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(location);
+        ArgumentNullException.ThrowIfNull(writer);
+        memory.Seal(location, sequence, UnitStoreMemory.Bytes(writer));
+    }
+}
 
 /// <summary>
 /// A compile as a later one can patch it: its module, each method's function index in it
@@ -176,8 +221,12 @@ internal sealed class FileUnitStoreCommitter(IUnitFileDeleter files) : IUnitStor
         var summary = change.Summary;
         if (change.Manifest is { } manifest)
         {
+            // A segment sealed while the compile ran is in place already.
             foreach (var segment in change.Segments)
-                WriteAside(UnitStoreFiles.Segment(directory, segment.Sequence), segment.Writer.WriteTo);
+            {
+                if (segment.Writer is { } writer)
+                    WriteAside(UnitStoreFiles.Segment(directory, segment.Sequence), writer.WriteTo);
+            }
             WriteAside(UnitStoreFiles.Manifest(directory), stream => stream.Write(manifest));
             var stale = new List<string>();
             foreach (var file in System.IO.Directory.EnumerateFiles(directory, "units-*.seg"))
@@ -188,8 +237,6 @@ internal sealed class FileUnitStoreCommitter(IUnitFileDeleter files) : IUnitStor
                     stale.Add(file);
                 }
             }
-            // The single-file store of earlier versions.
-            stale.Add(Path.Combine(directory, "units.bin"));
             foreach (var file in stale)
             {
                 try
@@ -564,6 +611,21 @@ internal sealed class UnitStoreMemory
         return bytes;
     }
 
+    // A segment's bytes in one pinned array.
+    internal static byte[] Bytes(UnitSegmentWriter writer)
+    {
+        var bytes = GC.AllocateUninitializedArray<byte>(checked((int)writer.Length), pinned: true);
+        using var stream = new MemoryStream(bytes, writable: true);
+        writer.WriteTo(stream);
+        return bytes;
+    }
+
+    // Keeps a segment sealed while a compile runs; it is part of the store once a manifest lists it.
+    internal void Seal(string location, int sequence, byte[] bytes)
+    {
+        lock (_gate) _segments[(location, sequence)] = bytes;
+    }
+
     internal void Apply(string location, UnitStoreChange change)
     {
         // Each segment the compile adds stays well inside an array's length (CompiledUnitPublisher's
@@ -573,10 +635,7 @@ internal sealed class UnitStoreMemory
         {
             foreach (var added in change.Segments)
             {
-                var bytes = GC.AllocateUninitializedArray<byte>(checked((int)added.Writer.Length), pinned: true);
-                using var stream = new MemoryStream(bytes, writable: true);
-                added.Writer.WriteTo(stream);
-                segments.Add((added.Sequence, bytes));
+                if (added.Writer is { } writer) segments.Add((added.Sequence, Bytes(writer)));
             }
         }
         lock (_gate)
@@ -639,6 +698,7 @@ internal static class UnitMemoryServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(memory);
         services.Replace(ServiceDescriptor.Singleton<IUnitStoreLoader>(new MemoryUnitStoreLoader(memory)));
         services.Replace(ServiceDescriptor.Singleton<IUnitStoreCommitter>(new MemoryUnitStoreCommitter(memory)));
+        services.Replace(ServiceDescriptor.Singleton<IUnitSegmentSealer>(new MemoryUnitSegmentSealer(memory)));
         services.Replace(ServiceDescriptor.Singleton<IUnitKeptCompileLoader>(new MemoryUnitKeptCompileLoader(memory)));
         services.Replace(ServiceDescriptor.Singleton<IUnitKeptCompileCommitter>(new MemoryUnitKeptCompileCommitter(memory)));
         services.Replace(ServiceDescriptor.Singleton<IUnitInputsLoader>(new MemoryUnitInputsLoader(memory)));

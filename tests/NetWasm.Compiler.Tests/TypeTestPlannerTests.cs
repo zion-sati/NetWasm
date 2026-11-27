@@ -80,6 +80,31 @@ public sealed class TypeTestPlannerTests
         Assert.Equal(unboundedTarget ? [filed, open, unfiled] : [filed, open], site.MatchingTypes);
     }
 
+    // Sites that test the same target share its matching types, classified once.
+    [Fact]
+    public void SitesWithTheSameTargetClassifyItsCandidatesOnce()
+    {
+        var target = CreateReferenceType("Marker");
+        var classifier = new FixedRelationshipClassifier(isAssignmentCompatible: true);
+        var planner = CreatePlanner(new RecordingTypeOperandResolver(target), classifier);
+        var allocated = new[] { CreateReferenceType("First"), CreateReferenceType("Second"), target };
+
+        var sites = planner.Build(
+            [CreateManagedMethodBody(
+                [
+                    CreateTypeInstruction(CilOperation.CastClass, offset: 0),
+                    CreateTypeInstruction(CilOperation.IsInstance, offset: 1),
+                    CreateTypeInstruction(CilOperation.CastClass, offset: 2),
+                ],
+                instance: CreateMethodInstance(target))],
+            allocated);
+
+        Assert.Equal(3, sites.Count);
+        Assert.Equal(allocated.Length, classifier.CallCount);
+        Assert.All(sites.Values, site => Assert.Equal(
+            allocated.OrderBy(type => type.CanonicalName, StringComparer.Ordinal), site.MatchingTypes));
+    }
+
     private sealed class KeyTable(Dictionary<CliTypeIdentity, TypeRelationshipKeys> keys) : ITypeRelationshipKeyResolver
     {
         public TypeRelationshipKeys Resolve(CliTypeIdentity type) => keys[type];

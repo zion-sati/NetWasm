@@ -34,16 +34,14 @@ internal sealed class ParallelManagedDefinitionSetAppender(
         if (orderedMethods.IsEmpty) return;
 
         using var batch = batches.Create();
-        var results = batch.Emit(orderedMethods, methods, rootMaps, target, functionIndices);
-        for (var index = 0; index < results.Length; index++)
+        batch.Emit(orderedMethods, methods, rootMaps, target, functionIndices, (index, result) =>
         {
-            var result = results[index];
             var method = orderedMethods[index];
             units.Capture(method.Identity.CanonicalName, result,
                 methods[method.MethodKey], rootMaps[method.MethodKey]);
             functions.Add(result.Function);
             filterEnvironments[result.EnvironmentKey] = result.Environment;
             emissions.Add(result.Record);
-        }
+        });
     }
 }

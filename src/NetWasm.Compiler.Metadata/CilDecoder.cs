@@ -31,6 +31,7 @@ internal sealed class CilDecoder(
     ICilSwitchLowerer switches,
     IPlatformGuardPlanner guards,
     ICilTryReentryLowerer tries,
+    ICilLeaveChainer leaves,
     ITypedReferenceCallResolver typedReferences) : ICilDecoder
 {
     private static readonly Dictionary<byte, OpCode> OneByteOpCodes;
@@ -157,25 +158,35 @@ internal sealed class CilDecoder(
         var locals = localSignatureTypes
             .Select(type => type.StackKind)
             .ToImmutableArray();
-        var exceptionRegions = body.ExceptionRegions.Where(region => guardPlan is null ||
-            guardPlan.LiveOffsets.Any(offset => offset >= region.TryOffset && offset < region.TryOffset + region.TryLength)).Select(region =>
+        // A region whose try holds no live instruction is dropped: the live offsets sorted once, each try a binary search.
+        var liveOffsets = guardPlan is null ? null : guardPlan.LiveOffsets.Order().ToArray();
+        var exceptionRegions = body.ExceptionRegions.Where(region => liveOffsets is null ||
+            HoldsLiveOffset(liveOffsets, region.TryOffset, region.TryOffset + region.TryLength)).Select(region =>
             DecodeExceptionRegion(assembly, region, genericContext)).ToImmutableArray();
         var lowered = switches.Lower(
             instructions.ToImmutable(),
             exceptionRegions);
         var reentered = tries.Lower(lowered.Instructions, lowered.ExceptionRegions, locals.Length);
+        var chained = leaves.Chain(reentered.Instructions, reentered.ExceptionRegions);
         return new CilMethodBody(
             method,
             checked(body.MaxStack + lowered.AdditionalMaxStack + reentered.AdditionalMaxStack),
             [.. locals, .. reentered.AddedLocals.Select(type => type.StackKind)],
-            reentered.Instructions)
+            chained.Instructions)
         {
             MethodInstance = methodInstance,
             LocalSignatureTypes = [.. localSignatureTypes, .. reentered.AddedLocals],
-            ExceptionRegions = reentered.ExceptionRegions,
+            ExceptionRegions = chained.ExceptionRegions,
             PinnedLocals = pinnedLocals,
             InitializesLocals = body.LocalVariablesInitialized,
         };
+    }
+
+    private static bool HoldsLiveOffset(int[] liveOffsets, int start, int end)
+    {
+        var index = Array.BinarySearch(liveOffsets, start);
+        if (index < 0) index = ~index;
+        return index < liveOffsets.Length && liveOffsets[index] < end;
     }
 
     private CilInstruction ReadInstruction(

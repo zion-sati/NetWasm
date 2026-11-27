@@ -12,7 +12,7 @@ internal static class CallLifetimeServiceCollectionExtensions
     {
         services.AddSingleton<IScalarCallLifetimePlanner>(_ => new ScalarCallLifetimePlanner(
             new ControlFlowGraphBuilderFactory().Create(),
-            new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer())));
+            new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()))));
         services.AddSingleton<IScalarCallPreservationEmitter, ScalarCallPreservationEmitter>();
         return services;
     }

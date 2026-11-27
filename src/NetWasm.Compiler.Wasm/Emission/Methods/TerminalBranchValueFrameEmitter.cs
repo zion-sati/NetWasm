@@ -32,7 +32,7 @@ internal sealed class TerminalBranchValueFrameEmitter(
         ArgumentNullException.ThrowIfNull(emitBody);
         var defersRoots = placement.Plan.DefersRootFrame;
         if (context.ValueLayout.Size != 0 || (placement.FramedLayout.Size == 0 && !defersRoots) ||
-            context.FilterEnvironment.Size != 0 || context.ExceptionRootSlots.Count != 0 ||
+            context.FilterEnvironment.Size != 0 ||
             (defersRoots && (context.RootSlotCount != 0 || placement.FramedRootMap is null)) ||
             placement.Plan.IncomingScalarLocals.Any(index =>
                 !context.AddressTakenScalarPromotions.ShadowLocals.ContainsKey(index)))
@@ -40,6 +40,10 @@ internal sealed class TerminalBranchValueFrameEmitter(
             throw new InvalidOperationException("Branch value-frame emission requires separate register and frame bindings.");
         }
 
+        if (placement.Plan.UnframedPrefix is { } prefix)
+        {
+            emitBody(prefix, context);
+        }
         conditions.Emit(code, context, emitCondition(placement.Plan.Condition, context));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -111,8 +115,8 @@ internal sealed class TerminalBranchValueFrameEmitter(
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
                     WasmInstructionOperand.Unsigned((uint)framed.RootFrame)));
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                    WasmInstructionOperand.Unsigned((uint)(source.Index + (source.Kind == RootSourceKind.Local
-                        ? framed.LocalBase : framed.ParameterOffset)))));
+                    WasmInstructionOperand.Unsigned((uint)(source.Kind == RootSourceKind.Local
+                        ? framed.LocalBase + source.Index : framed.ArgumentLocal(source.Index)))));
                 ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target,
                     checked(slot * layouts.Target.ObjectReferenceSize), layouts.Target.ObjectReferenceSize);
             }

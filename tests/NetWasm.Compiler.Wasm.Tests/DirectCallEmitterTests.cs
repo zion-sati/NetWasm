@@ -38,7 +38,7 @@ public sealed class DirectCallEmitterTests
         var initialization = new RecordingInitialization();
         var emitter = Assert.IsAssignableFrom<ICallEmitter>(new DirectCallEmitter(layouts, layouts,
             new ImplicitExceptionEmitter(layouts), initialization,
-            new MethodInitializationTriggerClassifier(program)));
+            new MethodInitializationTriggerClassifier(program), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory()));
 
         emitter.Emit(new(instruction, method, 0, isStatic ? 0 : 1),
             GetCodeWriter(instruction), CreateIndices(program));
@@ -431,7 +431,7 @@ public sealed class DirectCallEmitterTests
                 layouts,
                 new ImplicitExceptionEmitter(layouts),
                 new RecordingInitialization(),
-                new MethodInitializationTriggerClassifier(new FakeProgram())),
+                new MethodInitializationTriggerClassifier(new FakeProgram()), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory()),
         }.Cast<ICallEmitter>().Single();
 
     private sealed class RecordingInitialization : IStaticInitializationEmitter

@@ -1,8 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
-// NetWasm adaptation: Reset clears only this buffer's state; NetWasm's EncoderFallbackBuffer has no charStart or
-// bFallingBack fields to clear.
+// Copied from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce src/libraries/System.Private.CoreLib/src/System/Text/EncoderLatin1BestFitFallback.cs
 
 //
 // This is used internally to create best fit behavior as per the original windows best fit behavior.
@@ -117,6 +115,8 @@ namespace System.Text
         public override unsafe void Reset()
         {
             _iCount = -1;
+            charStart = null;
+            bFallingBack = false;
         }
 
         // private helper methods

@@ -151,6 +151,17 @@ internal sealed class EarlyCutoffEmitter(
             return Declined(obstacle);
         }
 
+        // A call dispatched by receiver flow has the targets of the receivers other methods bring it, which an edit
+        // anywhere can change and a method analyzed alone cannot know.
+        if (analyzed.Sites.DispatchCallSites.Values.FirstOrDefault(site =>
+                // The site keeps no receiver bound: a call constrained to a value type counts as gated here, which
+                // only declines more edits.
+                Analysis.ReceiverFlow.ReceiverFlowDispatchGate.Gates(preparation.OptimizationSettings.ReceiverFlowDispatch,
+                    CilOperation.CallVirtual, site.Declaration, receiverBound: null)) is { } flowed)
+        {
+            return Declined($"{flowed.Caller} has a call dispatched by receiver flow");
+        }
+
         // Its own facts: call, dispatch and type-test sites, and by-ref effects as before.
         var owners = analyzed.Methods.Select(method => method.Method.CanonicalName).ToHashSet(StringComparer.Ordinal);
         var overlay = new Dictionary<(UnitQueryKind Kind, string Key), object>();

@@ -5,10 +5,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createInteropDirectService } from "./interop-direct-service.mjs";
+import { createJavaScriptErrorChannel } from "./javascript-error-channel.mjs";
+import { createInteropHandleTable } from "./interop-handle-table.mjs";
 import { NetWasmHostError } from "./managed-errors.mjs";
 
-const direct = (parameters, result, service, activity = { active: 0 }) =>
-  createInteropDirectService({ descriptor: { parameters, result }, service, activity });
+const noErrors = { captureThrow() {}, captureRejection() {} };
+const direct = (parameters, result, service, activity = { active: 0 }, errors = noErrors) =>
+  createInteropDirectService({ descriptor: { parameters, result }, service, activity, errors });
 
 test("lifts each scalar from its WebAssembly value", () => {
   const cases = [
@@ -67,6 +70,20 @@ test("counts the import as active while the service runs", () => {
 
 test("rejects a missing service or activity", () => {
   assert.throws(() => direct([], "void", null), TypeError);
-  assert.throws(() => createInteropDirectService({ descriptor: { parameters: [], result: "void" }, service() {}, activity: null }),
+  assert.throws(() => createInteropDirectService({ descriptor: { parameters: [], result: "void" }, service() {}, activity: null, errors: noErrors }),
     TypeError);
+  assert.throws(() => createInteropDirectService({ descriptor: { parameters: [], result: "void" }, service() {}, activity: { active: 0 } }),
+    TypeError);
+});
+
+// The JSException a direct call's catch_all raises carries what the function threw, read as .NET reads it.
+test("hands what the function throws, and a result outside its type, to the error channel", () => {
+  const handles = createInteropHandleTable();
+  const errors = createJavaScriptErrorChannel(handles);
+  const thrown = new DOMException("denied", "NotAllowedError");
+  assert.throws(() => direct(["i32"], "i32", () => { throw thrown; }, { active: 0 }, errors)(1), error => error === thrown);
+  assert.equal(errors.services.error_pending_message(), "NotAllowedError: denied");
+  assert.equal(handles.get(errors.services.error_take()), thrown);
+  assert.throws(() => direct([], "u8", () => 300, { active: 0 }, errors)());
+  assert.notEqual(errors.services.error_pending_message(), null);
 });

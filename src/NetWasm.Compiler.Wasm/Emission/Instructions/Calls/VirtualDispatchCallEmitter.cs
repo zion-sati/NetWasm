@@ -13,6 +13,8 @@ using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 
 internal sealed class VirtualDispatchCallEmitter(
@@ -35,7 +37,10 @@ internal sealed class VirtualDispatchCallEmitter(
     IValueTypeHashCodeEmitter valueTypeHashCode,
     IConstrainedReferenceReceiverEmitter constrainedReceivers,
     IStaticInitializationEmitter initialization,
-    IMethodInitializationTriggerClassifier initializationTriggers) :
+    IMethodInitializationTriggerClassifier initializationTriggers,
+    IValueTypeArgumentConventionFactory argumentConventions,
+    IValueTypeResultConventionFactory resultConventions,
+    IReceiverFlowAuditEmitter audits) :
     ICallEmitter
 {
     public void Emit(
@@ -43,8 +48,8 @@ internal sealed class VirtualDispatchCallEmitter(
         IFunctionIndexResolver functionIndices)
     {
         var dispatch = ResolveDispatchSite(request);
-        var plan = plans.Build(request.Method, dispatch.Targets);
-        var dispatchCases = cases.Plan(plan.CheckedTargets, dispatch.Targets);
+        var plan = plans.Build(request.Method, dispatch.Targets, exhaustive: !dispatch.PreciseTargets);
+        var dispatchCases = cases.Plan(plan.CheckedTargets, dispatch.Targets, exhaustive: !dispatch.PreciseTargets);
         var instruction = request.Instruction;
         var signature = request.Method.Signature;
         var receiverLocal = constrainedReceivers.Emit(
@@ -60,8 +65,10 @@ internal sealed class VirtualDispatchCallEmitter(
         {
             EmitNullCheck(code, receiverLocal, request.Instruction.Context.ManagedThrowFunction);
         }
+        audits.Emit(code, dispatch, receiverLocal, request.Instruction.Context.NumericTemporaryI4, functionIndices);
         var returnsValue = signature.ReturnSignatureType.StackKind == CliValueKind.ValueType;
-        var returnOffset = returnsValue
+        var lanes = instruction.Context.CallResultLanes.Calls.ContainsKey(instruction.Instruction.Offset);
+        var returnOffset = returnsValue && !lanes
             ? instruction.Context.ValueLayout.TemporaryOffsets[
                 instruction.Instruction.Offset]
             : 0;
@@ -75,7 +82,12 @@ internal sealed class VirtualDispatchCallEmitter(
             returnOffset,
             functionIndices);
         instruction.Stack.RemoveRange(request.ArgumentBase, request.Consumed);
-        if (returnsValue)
+        if (returnsValue && lanes)
+        {
+            // Every target left the results in the shape's lanes.
+            instruction.Stack.Add(CliValueKind.ValueType);
+        }
+        else if (returnsValue)
         {
             EmitValueFrameAddress(
                 code,
@@ -318,28 +330,40 @@ internal sealed class VirtualDispatchCallEmitter(
         CliValueKind returnType,
         IFunctionIndexResolver functionIndices)
     {
+        void EmitCall(IWasmInstructionWriter code)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(receiverLocal))));
+            if (target.ReceiverType.IsValueType && target.Method.DeclaringType.IsValueType)
+            {
+                var receiver = values.GetValueLayout(target.ReceiverType);
+                var payloadOffset = WasmTargetLayout.Align(
+                    layouts.Target.ObjectHeaderSize,
+                    receiver.Alignment);
+                EmitAddressConstant(code, payloadOffset);
+                EmitAddressAdd(code);
+            }
+            // A static target (an array's interface methods in SZArrayHelper) takes the receiver as its first parameter.
+            for (var index = 1; index < consumed; index++)
+            {
+                var local = GetStackLocal(instruction.Context, argumentBase + index, instruction.Stack[argumentBase + index]);
+                argumentConventions.Create(StructParameters.Parameter(target.Method.Signature, target.Method.Definition.IsStatic, index))
+                    .Emit(code, writer => writer.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local))),
+                        new(instruction.Context, instruction.Instruction.Offset, index, instruction.Context.VectorScratch));
+            }
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(functionIndices.Resolve(target.Method)))));
+        }
+        // The target's own signature decides how it returns a value type, as its function type does.
         if (returnsValue)
         {
-            EmitValueFrameAddress(code, instruction.Context, returnOffset);
+            resultConventions.Create(target.Method.Signature.ReturnSignatureType).Emit(code,
+                writer => EmitValueFrameAddress(writer, instruction.Context, returnOffset), new(instruction.Context.StructResultLocals,
+                    instruction.Context.VectorScratch, instruction.Context.CallResultLanes.Calls.ContainsKey(instruction.Instruction.Offset)),
+                EmitCall);
         }
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(receiverLocal))));
-        if (target.ReceiverType.IsValueType && target.Method.DeclaringType.IsValueType)
+        else
         {
-            var receiver = values.GetValueLayout(target.ReceiverType);
-            var payloadOffset = WasmTargetLayout.Align(
-                layouts.Target.ObjectHeaderSize,
-                receiver.Alignment);
-            EmitAddressConstant(code, payloadOffset);
-            EmitAddressAdd(code);
+            EmitCall(code);
         }
-        for (var index = 1; index < consumed; index++)
-        {
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-                instruction.Context,
-                argumentBase + index,
-                instruction.Stack[argumentBase + index])))));
-        }
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(functionIndices.Resolve(target.Method)))));
         if (!returnsValue && returnType != CliValueKind.Void)
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(

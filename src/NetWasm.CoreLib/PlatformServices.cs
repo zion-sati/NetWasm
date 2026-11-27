@@ -40,7 +40,11 @@ namespace System.Runtime.InteropServices
 
     internal interface IPlatformScheduler
     {
+        // Work to run after a delay; the delay machinery is reached only through it.
         IPlatformSchedule Schedule(Action continuation, ulong delayNanoseconds);
+
+        // Work to run as soon as the loop takes it, with no delay.
+        IPlatformSchedule Post(Action continuation);
     }
 
     internal static class WasiPlatformServicesComposition
@@ -128,6 +132,10 @@ namespace System.Runtime.InteropServices
                 new Concurrency.WasiSubtaskDropInvoker())
             {
                 HostCanComplete = PlatformWorld.HasHostEventLoop(),
+                // A world without the monotonic clock cannot time a batch.
+                Batch = PlatformWorld.HasHostEventLoop() && PlatformWorld.ImportsMonotonicClock()
+                    ? new QuantumBatch(new Concurrency.WasiMonotonicWaitInvoker())
+                    : UnboundedBatch.Instance,
             };
 
         internal static IPlatformTimerFactory CreateTimerFactory(

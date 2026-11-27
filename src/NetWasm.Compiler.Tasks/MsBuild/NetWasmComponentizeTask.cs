@@ -4,6 +4,7 @@
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 using NetWasm.Compiler.ComponentModel;
+using NetWasm.Compiler.ComponentModel.Debugging;
 using NetWasm.Compiler.ComponentModel.Node;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
@@ -119,6 +120,15 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
 
     public bool StructuredDiagnostics { get; set; }
 
+    // Debug information (NetWasmDebugInfo, on in Debug): the module's names for a debugger and trap backtraces, and
+    // with the program's method symbols (written with managed stack traces on) DWARF lines that find relative source
+    // documents in the source directory, the project's.
+    public bool DebugInfo { get; set; }
+
+    public string? MethodSymbolsPath { get; set; }
+
+    public string? SourceDirectory { get; set; }
+
     [Output]
     public ITaskItem[] Components { get; private set; } = [];
 
@@ -176,6 +186,7 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
             {
                 OptimizationOverrides = optimizationOverrides,
                 PlainCoreModule = PlainCoreModule,
+                DebugInformation = DebugInfo ? new(MethodSymbolsPath, SourceDirectory) : null,
             });
             if (!PlainCoreModule)
             {

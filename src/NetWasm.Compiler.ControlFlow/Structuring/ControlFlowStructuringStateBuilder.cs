@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Runtime.InteropServices;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.ControlFlow.Structuring;
@@ -32,11 +33,21 @@ internal sealed class ControlFlowStructuringStateBuilder(
         {
             ContinuationGraph = discoveryGraph,
         };
-        var domains = _domains.Find(discoveryGraph);
+        var domains = new ControlFlowDomains(_domains.Find(discoveryGraph));
         var naturalLoops = domains
             .SelectMany(domain => FindNaturalLoops(discoveryGraph, domain)
                 .Select(component => new NaturalLoopCandidate(component, domain)))
             .ToArray();
+        // The natural loops holding each block: a cycle lies in a loop only if a loop holding one of its blocks holds
+        // all of them, so each cycle is checked against those loops, not every loop of the method.
+        var loopsByBlock = new Dictionary<int, List<ImmutableHashSet<int>>>();
+        foreach (var candidate in naturalLoops)
+        {
+            foreach (var block in candidate.Component)
+            {
+                (CollectionsMarshal.GetValueRefOrAddDefault(loopsByBlock, block, out _) ??= []).Add(candidate.Component);
+            }
+        }
         foreach (var candidate in naturalLoops)
         {
             var loopCreation = _loops.Create(state,
@@ -62,8 +73,10 @@ internal sealed class ControlFlowStructuringStateBuilder(
                          domain.Blocks).Where(component =>
                          _cycles.Classify(discoveryGraph, component)))
             {
-                if (!naturalLoops.Any(loop =>
-                        component.IsSubsetOf(loop.Component)))
+                if (component.IsEmpty
+                        ? naturalLoops.Length == 0
+                        : !(loopsByBlock.TryGetValue(component.First(), out var holding) &&
+                            holding.Exists(loop => component.All(loop.Contains))))
                 {
                     foreach (var node in component)
                     {

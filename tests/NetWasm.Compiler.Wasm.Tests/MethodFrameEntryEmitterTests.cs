@@ -101,7 +101,7 @@ public sealed class MethodFrameEntryEmitterTests
                 new ValueFrameInitializationEmitter(layouts, layouts, addresses), copies,
                 new ManagedAggregateValueInitializer(layouts)),
             new RecordingFilterEnvironmentRootEmitter(),
-            new ManagedByRefAggregateInitializationEmitter(layouts));
+            new ManagedByRefAggregateInitializationEmitter(layouts), new LandingPadRestoreEmitter(layouts, imports));
         var code = new RecordingInstructionWriter();
 
         emitter.Emit(
@@ -150,7 +150,7 @@ public sealed class MethodFrameEntryEmitterTests
                 imports, addresses, new ValueFrameInitializationEmitter(layouts, values, addresses), copies,
                 new ManagedAggregateValueInitializer(layouts)),
             new RecordingFilterEnvironmentRootEmitter(),
-            new ManagedByRefAggregateInitializationEmitter(layouts)) }
+            new ManagedByRefAggregateInitializationEmitter(layouts), new LandingPadRestoreEmitter(layouts, imports)) }
             .Cast<IMethodFrameEntryEmitter>().Single();
         var code = new RecordingInstructionWriter();
 
@@ -206,11 +206,11 @@ public sealed class MethodFrameEntryEmitterTests
         }
     }
 
-    // A zeroed frame is cleared once after it is entered, exception slots included, with stores from the frame's
-    // address up to 256 bytes and one fill above; the entry then writes only authoritative arguments, since an
-    // authoritative local's slot already holds null.
+    // A zeroed frame is cleared once after it is entered, with stores from the frame's
+    // address up to 256 bytes and one fill above, the stores leaving an authoritative argument's slot to its copy; the
+    // entry then writes only authoritative arguments, since an authoritative local's slot already holds null.
     [Theory]
-    [InlineData(WasmTarget.Wasm32, 3)]
+    [InlineData(WasmTarget.Wasm32, 4)]
     [InlineData(WasmTarget.Wasm64, 3)]
     [InlineData(WasmTarget.Wasm32, 100)]
     public void AZeroedFrameIsClearedOnceAfterEntry(WasmTarget target, int slots)
@@ -225,7 +225,6 @@ public sealed class MethodFrameEntryEmitterTests
         {
             RootMap = new MethodRootMap(EntryKey, slotMap, []),
             AuthoritativeRootSlots = ImmutableDictionary<RootSource, int>.Empty.Add(argument, 0).Add(local, 1),
-            ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(new(0), slots),
             RootFrameStartsZeroed = true,
         };
         var code = new RecordingInstructionWriter();
@@ -234,10 +233,11 @@ public sealed class MethodFrameEntryEmitterTests
             code, new StructuredMethodHeader(program.GetMethod(EntryKey), null, 1, [], [], []), context);
 
         var instructions = code.ToInstructions();
-        var size = (slots + 1) * WasmTargetLayout.For(target).ObjectReferenceSize;
+        var size = slots * WasmTargetLayout.For(target).ObjectReferenceSize;
         var expected = new RecordingInstructionWriter();
-        FrameRangeZeroing.Emit(expected, WasmTargetLayout.For(target), writer => writer.Write(
-            WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)context.RootFrame))), size);
+        FrameSlotZeroing.Emit(expected, WasmTargetLayout.For(target), writer => writer.Write(
+            WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)context.RootFrame))), slots,
+            new HashSet<int> { 0 });
         var zeroing = expected.ToInstructions();
         var entered = instructions.IndexOf(instructions.First(instruction => instruction.Opcode == WasmOpcodes.LocalSet &&
             instruction.Operand.UnsignedValue == (uint)context.RootFrame));
@@ -248,123 +248,23 @@ public sealed class MethodFrameEntryEmitterTests
         Assert.Contains(zeroing, instruction => instruction.Opcode is WasmOpcodes.SimdPrefixed or WasmOpcodes.Prefixed);
         Assert.Equal(size > FrameRangeZeroing.MaximumStoredBytes, zeroing.Any(instruction =>
             instruction.Operand == WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
-        // After the zeroing: the argument's store, and nothing for the local or the exception slot.
+        // After the zeroing: the argument's store, and nothing for the local.
         var rest = instructions.Skip(entered + 1 + zeroing.Length).ToArray();
         Assert.Single(rest, instruction => instruction.Opcode is WasmOpcodes.I32Store or WasmOpcodes.I64Store);
         Assert.DoesNotContain(rest, instruction => instruction.Opcode == WasmOpcodes.Prefixed);
     }
 
     [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void ClearsMultipleExceptionRootsWithOneMemoryFill(
-        WasmTarget target)
-    {
-        var program = new FakeProgram();
-        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
-        var first = new RootSource(RootSourceKind.Argument, 0);
-        var second = new RootSource(RootSourceKind.Local, 0);
-        var context = CreateMethodEmissionContext() with
-        {
-            RootMap = new MethodRootMap(
-                EntryKey,
-                ImmutableDictionary<RootSource, int>.Empty
-                    .Add(first, 0)
-                    .Add(second, 1),
-                []),
-            ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty
-                .Add(new(0), 2)
-                .Add(new(1), 3),
-        };
-        var code = new RecordingInstructionWriter();
-
-        CreateMethodFrameEntry(
-            program,
-            layouts,
-            WasmRuntimeImports.CreateCatalog()).Emit(
-                code,
-                new StructuredMethodHeader(
-                    program.GetMethod(EntryKey), null, 1, [], [], []),
-                context);
-
-        var instructions = code.ToInstructions();
-        Assert.Contains(
-            instructions,
-            instruction => instruction.Opcode == WasmOpcodes.Call &&
-                instruction.Operand.UnsignedValue ==
-                (uint)WasmRuntimeImports.CreateCatalog().Resolve(
-                    RuntimeImportSymbol.RootFrameEnter));
-        Assert.Contains(
-            instructions,
-            instruction => instruction.Opcode == WasmOpcodes.LocalTee &&
-                instruction.Operand.UnsignedValue == (uint)context.RootFrame);
-        Assert.DoesNotContain(
-            instructions,
-            instruction => instruction.Opcode == WasmOpcodes.LocalSet &&
-                instruction.Operand.UnsignedValue == (uint)context.RootFrame);
-        Assert.DoesNotContain(
-            instructions,
-            instruction => instruction.Opcode is WasmOpcodes.I32Store or
-                WasmOpcodes.I64Store);
-        Assert.Contains(
-            instructions,
-            instruction => instruction.Opcode == WasmOpcodes.Prefixed &&
-                instruction.Operand == WasmInstructionOperand.PrefixedPair(
-                    WasmOpcodes.MemoryFill,
-                    0));
-    }
-
-    [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void ClearsSingleExceptionRootWithOneStore(WasmTarget target)
-    {
-        var program = new FakeProgram();
-        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
-        var context = CreateMethodEmissionContext() with
-        {
-            RootMap = new MethodRootMap(
-                EntryKey,
-                ImmutableDictionary<RootSource, int>.Empty.Add(
-                    new RootSource(RootSourceKind.Argument, 0),
-                    0),
-                []),
-            ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty
-                .Add(new(0), 1),
-        };
-        var code = new RecordingInstructionWriter();
-
-        CreateMethodFrameEntry(
-            program,
-            layouts,
-            WasmRuntimeImports.CreateCatalog()).Emit(
-                code,
-                new StructuredMethodHeader(
-                    program.GetMethod(EntryKey), null, 1, [], [], []),
-                context);
-
-        var instructions = code.ToInstructions();
-        var store = Assert.Single(instructions.Where(instruction =>
-            instruction.Opcode == (target == WasmTarget.Wasm64
-                ? WasmOpcodes.I64Store
-                : WasmOpcodes.I32Store)));
-        Assert.Equal((uint)layouts.Target.ObjectReferenceSize, store.Operand.Offset);
-        Assert.DoesNotContain(
-            instructions,
-            instruction => instruction.Opcode == WasmOpcodes.Prefixed);
-    }
-
-    [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ExceptionRootsComposeWithFilterAndStackTraceFrames(bool includeFilterAndTrace)
+    public void ExceptionBlocksAddNoSlotToTheMethodFrame(bool includeFilterAndTrace)
     {
         var program = new FakeProgram();
         var layouts = new RecordingLayoutProvider();
         var imports = WasmRuntimeImports.CreateCatalog();
         var context = CreateMethodEmissionContext() with
         {
-            ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(new(0), 0),
+            ExceptionCellFrames = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(new(0), 40),
             ValueLayout = new ValueFrameLayout(includeFilterAndTrace ? 16 : 0, [], [], [], []),
             FilterEnvironment = includeFilterAndTrace
                 ? new FilterEnvironmentLayout(16, 1, 0, [])
@@ -378,16 +278,13 @@ public sealed class MethodFrameEntryEmitterTests
             new StructuredMethodHeader(program.GetMethod(EntryKey), null, 1, [], [], []), context);
         CreateMethodFrameExit(imports).Emit(code, context);
         var instructions = code.ToInstructions();
-        Assert.Equal(0, context.RootMap.SlotCount);
-        Assert.Equal(1, context.RootSlotCount);
-        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.Call &&
-            instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameEnter));
-        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.Call &&
-            instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameLeave));
-        Assert.Equal(includeFilterAndTrace ? 2 : 1, instructions.Count(instruction =>
+        // A block's exception lives in a frame its landing pad enters, so the method enters none of its own; only a
+        // filter environment's frame remains.
+        Assert.Equal(0, context.RootSlotCount);
+        Assert.Equal(includeFilterAndTrace ? 1 : 0, instructions.Count(instruction =>
             instruction.Opcode == WasmOpcodes.Call &&
             instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameEnter)));
-        Assert.Equal(includeFilterAndTrace ? 2 : 1, instructions.Count(instruction =>
+        Assert.Equal(includeFilterAndTrace ? 1 : 0, instructions.Count(instruction =>
             instruction.Opcode == WasmOpcodes.Call &&
             instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameLeave)));
     }
@@ -651,7 +548,7 @@ public sealed class MethodFrameEntryEmitterTests
                     new SmallValueCopyEmitter(new BulkValueCopyEmitter(layouts)),
                     new ManagedAggregateValueInitializer(layouts)),
                 filterRoots,
-                new ManagedByRefAggregateInitializationEmitter(layouts)),
+                new ManagedByRefAggregateInitializationEmitter(layouts), new LandingPadRestoreEmitter(layouts, imports)),
         }.Cast<IMethodFrameEntryEmitter>().Single();
 
     private sealed class RecordingValueFrameAddressEmitter : IValueFrameAddressEmitter

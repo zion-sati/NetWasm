@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using NetWasm.Compiler.Analysis.NullChecks;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Analysis.Loops;
@@ -434,6 +435,29 @@ internal sealed class ReductionLoopRewriter(
             Add(CilOperation.Add);
             Length(access);
             Add(CilOperation.BranchIfGreaterThanOrEqualUnsigned, new CilOperand.BranchTarget(test));
+            // The fold reads a span's elements from i to end - 1 without the checks O0 makes, so it runs only where none
+            // of them is at address 0; elsewhere the loop runs itself and throws where O0 does.
+            if (access.Indexer is { } indexer)
+            {
+                NonZeroAddressRange.BranchUnlessNonZero(
+                    Add,
+                    () =>
+                    {
+                        Copy(access.Base);
+                        Index(access.Offset);
+                        Add(CilOperation.Call, new CilOperand.MethodInstance(indexer));
+                    },
+                    () =>
+                    {
+                        Bound();
+                        Add(CilOperation.LoadInt32, new CilOperand.ConstantI4(-1));
+                        Add(CilOperation.Add);
+                        Add(CilOperation.LoadLocal, new CilOperand.Index(counter));
+                        Add(CilOperation.Subtract);
+                    },
+                    access.Element,
+                    new CilOperand.BranchTarget(test));
+            }
         }
 
         // x = x op fold(range), as the statement applies one element.

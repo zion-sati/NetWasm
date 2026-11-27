@@ -20,6 +20,10 @@ internal abstract record VectorLoopMethod(string Type, string Name)
     // StoreUnsafe<T>(Vector128<T>, ref T, nuint).
     public static VectorLoopMethod Load { get; } = new GenericMethod("System.Runtime.Intrinsics.Vector128", "LoadUnsafe", 2);
 
+    // NonZeroAddress.Of<T>(ref T): the mark loop versioning puts on an address its test covered.
+    public static VectorLoopMethod NonZeroAddress { get; } =
+        new GenericMethod("System.Runtime.CompilerServices.NonZeroAddress", "Of", 1);
+
     public static VectorLoopMethod Store { get; } = new GenericMethod("System.Runtime.Intrinsics.Vector128", "StoreUnsafe", 3);
 
     // Vector128.Sum<T>(Vector128<T>), the lanes' wrapping sum, and

@@ -144,6 +144,19 @@ internal sealed class RuntimeInitializerFunctionEmitter(
                     RuntimeImportSymbol.RegisterTypeObjects,
                     plan.RuntimeImportSelection))));
         }
+        // The shared arrays' cast table, for a program that allocates them.
+        if (staticData.SharedArrayTargetsAddress != 0)
+        {
+            addresses.Emit(code.Instructions, staticData.SharedArrayTargetsAddress);
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(staticData.SharedArrayTargetCount)));
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.Call,
+                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
+                    RuntimeImportSymbol.RegisterSharedArrays,
+                    plan.RuntimeImportSelection))));
+        }
         // GetType on a receiver of unknown type reads the runtime's cache of
         // Type objects through this word.
         if (staticData.TypeObjectCacheAddress != 0)

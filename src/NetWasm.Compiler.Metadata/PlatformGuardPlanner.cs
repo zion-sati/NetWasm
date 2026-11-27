@@ -61,14 +61,15 @@ internal sealed class PlatformGuardPlanner(IRawCilInstructionReader instructions
         var byOffset = raw.Select((instruction, index) => (instruction.Offset, Index: index))
             .ToDictionary(item => item.Offset, item => item.Index);
         var branches = new Dictionary<int, int>();
-        var live = Live(raw, byOffset, regions, branches);
+        var tries = TryNesting.Build(raw, regions);
+        var live = Live(raw, byOffset, regions, tries, branches);
         while (live is not null)
         {
             var predecessors = Predecessors(raw, byOffset, regions, branches, live);
             var proven = branches.Count;
             foreach (var call in falseCalls.Keys.Order()) Prove(raw, byOffset, byOffset[call], bytes, predecessors, branches);
             if (branches.Count == proven) break;
-            live = Live(raw, byOffset, regions, branches);
+            live = Live(raw, byOffset, regions, tries, branches);
         }
         if (live is null || branches.Count == 0) return null;
         return new(live, falseCalls.ToImmutable(), branches.ToImmutableDictionary(),
@@ -79,11 +80,15 @@ internal sealed class PlatformGuardPlanner(IRawCilInstructionReader instructions
 
     // The instructions the method's entry reaches when each proven branch goes only its proven way, with the handlers
     // and filters of the tries it reaches; null when a target is not an instruction, which the decoder rejects.
+    // A live instruction reaches the handlers of the tries around it: with the tries nested, through its innermost try
+    // and that try's parents up to the first already reached (whose parents are then reached too), so each try is
+    // reached once; tries that overlap without nesting (invalid, rejected later) are checked per instruction.
     private static ImmutableHashSet<int>? Live(ImmutableArray<RawCilInstruction> raw, Dictionary<int, int> byOffset,
-        ImmutableArray<ExceptionRegion> regions, Dictionary<int, int> branches)
+        ImmutableArray<ExceptionRegion> regions, TryNesting? tries, Dictionary<int, int> branches)
     {
         var live = ImmutableHashSet.CreateBuilder<int>();
         var pending = new Queue<int>();
+        var reached = tries is null ? null : new bool[tries.Entries.Length];
         pending.Enqueue(raw[0].Offset);
         while (pending.Count != 0)
         {
@@ -91,6 +96,15 @@ internal sealed class PlatformGuardPlanner(IRawCilInstructionReader instructions
             if (!live.Add(offset)) continue;
             if (!byOffset.TryGetValue(offset, out var index)) return null;
             foreach (var successor in Successors(raw, index, branches)) pending.Enqueue(successor);
+            if (tries is not null)
+            {
+                for (var group = tries.Innermost[index]; group >= 0 && !reached![group]; group = tries.Parents[group])
+                {
+                    reached[group] = true;
+                    foreach (var entry in tries.Entries[group]) pending.Enqueue(entry);
+                }
+                continue;
+            }
             foreach (var region in regions)
             {
                 if (offset < region.TryOffset || offset >= region.TryOffset + region.TryLength) continue;
@@ -99,6 +113,29 @@ internal sealed class PlatformGuardPlanner(IRawCilInstructionReader instructions
             }
         }
         return live.ToImmutable();
+    }
+
+    // The method's try ranges (clauses sharing one range grouped) as a ProtectedRangeNesting over its instructions,
+    // with the handler and filter entries of each range's clauses. Null when two ranges overlap without nesting.
+    private sealed record TryNesting(int[] Innermost, int[] Parents, int[][] Entries)
+    {
+        public static TryNesting? Build(ImmutableArray<RawCilInstruction> raw, ImmutableArray<ExceptionRegion> regions)
+        {
+            var groups = regions
+                .GroupBy(region => (Start: region.TryOffset, End: region.TryOffset + region.TryLength))
+                .Select(group => (group.Key, Entries: group
+                    .SelectMany(region => region.Kind == ExceptionRegionKind.Filter
+                        ? new[] { region.HandlerOffset, region.FilterOffset }
+                        : new[] { region.HandlerOffset })
+                    .ToArray()))
+                .ToArray();
+            var nesting = ProtectedRangeNesting.Build(
+                [.. groups.Select(group => group.Key)],
+                [.. raw.Select(instruction => instruction.Offset)]);
+            return nesting is null
+                ? null
+                : new(nesting.Innermost, nesting.Parents, [.. groups.Select(group => group.Entries)]);
+        }
     }
 
     // Where a live instruction goes: a proven branch its proven way, any other its targets and its next instruction.
@@ -152,9 +189,8 @@ internal sealed class PlatformGuardPlanner(IRawCilInstructionReader instructions
         var platform = index > 0 && !entries.Contains(raw[index].Offset) ? raw[index - 1] : (RawCilInstruction?)null;
         return (owner, name) switch
         {
-            ("System.Runtime.CompilerServices.RuntimeFeature",
-                "get_IsDynamicCodeSupported" or "get_IsDynamicCodeCompiled" or "get_IsMultithreadingSupported")
-                when parameters.IsEmpty => 0,
+            (NetWasmPlatformChecks.RuntimeFeature, _) when NetWasmPlatformChecks.IsNeverTrueRuntimeFeature(name) &&
+                parameters.IsEmpty => 0,
             (NetWasmPlatformChecks.OperatingSystem, _) when NetWasmPlatformChecks.IsNeverTrueOperatingSystemCheck(name) &&
                 parameters.All(parameter => parameter.CanonicalName == "primitive:i4") => parameters.Length,
             (NetWasmPlatformChecks.OperatingSystem, "IsOSPlatform")

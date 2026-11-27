@@ -27,7 +27,7 @@ public sealed class CompiledUnitStoreTests
     private static UnitStoreChange Change(UnitSegmentWriter writer, int sequence = 1)
     {
         var entries = writer.Entries.Select(entry => new UnitManifestEntry(entry.Hash, 0, entry.Offset)).ToArray();
-        return new([new(sequence, writer)],
+        return new([UnitStoreSegment.Of(sequence, writer)],
             UnitManifestFormat.Write([new(sequence, writer.Count, writer.Length)], entries, sequence + 1),
             new HashSet<int> { sequence }, "summary");
     }
@@ -59,6 +59,29 @@ public sealed class CompiledUnitStoreTests
         Assert.Equal(unit.EnvironmentKey, restored.EnvironmentKey);
         Assert.Equal(unit.BlockEmissionCounts, restored.BlockEmissionCounts);
         Assert.Null(store.Find("Program::Other"));
+    }
+
+    // A function returning several values keeps the results after its first with its parameters.
+    [Fact]
+    public void AUnitsFurtherResultsReadBack()
+    {
+        var unit = Unit("Program::Pair", new(3, 4)) with
+        {
+            MoreResults = [NetWasm.Compiler.Core.CliValueKind.F8, NetWasm.Compiler.Core.CliValueKind.I4],
+        };
+        var writer = new UnitSegmentWriter();
+        Assert.True(writer.Add(unit));
+        var memory = new UnitStoreMemory();
+        new MemoryUnitStoreCommitter(memory).Commit("app", Change(writer));
+
+        using var store = new MemoryUnitStoreLoader(memory).Load("app");
+
+        var location = Assert.IsType<UnitLocation>(store.Find("Program::Pair"));
+        var record = store.Segments[location.Segment]!.Record(location.Offset);
+        Assert.Equal(unit.MoreResults, record.ToUnit().MoreResults);
+        Assert.Equal(unit.Parameters, record.ToUnit().Parameters);
+        Assert.Equal(unit.Relocations, record.ToUnit().Relocations);
+        Assert.Equal(unit.BlockEmissionCounts, record.ToUnit().BlockEmissionCounts);
     }
 
     // A unit a segment cannot hold is declined as full, so another segment can take it; one it

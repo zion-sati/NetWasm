@@ -30,6 +30,13 @@ internal sealed class StructuredControlFlowOccurrenceCollector : IStructuredCont
                 case StructuredBlockDraft block:
                     Add(block.Block.Index, block.IsOriginal, occurrences);
                     break;
+                case StructuredSwitchDraft table:
+                    Add(table.Head.Index, table.IsOriginal, occurrences);
+                    foreach (var block in table.Chain)
+                    {
+                        Add(block.Index, table.IsOriginal, occurrences);
+                    }
+                    break;
                 case StructuredIfDraft conditional:
                     Add(conditional.ConditionBlock.Index, conditional.IsOriginal, occurrences);
                     Collect(conditional.WhenTrue, occurrences, visitedGroups);

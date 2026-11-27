@@ -9,6 +9,7 @@ import {
   createJavaScriptValueServices,
 } from "./interop-builtin-service-module.mjs";
 import { createInteropHandleTable } from "./interop-handle-table.mjs";
+import { createJavaScriptErrorChannel } from "./javascript-error-channel.mjs";
 
 const layout = Object.freeze({
   managedReferenceSize: 4,
@@ -188,6 +189,7 @@ function createFixture(additionalImports = [], consumerModules = {}) {
         statusDescriptors.push(descriptor.name);
         return service;
       },
+      errors: createJavaScriptErrorChannel(handles),
       exceptionReporter: { importObject: { report_terminal_exception_v2: () => 19 } },
       handles,
       readMemory: () => memory,
@@ -244,7 +246,8 @@ test("serves the JavaScript values CoreLib converts", () => {
   assert.equal(values.value_number(handles.acquire(true)), 1);
   assert.equal(values.value_bigint(handles.acquire(-1n)), -1n);
   assert.equal(values.value_string(handles.acquire(12)), "12");
-  assert.equal(values.value_message(handles.acquire(new Error("boom"))), "boom");
+  assert.equal(values.value_message(handles.acquire(new Error("boom"))), "Error: boom");
+  assert.equal(values.value_message(handles.acquire(new DOMException("no", "AbortError"))), "AbortError: no");
   assert.equal(values.value_message(handles.acquire(3)), "3");
   const bytes = Uint8Array.of(2);
   for (const read of [values.value_bytes, values.value_int32s, values.value_doubles, values.value_object]) {
@@ -302,4 +305,16 @@ test("serves the JavaScript values CoreLib converts", () => {
   const pinned = createJavaScriptValueServices(handles, null);
   assert.equal(pinned.value_kind(pinned.value_from_managed(1n)), 8);
   assert.equal(pinned.value_collected(), 0n);
+});
+// A managed exception that crossed to JavaScript and is a failed import's pending error comes back as itself.
+test("reports a pending ManagedError's managed handle", () => {
+  const handles = createInteropHandleTable();
+  const errors = createJavaScriptErrorChannel(handles);
+  const values = createJavaScriptValueServices(handles, null, null, errors);
+  const crossing = values.value_from_managed_error("managed", 42n);
+  errors.captureThrow(handles.get(crossing));
+  assert.equal(values.error_pending_managed(), 42n);
+  errors.services.error_take();
+  errors.captureThrow(new Error("plain"));
+  assert.equal(values.error_pending_managed(), 0n);
 });

@@ -32,6 +32,7 @@ internal sealed record CompiledUnit(
     public string FunctionName { get; init; } = "";
     public ImmutableArray<NetWasm.Compiler.Core.CliValueKind> Parameters { get; init; } = [];
     public NetWasm.Compiler.Core.CliValueKind Result { get; init; }
+    public ImmutableArray<NetWasm.Compiler.Core.CliValueKind> MoreResults { get; init; } = [];
     public bool IsAggressiveInlining { get; init; }
     public bool IsNoInlining { get; init; }
     public string EnvironmentKey { get; init; } = "";

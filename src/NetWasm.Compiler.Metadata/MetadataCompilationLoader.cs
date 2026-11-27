@@ -61,7 +61,17 @@ public sealed class MetadataCompilationLoader(
             });
             foreach (var assembly in parsed)
             {
-                if (assembly is not null) loaded.Add(assembly);
+                if (assembly is null) continue;
+                // A satellite resource assembly (one with a culture, as each of a localized project's
+                // cs-CZ/App.resources.dll and de-DE/App.resources.dll) is no program assembly: NetWasm's
+                // globalization is invariant, so no culture loads it, as the SDK leaves a package's satellites out.
+                // Satellites share their name, so keeping them would read as duplicates.
+                if (assembly.Culture.Length != 0 && !ReferenceEquals(assembly, parsed[0]))
+                {
+                    assembly.Dispose();
+                    continue;
+                }
+                loaded.Add(assembly);
             }
             Array.Find(failures, failure => failure is not null)?.Throw();
             var entry = parsed[0]!;

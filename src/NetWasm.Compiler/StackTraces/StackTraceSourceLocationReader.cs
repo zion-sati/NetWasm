@@ -67,13 +67,16 @@ internal sealed class StackTraceSourceLocationReader(
             // wrappers have managed bodies but must retain method-only frames.
             var debugInformationRows = reader.GetTableRowCount(
                 TableIndex.MethodDebugInformation);
+            // A method compiled from its state machine (StateMachineMoveNext, AsyncIteratorMoveNext) is MoveNext's
+            // code, so its locations are MoveNext's sequence points: Roslyn writes none for the method itself.
             foreach (var item in assembly.Methods.Values
                          .Where(method => method.HasBody)
                          .Select(method => (
                              Method: method,
                              Row: MetadataTokens.GetRowNumber(
                                  (MethodDefinitionHandle)MetadataTokens.Handle(
-                                     method.Key.MetadataToken))))
+                                     (method.StateMachineMoveNext ?? method.AsyncIteratorMoveNext ?? method.Key)
+                                     .MetadataToken))))
                          .Where(item => HasMethodDebugInformation(
                              item.Row,
                              debugInformationRows)))

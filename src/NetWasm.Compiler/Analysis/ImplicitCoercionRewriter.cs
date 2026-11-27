@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
@@ -14,9 +15,14 @@ namespace NetWasm.Compiler.Analysis;
 // on for a multidimensional array's indices and lengths of other integer types. Each
 // such coercion the stack validator finds becomes an explicit conversion, sign-extending
 // or truncating as desktop .NET does, so later rewrites and the emitters see matching
-// kinds. The conversion follows the value's producer when the consumer's block pushed
-// it, or else precedes the consumer: a call's later arguments wait in new locals of
-// their parameters' types while the value is converted.
+// kinds. ECMA-335 III.1.5's tables also combine operands of two kinds: an int32 with a
+// native int in a comparison (the int32 sign-extends), a float32 with a float64 (both F;
+// the float32 widens), and a shift count of native int (it narrows to the int32 every
+// shift takes); those operands are converted the same way (arithmetic's emitters widen an
+// int32 beside a native int themselves). The conversion
+// follows the value's producer when the consumer's block pushed it, or else precedes the
+// consumer: a call's later arguments wait in new locals of their parameters' types, an
+// operation's of their stack kinds, while the value is converted.
 internal sealed class ImplicitCoercionRewriter(IControlFlowGraphBuilder graphs, ITypedStackValidator stacks)
     : IMethodRewriteRule
 {
@@ -58,7 +64,7 @@ internal sealed class ImplicitCoercionRewriter(IControlFlowGraphBuilder graphs, 
             }
             if (unproduced.Count != 0)
             {
-                before[consumer] = Convert(body, consumer, validated.InstructionEntryStacks[coercions.Key].Length,
+                before[consumer] = Convert(body, consumer, validated.InstructionEntryStacks[coercions.Key],
                     unproduced, locals);
             }
         }
@@ -80,10 +86,11 @@ internal sealed class ImplicitCoercionRewriter(IControlFlowGraphBuilder graphs, 
     private static List<CilInstruction> Convert(
         CilMethodBody body,
         int consumer,
-        int depth,
+        ImmutableArray<CliValueKind> stack,
         Dictionary<int, CliValueKind> coercions,
         List<CliTypeIdentity> locals)
     {
+        var depth = stack.Length;
         var lowest = coercions.Keys.Min();
         var sequence = new List<CilInstruction>();
         var held = new int[depth - lowest - 1];
@@ -94,7 +101,7 @@ internal sealed class ImplicitCoercionRewriter(IControlFlowGraphBuilder graphs, 
                 sequence.Add(Conversion(kind));
             }
             held[slot - lowest - 1] = body.Locals.Length + locals.Count;
-            locals.Add(OperandType(body.Instructions[consumer], depth, slot));
+            locals.Add(OperandType(body.Instructions[consumer], stack, slot));
             sequence.Add(Instruction(CilOperation.StoreLocal, new CilOperand.Index(held[slot - lowest - 1])));
         }
         sequence.Add(Conversion(coercions[lowest]));
@@ -103,9 +110,14 @@ internal sealed class ImplicitCoercionRewriter(IControlFlowGraphBuilder graphs, 
     }
 
     // The declared type of a call's operand above the lowest one coerced: a parameter, or
-    // calli's function pointer on top. Only an argument has another operand above it.
-    private static CliTypeIdentity OperandType(CilInstruction consumer, int depth, int slot)
+    // calli's function pointer on top; a numeric operand of an operation is its stack kind.
+    private static CliTypeIdentity OperandType(CilInstruction consumer, ImmutableArray<CliValueKind> stack, int slot)
     {
+        if (consumer.Operand is not (CilOperand.CallSite or CilOperand.MethodInstance))
+        {
+            return CliTypeIdentity.FromStackKind(stack[slot]);
+        }
+        var depth = stack.Length;
         var signature = consumer.Operand is CilOperand.CallSite site
             ? site.Signature
             : ((CilOperand.MethodInstance)consumer.Operand).Value.Signature;
@@ -117,7 +129,12 @@ internal sealed class ImplicitCoercionRewriter(IControlFlowGraphBuilder graphs, 
     }
 
     private static CilInstruction Conversion(CliValueKind kind) => Instruction(
-        kind == CliValueKind.I4 ? CilOperation.ConvertInt32 : CilOperation.ConvertNativeInt,
+        kind switch
+        {
+            CliValueKind.I4 => CilOperation.ConvertInt32,
+            CliValueKind.F8 => CilOperation.ConvertFloat64,
+            _ => CilOperation.ConvertNativeInt,
+        },
         new CilOperand.None());
 
     private static CilInstruction Instruction(CilOperation operation, CilOperand operand) => new(0, 0, operation, operand);

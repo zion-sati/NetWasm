@@ -52,6 +52,9 @@ SCENARIOS = {
     'ping-pong': ('async', ['ping-pong', '50000']),
     'async-iterator': ('async', ['async-iterator', '200000']),
     'when-all': ('async', ['when-all', '10000']),
+    'yield-chain': ('async', ['yield-chain', '50000']),
+    'exception-chain': ('async', ['exception-chain', '5000']),
+    'exception-chain-yield': ('async', ['exception-chain-yield', '2000']),
     'crc32': ('compute', ['crc32', '16']),
 }
 COLLECTORS = ['Compact', 'NetWasm', 'NetWasmGen', 'Bump']

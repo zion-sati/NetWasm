@@ -52,7 +52,7 @@ public sealed class JavaScriptDisposalCompilationTests
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib],
             "DisposableInterop", "Run", [], Target: target));
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
-        Assert.Equal(2, result.InteropManifest.Imports.Length);
+        Assert.Equal(2, CompilerTestSupport.ProgramImports(result.InteropManifest.Imports).Count());
         Assert.Single(result.InteropManifest.Callbacks);
         var targets = result.Program.DispatchCallSites.Values
             .Where(site => site.Declaration.DeclaringType.FullName == "System.IDisposable")

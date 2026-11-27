@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
@@ -24,13 +25,33 @@ internal sealed class CustomAttributeDescriptorReader(
     }
 }
 
+// The attributes an assembly's module declares on itself, read once per module.
+internal sealed class ModuleAttributeDescriptorReader(
+    ImmutableDictionary<AssemblyIdentity, MetadataAssemblySnapshot> sources,
+    IMetadataSignatureTypeResolver signatures) : CustomAttributeDescriptions(signatures), IModuleAttributeDescriptorReader
+{
+    private readonly ConcurrentDictionary<AssemblyIdentity, ImmutableArray<CustomAttributeDescriptor>> _all = new();
+
+    public ImmutableArray<CustomAttributeDescriptor> Read(AssemblyIdentity assembly) =>
+        _all.GetOrAdd(assembly, owner => Describe(sources[owner],
+            sources[owner].Reader.GetModuleDefinition().GetCustomAttributes(), new CliGenericContext([], [])));
+}
+
 // The attributes an assembly declares on itself.
 internal sealed class AssemblyAttributeDescriptorReader(
     ImmutableDictionary<AssemblyIdentity, MetadataAssemblySnapshot> sources,
     IMetadataSignatureTypeResolver signatures) : CustomAttributeDescriptions(signatures), IAssemblyAttributeDescriptorReader
 {
-    public ImmutableArray<CustomAttributeDescriptor> Read(AssemblyIdentity assembly, string attributeFullName)
+    // Every attribute, read once per assembly: each query taking more than one type filters the same list.
+    private readonly ConcurrentDictionary<AssemblyIdentity, ImmutableArray<CustomAttributeDescriptor>> _all = new();
+
+    public ImmutableArray<CustomAttributeDescriptor> Read(AssemblyIdentity assembly, string? attributeFullName)
     {
+        if (attributeFullName is null)
+        {
+            return _all.GetOrAdd(assembly, owner => Describe(sources[owner],
+                sources[owner].Reader.GetAssemblyDefinition().GetCustomAttributes(), new CliGenericContext([], [])));
+        }
         ArgumentException.ThrowIfNullOrEmpty(attributeFullName);
         var source = sources[assembly];
         return Describe(

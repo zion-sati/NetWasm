@@ -9,21 +9,11 @@ namespace NetWasm.Compiler.Wasm.Tests;
 public sealed class WasmRuntimeImportsTests
 {
     [Fact]
-    public void CreatesEquivalentCatalogAndLegacyRuntimeImportViews()
+    public void CatalogImportsComeFromTheRuntimeOrTheHost()
     {
         var catalog = WasmRuntimeImports.CreateCatalog();
-        var imports = WasmRuntimeImports.CreateCatalog().Imports.ToArray();
 
-        Assert.Equal(catalog.Imports.Select(import => import.Module),
-            imports.Select(import => import.Module));
-        Assert.Equal(catalog.Imports.Select(import => import.Name),
-            imports.Select(import => import.Name));
-        Assert.Equal(catalog.Imports.Select(import => import.Type.Result),
-            imports.Select(import => import.Type.Result));
-        Assert.Equal(catalog.Imports.Select(import => import.Type.Parameters.Length),
-            imports.Select(import => import.Type.Parameters.Length));
-        Assert.Equal(catalog.Imports.SelectMany(import => import.Type.Parameters),
-            imports.SelectMany(import => import.Type.Parameters));
+        Assert.NotEmpty(catalog.Imports);
         Assert.All(catalog.Imports, import => Assert.True(
             import.Module is RuntimeAbi.RuntimeModule or RuntimeAbi.HostModule));
     }

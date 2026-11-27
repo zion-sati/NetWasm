@@ -13,6 +13,8 @@ using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 using NetWasm.Compiler.Wasm.Emission.Values;
 using NetWasm.Compiler.Wasm.Emission.Arrays;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.Methods;
 
 internal static class MethodEmissionContextFactory
@@ -28,7 +30,11 @@ internal static class MethodEmissionContextFactory
         ManagedMethodIdentity callerIdentity,
         ManagedAggregateSsaPlan? managedAggregateValues = null,
         ArrayMetadataCachingPlan? arrayMetadata = null,
-        ArrayLengthRunPlan? arrayLengthRuns = null)
+        ArrayLengthRunPlan? arrayLengthRuns = null,
+        IReadOnlySet<StructuredExceptionGroupId>? markedGroups = null,
+        ImmutableArray<CliValueKind> structResultLocals = default,
+        int fieldArgumentAddresses = 0,
+        ImmutableArray<CliValueKind> argumentLaneKinds = default)
     {
         ArgumentNullException.ThrowIfNull(header);
         ArgumentNullException.ThrowIfNull(rootMap);
@@ -48,10 +54,8 @@ internal static class MethodEmissionContextFactory
         var exceptionTemporary = checked(rootFrame + 1);
         var exceptionFrameLocals = new Dictionary<StructuredExceptionGroupId, int>();
         var exceptionContinuationLocals = new Dictionary<StructuredExceptionGroupId, int>();
-        var exceptionRootSlots = new Dictionary<StructuredExceptionGroupId, int>();
         for (var index = 0; index < exceptionGroups.Count; index++)
         {
-            exceptionRootSlots.Add(exceptionGroups[index], checked(rootMap.SlotCount + index));
             exceptionFrameLocals.Add(
                 exceptionGroups[index],
                 checked(exceptionTemporary + 1 + index));
@@ -180,6 +184,52 @@ internal static class MethodEmissionContextFactory
             runLocals.Add(slot, checked(parameterCount + localTypes.Length));
             localTypes = localTypes.Add(CliValueKind.I4);
         }
+        var exceptionCellFrames = ImmutableDictionary.CreateBuilder<StructuredExceptionGroupId, int>();
+        var rootFrameSaves = ImmutableDictionary.CreateBuilder<StructuredExceptionGroupId, int>();
+        foreach (var group in exceptionGroups)
+        {
+            exceptionCellFrames.Add(group, checked(parameterCount + localTypes.Length));
+            localTypes = localTypes.Add(CliValueKind.ManagedAddress);
+            rootFrameSaves.Add(group, checked(parameterCount + localTypes.Length));
+            localTypes = localTypes.Add(CliValueKind.ManagedAddress);
+        }
+        RegionMarkLocals? entryMarks = null;
+        if (exceptionGroups.Count != 0)
+        {
+            var first = checked(parameterCount + localTypes.Length);
+            localTypes = localTypes.Add(CliValueKind.ManagedAddress).Add(CliValueKind.ManagedAddress).Add(CliValueKind.I4);
+            entryMarks = new(first, first + 1, first + 2);
+        }
+        var regionMarks = ImmutableDictionary.CreateBuilder<StructuredExceptionGroupId, RegionMarkLocals>();
+        foreach (var group in exceptionGroups)
+        {
+            if (markedGroups is null || !markedGroups.Contains(group)) continue;
+            var first = checked(parameterCount + localTypes.Length);
+            localTypes = localTypes.Add(CliValueKind.ManagedAddress).Add(CliValueKind.ManagedAddress).Add(CliValueKind.I4);
+            regionMarks.Add(group, new(first, first + 1, first + 2));
+        }
+        // Last, so a method that moves no returned fields keeps every other local's index.
+        var structResults = new Dictionary<CliValueKind, ImmutableArray<int>.Builder>();
+        foreach (var kind in structResultLocals.IsDefault ? [] : structResultLocals)
+        {
+            if (!structResults.TryGetValue(kind, out var ofKind)) structResults.Add(kind, ofKind = ImmutableArray.CreateBuilder<int>());
+            ofKind.Add(checked(parameterCount + localTypes.Length));
+            localTypes = localTypes.Add(kind);
+        }
+        // An address local per struct argument passed by its fields, holding its frame copy.
+        var fieldArgumentLocals = ImmutableArray.CreateBuilder<int>(fieldArgumentAddresses);
+        for (var index = 0; index < fieldArgumentAddresses; index++)
+        {
+            fieldArgumentLocals.Add(checked(parameterCount + localTypes.Length));
+            localTypes = localTypes.Add(CliValueKind.ManagedAddress);
+        }
+        // The argument temporaries' lanes, in the order the emitter lists them.
+        var argumentLaneLocals = ImmutableArray.CreateBuilder<int>();
+        foreach (var kind in argumentLaneKinds.IsDefault ? [] : argumentLaneKinds)
+        {
+            argumentLaneLocals.Add(checked(parameterCount + localTypes.Length));
+            localTypes = localTypes.Add(kind);
+        }
         var context = new MethodEmissionContext(
             rootMap,
             localBase,
@@ -210,7 +260,8 @@ internal static class MethodEmissionContextFactory
             ArrayLengthRuns = new(runPlan, runLocals.ToImmutable()),
             CopyDestinationTemporary = copyDestination,
             CopySourceTemporary = copySource,
-            ExceptionRootSlots = exceptionRootSlots.ToImmutableDictionary(),
+            ExceptionCellFrames = exceptionCellFrames.ToImmutable(),
+            RootFrameSaves = rootFrameSaves.ToImmutable(),
             AnchorLocals = anchorLocals.ToImmutable(),
             TransientAggregatePromotions = new(
                 valueLayout.TransientAggregatePromotions,
@@ -227,6 +278,13 @@ internal static class MethodEmissionContextFactory
             ManagedAggregateValues = new(
                 aggregateValuePlan,
                 aggregateValueLocals.ToImmutable()),
+            RegionMarkLocals = regionMarks.ToImmutable(),
+            EntryMarks = entryMarks,
+            FieldArgumentAddressLocals = fieldArgumentLocals.ToImmutable(),
+            ArgumentLaneFlat = argumentLaneLocals.ToImmutable(),
+            StructResultLocals = structResults.Count == 0
+                ? StructResultLocals.Empty
+                : new(structResults.ToImmutableDictionary(static pair => pair.Key, static pair => pair.Value.ToImmutable())),
         };
         return new MethodEmissionLayout(context, localTypes);
     }

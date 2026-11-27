@@ -167,6 +167,7 @@ public sealed class RuntimeInlineIntentIntegrationTests
             schemaVersion = 3,
             target,
             applicationStaticDataEnd = 65_537,
+            importModules = Array.Empty<string>(),
             runtimeFeatures = generations ? RecordsReferenceWrites : Array.Empty<string>(),
             nativeImports = Array.Empty<object>(),
         }));

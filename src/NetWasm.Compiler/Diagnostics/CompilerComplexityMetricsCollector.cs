@@ -65,7 +65,7 @@ internal sealed class CompilerComplexityMetricsCollector(
         var methods = OrderedParallel.Map(ordinary.Length + constructed.Length, index => index < ordinary.Length
                 ? Analyze(
                     ordinary[index].Key.ToString(),
-                    symbols.Format(ordinary[index].Value.Method.Definition),
+                    DisplayIdentity(symbols, ordinary[index].Value.Method.Definition),
                     ordinary[index].Value,
                     lowering.Methods[ordinary[index].Key],
                     emissionsByIdentity,
@@ -89,6 +89,11 @@ internal sealed class CompilerComplexityMetricsCollector(
             methods.Sum(metric => metric.WasmInstructionCount),
             methods.Sum(metric => metric.WasmBodyBytes));
     }
+
+    // A runtime-async method's lowered body, which the compiler provides beside its entry under the same name, is
+    // reported apart from the entry.
+    private static string DisplayIdentity(ISymbolFormatter symbols, MethodDefinitionModel definition) =>
+        definition.RuntimeAsyncBodyOf is null ? symbols.Format(definition) : symbols.Format(definition) + " (runtime async body)";
 
     private static CompilerMethodComplexityMetric Analyze(
         string emissionIdentity,
@@ -185,6 +190,9 @@ internal sealed class CompilerComplexityMetricsCollector(
                         case Structured.StructuredCode code:
                             if (code.Occurrence.Role != Structured.StructuredBlockRole.Owner)
                                 synthetic++;
+                            break;
+                        case Structured.StructuredSwitch:
+                            synthetic++;
                             break;
                         case Structured.StructuredIf branch:
                             synthetic++;

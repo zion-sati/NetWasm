@@ -9,19 +9,17 @@ namespace NetWasm.Compiler.Tests;
 
 public sealed class StringBuilderIndexerContractCompilationTests
 {
+    // The indexer as desktop .NET's: get_Chars and set_Chars. 0.16 rebuilds every library, so libraries built against
+    // 0.15's get_Item and set_Item forwarders need a rebuild, as for Array.Copy<T>.
     [Theory]
-    [InlineData(WasmTarget.Wasm32, false)]
-    [InlineData(WasmTarget.Wasm64, false)]
-    [InlineData(WasmTarget.Wasm32, true)]
-    [InlineData(WasmTarget.Wasm64, true)]
-    public void StandardAndLegacyAccessorsPreserveIndexingContracts(WasmTarget target, bool legacy)
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void TheIndexerPreservesIndexingContracts(WasmTarget target)
     {
         using var assets = TestAssets.Create();
-        var source = legacy ? Source.Replace("value[index]", "value.get_Item(index)")
-            .Replace("value.get_Item(index) = item;", "value.set_Item(index, item);") : Source;
         var executor = (ICompilationScenarioExecutor)new CompilationScenarioExecutor(assets);
         Assert.Equal(42, executor.Execute(new CompilationScenario(
-            "IndexerFixture", source, "IndexerFixture.EntryPoint", false, target, 41, [])
+            "IndexerFixture", Source, "IndexerFixture.EntryPoint", false, target, 41, [])
         { Optimization = FinalWasmOptimization.None }));
     }
 

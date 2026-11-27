@@ -1189,7 +1189,7 @@ public sealed class MemberExecutionIntrinsicEmitterTests
                 fixture.Imports, fixture.Exceptions);
             var nullable = new MemberNullableResultEmitter(fixture);
             var arguments = new MemberArgumentEmitter(fixture.Layouts, fixture.Layouts, _addresses, fixture.Scalars, checks,
-                payloads);
+                payloads, new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory());
             var counts = new MemberArgumentCountCheckEmitter(_addresses, fixture.Layouts, fixture.Exceptions);
             yield return (typeof(MemberReferenceCheckEmitter), [_addresses, fixture.Exceptions, fixture.TypeValidator]);
             yield return (typeof(BoxPayloadAddressEmitter), [fixture.Layouts, fixture.Scalars, _addresses]);
@@ -1201,7 +1201,7 @@ public sealed class MemberExecutionIntrinsicEmitterTests
                 [fixture.Layouts, fixture.Scalars, fixture.Layouts, _addresses, fixture.Imports, fixture.Exceptions]);
             yield return (typeof(MemberNullableResultEmitter), [fixture]);
             yield return (typeof(MemberArgumentEmitter),
-                [fixture.Layouts, fixture.Layouts, _addresses, fixture.Scalars, checks, payloads]);
+                [fixture.Layouts, fixture.Layouts, _addresses, fixture.Scalars, checks, payloads, new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory()]);
             yield return (typeof(MemberArgumentCountCheckEmitter), [_addresses, fixture.Layouts, fixture.Exceptions]);
             yield return (typeof(MemberExecutionPlanValidator), [fixture]);
             yield return (typeof(MemberMethodCaseEmitter),
@@ -1210,6 +1210,7 @@ public sealed class MemberExecutionIntrinsicEmitterTests
                 fixture.Initialization, fixture, fixture, new VirtualDispatchCasePlanner(fixture.Layouts, new FakeIntrinsics()),
                 new KeyedDispatchEmitter(), fixture.Exceptions, _addresses,
                 new ReferenceWriteBarrierEmitter(fixture.Imports, new ReferenceWriteRecordPolicy(fixture.Scalars)),
+                new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory(),
             ]);
             yield return (typeof(MemberFieldReadCaseEmitter),
             [

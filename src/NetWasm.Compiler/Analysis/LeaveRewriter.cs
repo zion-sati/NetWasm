@@ -28,6 +28,7 @@ internal sealed class LeaveRewriter(IControlFlowGraphBuilder graphs, ITypedStack
         }
 
         var entryStacks = _stacks.Validate(_graphs.Build(body)).InstructionEntryStacks;
+        var innermost = InnermostBlocks(body);
         var replacements = body.Instructions.Select(static instruction => new List<CilInstruction> { instruction }).ToArray();
         var changed = false;
         for (var index = 0; index < body.Instructions.Length; index++)
@@ -37,7 +38,9 @@ internal sealed class LeaveRewriter(IControlFlowGraphBuilder graphs, ITypedStack
                 continue;
             }
             var depth = entryStacks.TryGetValue(leave.Offset, out var stack) ? stack.Length : 0;
-            var exits = !Blocks(body, leave.Offset).SetEquals(Blocks(body, target.Offset));
+            var exits = innermost is null
+                ? !Blocks(body, leave.Offset).SetEquals(Blocks(body, target.Offset))
+                : innermost[leave.Offset] != innermost[target.Offset];
             if (depth == 0 && exits)
             {
                 continue;
@@ -50,6 +53,48 @@ internal sealed class LeaveRewriter(IControlFlowGraphBuilder graphs, ITypedStack
             ];
         }
         return changed ? RenumberedInstructions.Splice(body, replacements) : body;
+    }
+
+    // The innermost try, handler or filter block each leave and its target lie in (-1 for none), from one sweep of the
+    // blocks in start order; null when two blocks overlap without one holding the other, which valid IL never has.
+    // Blocks that nest are a tree, so the blocks an offset lies in are its innermost block's ancestors, and two
+    // offsets lie in the same blocks exactly when they lie in the same innermost block. Comparing every leave's blocks,
+    // each found by scanning every region, made a method with N protected blocks cost N squared.
+    private static Dictionary<int, int>? InnermostBlocks(CilMethodBody body)
+    {
+        var distinct = new HashSet<(int Start, int End)>();
+        foreach (var region in body.ExceptionRegions)
+        {
+            distinct.Add((region.TryOffset, region.TryOffset + region.TryLength));
+            distinct.Add((region.HandlerOffset, region.HandlerOffset + region.HandlerLength));
+            if (region.FilterOffset is int filter) distinct.Add((filter, region.HandlerOffset));
+        }
+        var blocks = distinct.Where(static block => block.Start < block.End).ToArray();
+        // An enclosing block before the blocks it holds.
+        Array.Sort(blocks, static (left, right) =>
+            left.Start != right.Start ? left.Start.CompareTo(right.Start) : right.End.CompareTo(left.End));
+        var offsets = new SortedSet<int>();
+        foreach (var instruction in body.Instructions)
+        {
+            if (instruction is not { Operation: CilOperation.Leave, Operand: CilOperand.BranchTarget target }) continue;
+            offsets.Add(instruction.Offset);
+            offsets.Add(target.Offset);
+        }
+        var innermost = new Dictionary<int, int>(offsets.Count);
+        var open = new Stack<int>();
+        var next = 0;
+        foreach (var offset in offsets)
+        {
+            for (; next < blocks.Length && blocks[next].Start <= offset; next++)
+            {
+                while (open.Count > 0 && blocks[open.Peek()].End <= blocks[next].Start) open.Pop();
+                if (open.Count > 0 && blocks[next].End > blocks[open.Peek()].End) return null;
+                open.Push(next);
+            }
+            while (open.Count > 0 && blocks[open.Peek()].End <= offset) open.Pop();
+            innermost[offset] = open.Count > 0 ? open.Peek() : -1;
+        }
+        return innermost;
     }
 
     // The try, handler and filter blocks an offset lies in.

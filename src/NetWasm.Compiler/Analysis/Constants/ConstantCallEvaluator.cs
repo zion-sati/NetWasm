@@ -39,6 +39,12 @@ internal sealed class ConstantCallEvaluator(
         {
             throw new ArgumentException("Constant arguments must match the method signature.", nameof(request));
         }
+        // RuntimeHelpers.IsKnownConstant is true when the JIT knows its argument as a constant, as folding knows
+        // these; a call left unfolded answers false at run time.
+        if (IsKnownConstant(request.Method))
+        {
+            return request.Arguments.All(argument => argument is not null) ? new ScalarConstant.Int32(1) : null;
+        }
         if (request.Arguments.All(argument => argument is not null) &&
             _comparisons.Evaluate(request.Method, [.. request.Arguments.Select(argument => argument!)]) is { } compared)
         {
@@ -111,6 +117,12 @@ internal sealed class ConstantCallEvaluator(
                     var count = ArgumentCount(target);
                     var arguments = stack.GetRange(stack.Count - count, count);
                     stack.RemoveRange(stack.Count - count, count);
+                    // Every value this interprets is a constant.
+                    if (IsKnownConstant(target))
+                    {
+                        stack.Add(new ScalarConstant.Int32(1));
+                        break;
+                    }
                     if (_comparisons.Evaluate(target, arguments) is { } comparison)
                     {
                         stack.Add(comparison);
@@ -137,6 +149,9 @@ internal sealed class ConstantCallEvaluator(
         }
 
     }
+
+    private bool IsKnownConstant(MethodInstanceModel method) =>
+        _intrinsics.TryGetIntrinsic(method.Definition.Key, out var intrinsic) && intrinsic == RuntimeIntrinsic.IsKnownConstant;
 
     private static int ArgumentCount(MethodInstanceModel method) =>
         method.Signature.ParameterTypes.Length + (method.Definition.IsStatic ? 0 : 1);

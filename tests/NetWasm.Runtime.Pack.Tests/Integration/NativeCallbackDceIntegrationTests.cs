@@ -174,6 +174,7 @@ public sealed class NativeCallbackDceIntegrationTests
             target,
             applicationStaticDataEnd = compilation.StaticDataEnd,
             managedExecutableEntryPoint = (object?)null,
+            importModules = Array.Empty<string>(),
             runtimeFeatures = compilation.RuntimeFeatures,
             nativeImports = compilation.NativeImports,
         }, JsonOptions));

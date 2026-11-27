@@ -11,6 +11,7 @@ The size-first Release profile normally leaves those optional features out.
 | `NetWasmStructuredDiagnostics` | `true` | `false` | Structured managed failure reporting for the selected execution contract |
 | `NetWasmManagedStackTrace` | `true` | `false` | Managed stack instrumentation and the frame names in `<program>.wasm.method-symbols`; also backs `System.Diagnostics.StackTrace` and `StackFrame` |
 | `NetWasmTypeNames` | `true` | `true` | Every type's and assembly's names in `<program>.wasm.type-symbols`, which a program that reads a name loads; a program that reads none carries neither the names nor their loader. Without them a name reads `type#<id>`, an assembly name `<Assembly name unavailable>`, and looking a type up by name (`Type.GetType(string)`, `Assembly.GetType(string)`, `GetNestedType(string)`, `GetInterface(string)`) throws `PlatformNotSupportedException` |
+| `NetWasmDebugInfo` | `true` | `false` | Debug information in the output: each managed method's name, and with `NetWasmManagedStackTrace` DWARF lines that map the code to its C# source lines, which debuggers and Wasmtime's trap backtraces read; see [debugging with Wasmtime and LLDB](#debugging-with-wasmtime-and-lldb) |
 
 The switches are independent. Enable the desired features explicitly, for
 example for an application that needs rich Release diagnostics:
@@ -79,6 +80,48 @@ a type up by name throws `PlatformNotSupportedException`, and frames read
 `method#<id>`. Time zone data is different: a `TZ` the program cannot
 find in its data fails at startup.
 
+## Debugging with Wasmtime and LLDB
+
+A Debug build carries debug information (`NetWasmDebugInfo`): the name of each
+managed method and, because Debug also turns on `NetWasmManagedStackTrace`,
+DWARF line information that maps the code to the C# lines it came from.
+Wasmtime's trap backtraces show both:
+
+```sh
+WASMTIME_BACKTRACE_DETAILS=1 wasmtime run --dir bin/Debug/netwasm0.1::/netwasm-sidecars bin/Debug/netwasm0.1/App.wasm
+```
+
+```text
+error while executing at wasm backtrace:
+    0:   0x7dba - App.Program.Fail
+                    at /src/App/Program.cs:17:0
+    1:   0x7cdf - App.Program.Main
+                    at /src/App/Program.cs:10:0
+```
+
+LLDB debugs the program by C# line under Wasmtime, with line breakpoints,
+stepping and backtraces:
+
+```sh
+lldb -o 'settings set plugin.jit-loader.gdb.enable on' -o 'breakpoint set --file Program.cs --line 10' -o run \
+  -- wasmtime run -C cache=n -D debug-info=y -O opt-level=0 \
+  --dir bin/Debug/netwasm0.1::/netwasm-sidecars bin/Debug/netwasm0.1/App.wasm
+```
+
+Keep `-C cache=n` while debugging: a run under LLDB with a breakpoint set can
+store the breakpoint in Wasmtime's compilation cache, and later runs without
+the debugger then stop with `SIGTRAP`.
+
+Source paths are relative to the project directory, which the debug
+information names. Code whose source a library links by URL (Source Link,
+as NetWasm's own libraries do) keeps its method names but has no lines, since
+a debugger cannot open a URL as a file. LLDB has no C# support and shows the
+frames as C++.
+Variables and types are not described yet. CoreLib's lines name its sources by
+Source Link URL, which LLDB does not download. Release builds carry no debug
+information unless `NetWasmDebugInfo` is set, and its lines need
+`NetWasmManagedStackTrace` too: they come from the stack-trace instrumentation.
+
 ## Compiler diagnostic format
 
 The diagnostic format is `NWdddd: [Type::Method IL_000a:] message`; the
@@ -109,6 +152,7 @@ reported by `NW1010`, see the [support status and roadmap](support-status.md).
 | `NW1016` `MissingApi` | Warning, after reachability; an error with `NetWasmMissingApiAsError` | A reached method names a type its assembly does not have, or a method or field its declaring type does not have: the selected implementation has no type of that name, or no member matching the requested name, signature, static/instance shape and generic arity. The method compiles to a body that throws `TypeLoadException`, `MissingMethodException` or `MissingFieldException` when called, as .NET throws when it first compiles such a method and Native AOT compiles it to a throw. A method nothing reaches costs nothing. Check that package and implementation versions agree. If they do, use a supported API or an alternative library path, or leave the call unreached. Adding unrelated references does not supply a missing member on an already resolved type. Set `<NetWasmMissingApiAsError>true</NetWasmMissingApiAsError>` to fail the build instead. |
 | `NW1017` `UnlinkedNativeLibrary` | Warning, after reachability | A reached P/Invoke names a native library that no `NativeLibrary` item provides, so it compiles to a body that throws `DllNotFoundException` when called. Reference the package or `NativeLibrary` item that provides the library, or leave the call unreached. See [static native interop](static-native-interop.md#library-and-package-propagation). |
 | `NW1018` `DeclinedJavaScriptBinding` | Warning, while preparing compilation, in a program a JavaScript host runs | A library built for the browser carries a `[JSImport]` or `[JSExport]` that .NET's JavaScript generator wrote, with a shape NetWasm's JavaScript interop does not take, such as an export with a delegate parameter. The method stays ordinary code: JavaScript cannot call the export, and calling the import throws `PlatformNotSupportedException`. See [JavaScript interop](javascript-interop.md#libraries-built-for-the-browser). |
+| `NW1019` `UnplannedAttributeQuery` | Warning, after reachability | A reached attribute query (`IsDefined`, `GetCustomAttribute`, `GetCustomAttributes`) that the compiler cannot answer keeps its run-time path, which throws `PlatformNotSupportedException` when reached. The reasons: an attribute it selects cannot be built, such as one whose named argument has no settable member in the library the program runs with; its filter, or its assembly or module target, is known only at run time; its target is a member other than a type (a method, property, field, event, constructor or parameter) or an open generic type; a Type known only at run time is queried with a filter that takes every attribute (`object`, `Attribute` or an interface); or a delegate, a function pointer or a method handle (an expression tree) hides its arguments. The warning names the method whose code holds the query (its caller, where inlining moved it), the query, the reason and a fix. A query that throws what .NET throws first, such as `ArgumentNullException` for a null target, does not warn. Where the query dispatches on a target the compiler cannot name (an `ICustomAttributeProvider`, or a virtual member of `MemberInfo`, `Assembly` or `Module`) and the program creates a class that answers it itself, the warning says it throws only on the runtime's own reflection objects. |
 | `NWA2001` `GenericExpansion` | Identifier formatting only; no current production emitter | The enum reserves this identifier but no current source path emits it. Preserve and report the exact value if observed. |
 
 When available, method and IL offset are part of the diagnostic. The CLI also

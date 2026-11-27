@@ -9,6 +9,8 @@ using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed class AsyncJSExportWrapperEmitter(
@@ -21,7 +23,9 @@ internal sealed class AsyncJSExportWrapperEmitter(
     IGeneratedFunctionWriterFactory writers,
     IJavaScriptReferenceArgumentEmitter referenceArguments,
     IJavaScriptValueFramePlanner valueFramePlanner,
-    IJavaScriptValueFrameEmitter valueFrames) : IAsyncJSExportWrapperEmitter
+    IJavaScriptValueFrameEmitter valueFrames,
+    IValueTypeArgumentConventionFactory argumentConventions,
+    IValueTypeResultConventionFactory resultConventions) : IAsyncJSExportWrapperEmitter
 {
     public byte[] Emit(
         MethodDefinitionModel method,
@@ -67,22 +71,28 @@ internal sealed class AsyncJSExportWrapperEmitter(
             : null;
         var convertedFrameLocal = referenceParameters.Length == 0 ? argumentFrameLocal : argumentLocal + 1;
         var code = writers.Create();
-        WasmLocalDeclarationWriter.Write(
-            code.Bytes,
-            [
-                CliValueKind.ManagedReference,
-                CliValueKind.I4,
-                CliValueKind.ManagedAddress,
-                CliValueKind.ManagedAddress,
-                CliValueKind.ManagedReference,
-                CliValueKind.I4,
-                .. (referenceParameters.Length == 0
-                    ? Array.Empty<CliValueKind>()
-                    : [CliValueKind.ManagedAddress, CliValueKind.I4, CliValueKind.ManagedReference,
-                        CliValueKind.ManagedReference]),
-                .. (converted is null ? Array.Empty<CliValueKind>() : [CliValueKind.ManagedAddress]),
-            ],
-            layouts.Target);
+        List<CliValueKind> locals =
+        [
+            CliValueKind.ManagedReference,
+            CliValueKind.I4,
+            CliValueKind.ManagedAddress,
+            CliValueKind.ManagedAddress,
+            CliValueKind.ManagedReference,
+            CliValueKind.I4,
+            .. (referenceParameters.Length == 0
+                ? Array.Empty<CliValueKind>()
+                : [CliValueKind.ManagedAddress, CliValueKind.I4, CliValueKind.ManagedReference,
+                    CliValueKind.ManagedReference]),
+            .. (converted is null ? Array.Empty<CliValueKind>() : [CliValueKind.ManagedAddress]),
+        ];
+        // A value task goes to the frame as its return convention takes it: the frame's address first, or the fields
+        // stored there after the call, through locals after the rest.
+        var resultConvention = binding.Return.Kind == JavaScriptAsyncReturnKind.ValueTask
+            ? resultConventions.Create(method.Signature.ReturnSignatureType)
+            : null;
+        var firstStructResultLocal = wrapperParameterCount + locals.Count;
+        locals.AddRange(resultConvention?.FieldLocalKinds ?? []);
+        WasmLocalDeclarationWriter.Write(code.Bytes, locals, layouts.Target);
         runtimeInitialization.Initialize(code, initialization);
         // The exception frame marks the arenas as the host call found them. A
         // failure rewinds every frame the call left behind and propagates unchanged.
@@ -142,23 +152,26 @@ internal sealed class AsyncJSExportWrapperEmitter(
             code.Instructions.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)valueFrameLocal)));
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)valueFrameLocal)));
-            EmitArguments(
-                code,
-                method.Signature.ParameterTypes.Length,
-                argumentFactory,
-                functionIndices,
-                rootSlots,
-                argumentFrameLocal,
-                converted,
-                convertedFrameLocal,
-                parameterLocals);
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.Call,
-                WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
-                    method.Key))));
+            resultConvention!.Emit(code.Instructions,
+                writer => writer.Write(WasmInstruction.WithOperand(
+                        WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)valueFrameLocal))), new(StructResultLocals.Sequential(firstStructResultLocal, resultConvention.FieldLocalKinds)),
+                _ =>
+                {
+                    EmitArguments(
+                        code,
+                        method.Signature,
+                        argumentFactory,
+                        functionIndices,
+                        rootSlots,
+                        argumentFrameLocal,
+                        converted,
+                        convertedFrameLocal,
+                        parameterLocals);
+                    code.Instructions.Write(WasmInstruction.WithOperand(
+                        WasmOpcodes.Call,
+                        WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
+                            method.Key))));
+                });
             code.Instructions.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalGet,
                 WasmInstructionOperand.Unsigned((uint)valueFrameLocal)));
@@ -181,7 +194,7 @@ internal sealed class AsyncJSExportWrapperEmitter(
         {
             EmitArguments(
                 code,
-                method.Signature.ParameterTypes.Length,
+                method.Signature,
                 argumentFactory,
                 functionIndices,
                 rootSlots,
@@ -319,7 +332,7 @@ internal sealed class AsyncJSExportWrapperEmitter(
 
     private void EmitArguments(
         GeneratedFunctionWriterLease code,
-        int count,
+        MethodSignatureModel signature,
         EntityKey? argumentFactory,
         IFunctionIndexResolver functionIndices,
         Dictionary<int, int> rootSlots,
@@ -336,7 +349,7 @@ internal sealed class AsyncJSExportWrapperEmitter(
             return;
         }
 
-        for (var index = 0; index < count; index++)
+        for (var index = 0; index < signature.ParameterTypes.Length; index++)
         {
             if (rootSlots.TryGetValue(index, out var slot))
             {
@@ -352,7 +365,9 @@ internal sealed class AsyncJSExportWrapperEmitter(
             }
             if (converted?.Parameters.TryGetValue(index, out var valueSlot) == true)
             {
-                valueFrames.Emit(code.Instructions, new JavaScriptValueFrameAddress(convertedFrameLocal, valueSlot.Offset));
+                // A struct goes by its address or its fields as the parameter takes it.
+                argumentConventions.Create(signature.ParameterSignatureTypes[index]).Emit(code.Instructions,
+                    writer => valueFrames.Emit(writer, new JavaScriptValueFrameAddress(convertedFrameLocal, valueSlot.Offset)), new());
                 continue;
             }
             code.Instructions.Write(WasmInstruction.WithOperand(

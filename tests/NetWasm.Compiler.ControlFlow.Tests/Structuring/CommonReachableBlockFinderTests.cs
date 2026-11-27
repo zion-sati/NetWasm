@@ -38,14 +38,12 @@ public sealed class CommonReachableBlockFinderTests
         Assert.Null(actor.Find(state, 1, 12, null, [1, 2, 3, 4]));
     }
 
+    // Block 1 is post-dominated by 3 and 4, block 2 by 4.
     private sealed class PostDominators : IControlFlowPostDominatorFinder
     {
-        public Dictionary<int, ImmutableHashSet<int>> Find(ControlFlowStructuringState state,
-            int? stop, ImmutableHashSet<int> allowed) => new()
-            {
-                [1] = [1, 3, 4],
-                [2] = [2, 4],
-            };
+        public DominatorTree Find(ControlFlowStructuringState state,
+            int? stop, ImmutableHashSet<int> allowed) => DominatorTree.FromImmediateDominators([1, 2, 3, 4],
+            new Dictionary<int, int?> { [1] = 3, [2] = 4, [3] = 4, [4] = null });
     }
 
     private sealed class Distances : IControlFlowDistanceFinder

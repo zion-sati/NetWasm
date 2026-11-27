@@ -110,7 +110,7 @@ public sealed class ExceptionAndReturnEmitterTests
         var request = CreateRequest(CilOperation.Rethrow, [CliValueKind.I4]);
         var actual = request with
         {
-            Context = request.Context with { ActiveCatchRootSlot = 0 },
+            Context = request.Context with { ActiveCatchCellFrame = 9 },
         };
         RegisterInstructionWriter(actual,
             new EmitterTestSupport.RecordingInstructionWriter());
@@ -146,16 +146,17 @@ public sealed class ExceptionAndReturnEmitterTests
     {
         var layout = WasmTargetLayout.For(target);
         var request = CreateRequest(CilOperation.Rethrow, []);
-        var actual = request with { Context = request.Context with { ActiveCatchRootSlot = 3 } };
+        var actual = request with { Context = request.Context with { ActiveCatchCellFrame = 9 } };
         var code = new RecordingInstructionWriter();
         RegisterInstructionWriter(actual, code);
         Emit(CreateEmitter(target: layout), actual);
         var instructions = code.ToInstructions();
         Assert.Equal(WasmOpcodes.LocalGet, instructions[0].Opcode);
-        Assert.Equal((uint)actual.Context.RootFrame, instructions[0].Operand.UnsignedValue);
+        // The catch's cell frame holds the exception in its one slot.
+        Assert.Equal(9u, instructions[0].Operand.UnsignedValue);
         Assert.Equal(target == WasmTarget.Wasm64 ? WasmOpcodes.I64Load : WasmOpcodes.I32Load,
             instructions[1].Opcode);
-        Assert.Equal((uint)(3 * layout.ObjectReferenceSize), instructions[1].Operand.Offset);
+        Assert.Equal(0u, instructions[1].Operand.Offset);
         Assert.Equal(WasmOpcodes.LocalSet, instructions[2].Opcode);
         Assert.Equal((uint)actual.Context.ExceptionTemporary, instructions[2].Operand.UnsignedValue);
     }
@@ -243,11 +244,11 @@ public sealed class ExceptionAndReturnEmitterTests
         var addresses = CreateAddressInstructions(layouts);
         return new[]
         {
-            new ExceptionAndReturnEmitter(layouts, layouts, actualImports,
+            new ExceptionAndReturnEmitter(layouts, actualImports,
                 exceptions, CreateMethodFrameExit(actualImports),
                 CreateFilterEnvironmentRoots(layouts),
                 addresses,
-                new SmallValueCopyEmitter(new BulkValueCopyEmitter(layouts))),
+                new NetWasm.Compiler.Wasm.Emission.StructResults.ValueTypeReturnConventionFactory(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier(), new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultEmitter(layouts), layouts, new SmallValueCopyEmitter(new BulkValueCopyEmitter(layouts)))),
         }.Cast<IInstructionCommandProvider>().Single();
     }
 

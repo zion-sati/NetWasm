@@ -236,10 +236,23 @@ type based on `ValueType` under the `struct` constraint and a class based on
 `Object` otherwise; a class-type constraint does not change its `BaseType`,
 and `GetGenericParameterConstraints()` throws `PlatformNotSupportedException`.
 
-A program cannot create types at run time, so `MakeArrayType`,
-`MakePointerType`, `MakeByRefType` and `MakeGenericType` return the type the
-program has with that element, rank or arguments, and throw
-`PlatformNotSupportedException` for one it does not use.
+A program cannot create types at run time, so `MakePointerType`,
+`MakeByRefType` and `MakeGenericType` return the type the program has with that
+element or arguments, and throw `PlatformNotSupportedException` for one it does
+not use. `MakeArrayType` returns the program's own array type of the element
+when it has one, and otherwise an array type of the element and rank (one to
+three) that answers as that array type does.
+
+`Array.CreateInstance` and `Array.CreateInstanceFromArrayType` create an array
+of any reference type, of the ranks the program creates arrays of. An array of a
+reference type the program has no array type of shares one compiled form per
+rank, which keeps its element type, as Native AOT shares one form across arrays
+of references: casts, stores, copies, `GetType()` and the array's interfaces
+answer as for an array of that element. An array of a value type is created for
+the value types the program names with `typeof` (including as a type argument,
+such as `typeof(Point?)` or `typeof(IEnumerable<Point>)`) and those whose arrays
+it uses; for any other value type they throw `NotSupportedException`, as Native
+AOT does for an array it did not compile.
 
 `Type.Assembly` and `Assembly.GetAssembly(Type)` return one `Assembly` per
 assembly, so assemblies compare and key as on .NET; an array's or constructed
@@ -317,7 +330,7 @@ separately.
 
 | Area | Supported boundary |
 | --- | --- |
-| Bounded custom attribute queries | Type-targeted queries, `DescriptionAttribute`, and user-defined attributes, including closed generics, are available on raw wasm32/wasm64 and component wasm32. Targets and filters must be statically bounded; there is no runtime metadata database or preserve-everything fallback. See the [query profile](custom-attributes.md). |
+| Bounded custom attribute queries | Queries on a type, an assembly or a module the compiler can name, with any filter (an attribute type, an interface or none) through every overload, `DescriptionAttribute`, and user-defined attributes, including closed generics, are available on raw wasm32/wasm64 and component wasm32. Targets must be statically bounded; there is no runtime metadata database or preserve-everything fallback. See the [query profile](custom-attributes.md). |
 | Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs (and, with `LibraryImport`, results, `out` and `ref` parameters), raw `DllImport` handle, `HandleRef` and pinned blittable-array marshalling as desktop .NET's runtime marshalling does it, static scalar/pointer `UnmanagedCallersOnly` callbacks, and calls through `delegate* unmanaged` function pointers across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling (strings, delegates, element conversion), the `Fastcall` and `Swift` calling conventions, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
 | Compression (`System.IO.Compression`) | `DeflateStream`, `ZLibStream`, `GZipStream` and `BrotliStream`, the Deflate, ZLib, GZip and Brotli encoders and decoders, `ZLibCompressionOptions`, and ZIP's Deflate and Deflate64 entries run .NET's own code over zlib-ng 2.2.5 and Brotli 1.1.0, the releases .NET 11 uses, compiled to WebAssembly for wasm32 and wasm64. Output matches .NET 11 byte for byte at every level. A program links the native codec code only when it uses a codec, and only the codec it uses. Zstandard throws `PlatformNotSupportedException`, as in .NET's WebAssembly builds. |
 | Cryptography (`System.Security.Cryptography`) | Ciphers (AES, TripleDES, DES, RC2, AES-GCM, AES-CCM, ChaCha20-Poly1305), RSA, DSA, ECDsa, ECDiffieHellman and X.509 (certificates, PKCS#12 and PKCS#7, chain building with custom trust) run .NET's Linux implementation over OpenSSL 3.5, compiled to WebAssembly for wasm32 and wasm64. Output matches .NET 11 on Linux. Hashing (MD5 included), HMAC, PBKDF2 and random numbers are .NET's managed WebAssembly implementation, so a program that uses only those links no OpenSSL. `CryptoConfig.CreateFromName` creates those managed algorithms by name, matching names as desktop does, and returns null for the others. OpenSSL's random generator draws from the platform's random source and its clock from the program's clock grants. Certificate files and the system trust store are read through the host's file system; the store defaults to `/etc/ssl/certs` and `/etc/ssl/cert.pem`, which the host must make visible, and `SSL_CERT_DIR` and `SSL_CERT_FILE` choose another place. OID friendly names come from .NET's own table. AIA, CRL and OCSP downloads are not made, so revocation checking works offline. `SslStream` waits for wasi-tls. |

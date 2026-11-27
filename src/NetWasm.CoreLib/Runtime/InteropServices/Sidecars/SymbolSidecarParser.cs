@@ -41,6 +41,7 @@ namespace System.Runtime.InteropServices.Sidecars
             {
                 throw new FormatException("its entries do not fit the file");
             }
+            // The entries fit the file, so the sidecar reads their IDs and string fields without checking each read.
             var sidecar = new SymbolSidecar(bytes, count, stringsPerEntry);
             for (var entry = 0; entry < count; entry++)
             {
@@ -48,12 +49,9 @@ namespace System.Runtime.InteropServices.Sidecars
                 {
                     throw new FormatException("its IDs are not in order");
                 }
-                var field = SymbolSidecar.HeaderSize + entry * (int)entrySize + sizeof(int);
-                for (var index = 0; index < stringsPerEntry; index++, field += sizeof(int) * 2)
+                for (var index = 0; index < stringsPerEntry; index++)
                 {
-                    var offset = BinaryPrimitives.ReadInt32LittleEndian(span[field..]);
-                    var length = BinaryPrimitives.ReadInt32LittleEndian(span[(field + sizeof(int))..]);
-                    if (length < -1 || (length >= 0 && (offset < 0 || (long)offset + length > sidecar.CharacterCount)))
+                    if (!sidecar.StringFits(entry, index))
                     {
                         throw new FormatException("a string lies outside the file");
                     }

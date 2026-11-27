@@ -157,7 +157,10 @@ public sealed class AttributeQueryCompilationTests
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
     // A query the compiler cannot bound throws a catchable exception; one on a Type known only at run time (a join of
-    // types, a GetType() result) answers from the program's run-time types, here a type without the attribute.
+    // types, a GetType() result) answers from the program's run-time types, here a type without the attribute. A known
+    // type's query with Attribute itself or an attribute desktop synthesizes from flags (Serializable, ComImport) as the
+    // filter answers as desktop's does (StructLayoutAttribute is not one), and a null filter is an
+    // ArgumentNullException.
     public void UnboundedQueriesUseCatchableManagedFallbacks(WasmTarget target)
     {
         using var assets = TestAssets.Create();
@@ -177,14 +180,14 @@ public sealed class AttributeQueryCompilationTests
                     var caught = 0;
                     if ((input == 42 ? typeof(Target) : typeof(Other)).GetCustomAttribute<MarkerAttribute>() is null) caught++;
                     try { _ = typeof(Target).GetCustomAttribute(input == 42 ? typeof(MarkerAttribute) : typeof(OtherAttribute)); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
-                    try { _ = typeof(Target).GetCustomAttribute<Attribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
-                    try { _ = typeof(Target).GetCustomAttribute<SerializableAttribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
-                    try { _ = typeof(Target).GetCustomAttribute<System.Runtime.InteropServices.StructLayoutAttribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
-                    try { _ = typeof(Target).GetCustomAttribute<System.Runtime.InteropServices.ComImportAttribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    if (typeof(Target).GetCustomAttribute<Attribute>() is null) caught++;
+                    if (typeof(Target).GetCustomAttribute<SerializableAttribute>() is null) caught++;
+                    if (typeof(Target).GetCustomAttribute<System.Runtime.InteropServices.StructLayoutAttribute>() is null) caught++;
+                    if (typeof(Target).GetCustomAttribute<System.Runtime.InteropServices.ComImportAttribute>() is null) caught++;
                     try { _ = new OtherMember().GetCustomAttribute<MarkerAttribute>(); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
                     if (new Target().GetType().GetCustomAttribute<MarkerAttribute>() is null) caught++;
                     try { _ = ((Type)null).GetCustomAttribute<MarkerAttribute>(); } catch (ArgumentNullException error) { if (error.Message.Length > 0) caught++; }
-                    try { _ = typeof(Target).GetCustomAttribute((Type)null); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
+                    try { _ = typeof(Target).GetCustomAttribute((Type)null); } catch (ArgumentNullException error) { if (error.Message.Length > 0) caught++; }
                     try { _ = new Func<MemberInfo, MarkerAttribute>(CustomAttributeExtensions.GetCustomAttribute<MarkerAttribute>)(typeof(Target)); } catch (PlatformNotSupportedException error) { if (error.Message.Length > 0) caught++; }
                     return caught == 11 ? input : 1;
                 }

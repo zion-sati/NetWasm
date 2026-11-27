@@ -19,9 +19,10 @@ public sealed class RuntimeTypeFactsClosurePlannerTests
     public void InvalidDependenciesAndUninitializedSeedsAreRejected()
     {
         var fixture = new Fixture();
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(null!, fixture, fixture));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(fixture, null!, fixture));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(fixture, fixture, null!));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(null!, fixture, fixture, fixture));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(fixture, null!, fixture, fixture));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(fixture, fixture, null!, fixture));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeTypeFactsClosurePlanner(fixture, fixture, fixture, null!));
         Assert.Throws<ArgumentException>(() => Plan(fixture.Create(), default, false));
         Assert.Empty(Plan(fixture.Create(), [], true));
         Assert.Empty(fixture.BaseRequests);
@@ -150,22 +151,50 @@ public sealed class RuntimeTypeFactsClosurePlannerTests
         Assert.Equal(2, fixture.BaseRequests.Count);
     }
 
+    // GetInterfaces returns the interfaces a type and its base types declare, and those interfaces' own; an open
+    // interface is never a runtime type. None of them is required unless the program reads interfaces.
+    [Fact]
+    public void InterfaceReadsRequireTheInterfacesOfEveryTypeAndItsBases()
+    {
+        var fixture = new Fixture();
+        var derived = Named("Derived");
+        var parent = Named("Parent");
+        var declared = Named("IDeclared");
+        var inherited = Named("IInherited");
+        var baseInterface = Named("IBase");
+        var open = CliTypeIdentity.GenericInstantiation(Named("IOpen`1"), [CliTypeIdentity.GenericParameter(false, 0)]);
+        fixture.Bases[derived] = parent;
+        fixture.Interfaces[derived] = [declared, open];
+        fixture.Interfaces[parent] = [inherited];
+        fixture.Interfaces[declared] = [baseInterface];
+        var planner = fixture.Create();
+
+        var roots = planner.Plan([derived], new RuntimeTypeFactReads(true, Interfaces: true));
+
+        Assert.True(roots.ToHashSet().SetEquals([parent, declared, inherited, baseInterface]));
+        Assert.True(planner.Plan([derived], new RuntimeTypeFactReads(true)).ToHashSet().SetEquals([parent]));
+    }
+
     private static ImmutableArray<CliTypeIdentity> Plan<TPlanner>(TPlanner planner,
         ImmutableArray<CliTypeIdentity> seeds, bool includeGenericArguments, bool includeDeclaringTypes = false,
         bool includeGenericDefinitions = false, bool includeElementTypes = false)
         where TPlanner : IRuntimeTypeFactsClosurePlanner =>
-        planner.Plan(seeds, includeGenericArguments, includeDeclaringTypes, includeGenericDefinitions, includeElementTypes);
+        planner.Plan(seeds, new RuntimeTypeFactReads(
+            true, includeGenericArguments, includeDeclaringTypes, includeGenericDefinitions, includeElementTypes));
 
     private static CliTypeIdentity Named(string name) => CliTypeIdentity.Named(Assembly, "Fixture", name, false);
 
-    private sealed class Fixture : IBaseTypeResolver, ITypeDefinitionResolver, ITypeIdentityResolver
+    private sealed class Fixture : IBaseTypeResolver, ITypeDefinitionResolver, ITypeIdentityResolver,
+        IImplementedInterfaceResolver
     {
+        internal Dictionary<CliTypeIdentity, ImmutableArray<CliTypeIdentity>> Interfaces { get; } = [];
+        public ImmutableArray<CliTypeIdentity> GetInterfaces(CliTypeIdentity type) => Interfaces.GetValueOrDefault(type, []);
         internal Dictionary<CliTypeIdentity, CliTypeIdentity> Bases { get; } = [];
         internal Dictionary<CliTypeIdentity, CliTypeIdentity> Nested { get; } = [];
         internal HashSet<CliTypeIdentity> Open { get; } = [];
         internal List<CliTypeIdentity> BaseRequests { get; } = [];
         private readonly List<CliTypeIdentity> _keys = [];
-        internal RuntimeTypeFactsClosurePlanner Create() => new RuntimeTypeFactsClosurePlanner(this, this, this);
+        internal RuntimeTypeFactsClosurePlanner Create() => new RuntimeTypeFactsClosurePlanner(this, this, this, this);
         public CliTypeIdentity GetTypeIdentity(EntityKey type) => _keys[type.MetadataToken];
         public CliTypeIdentity? Resolve(CliTypeIdentity type)
         {

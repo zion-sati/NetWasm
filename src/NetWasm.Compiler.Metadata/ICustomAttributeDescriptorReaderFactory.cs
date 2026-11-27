@@ -11,6 +11,12 @@ public interface ICustomAttributeDescriptorReaderFactory
         ITypeDefinitionResolver definitions, ITypeIdentityResolver identities);
 }
 
+public interface IModuleAttributeDescriptorReaderFactory
+{
+    IModuleAttributeDescriptorReader Create(MetadataCompilationSnapshot metadata,
+        ITypeDefinitionResolver definitions, ITypeIdentityResolver identities);
+}
+
 public interface IAssemblyAttributeDescriptorReaderFactory
 {
     IAssemblyAttributeDescriptorReader Create(MetadataCompilationSnapshot metadata,

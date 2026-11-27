@@ -64,7 +64,8 @@ public sealed class ConstructedObjectNullCheckCompilationTests
     [InlineData("var b = new Box(); if (index > 0) b = null; result = b.A;", "ldfld-")]
     [InlineData("var b = index > 0 ? new Box() : null; result = b.A;", "ldfld-")]
     [InlineData("var b = new Box(); Touch(ref b); result = b.A;", "ldfld-")]
-    [InlineData("var b = new Box(); Keep(b); try { result = b.A; } finally { result++; }", "ldfld-")]
+    // A protected block is no exception: the store before the try dominates the read in it.
+    [InlineData("var b = new Box(); Keep(b); try { result = b.A; } finally { result++; }", "ldfld+")]
     public void AccessesOfObjectsNewobjProducedSkipTheirNullChecks(string statement, string expected)
     {
         using var assets = TestAssets.Create();

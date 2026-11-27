@@ -93,7 +93,7 @@ public sealed class HostCallbackFunctionEmitterTests
                 EmitterTestSupport.ValueFrames(layouts, runtimeImports),
                 terminalBoundary,
                 new AddressInstructionEmitter(layouts),
-                new GeneratedFunctionWriterFactory()),
+                new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory()),
         }.Cast<IHostCallbackFunctionEmitter>().Single();
         var indices = new FunctionIndexMap(
             [],
@@ -162,7 +162,7 @@ public sealed class HostCallbackFunctionEmitterTests
                 EmitterTestSupport.ValueFramePlanner(layouts),
                 EmitterTestSupport.ValueFrames(layouts, runtimeImports),
                 new PassthroughTerminalBoundary(),
-                new AddressInstructionEmitter(layouts), new GeneratedFunctionWriterFactory()),
+                new AddressInstructionEmitter(layouts), new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory()),
         }.Cast<IHostCallbackFunctionEmitter>().Single();
         var indices = new FunctionIndexMap([], [],
             ImmutableDictionary<string, WasmFunctionIndex>.Empty.Add(instance.DeclaringType.CanonicalName, new(30)), [])
@@ -218,7 +218,7 @@ public sealed class HostCallbackFunctionEmitterTests
                 EmitterTestSupport.ValueFrames(layouts, runtimeImports),
                 terminalBoundary,
                 new AddressInstructionEmitter(layouts),
-                new GeneratedFunctionWriterFactory()),
+                new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory()),
         }.Cast<IHostCallbackFunctionEmitter>().Single();
         var indices = new FunctionIndexMap(
             [],
@@ -330,7 +330,8 @@ public sealed class HostCallbackFunctionEmitterTests
             int resultLocal,
             int reportFunctionIndex,
             int? raiseFunctionIndex,
-            Action emitBody)
+            Action emitBody,
+            int? exceptionObserverFunctionIndex = null)
         {
             ReportFunctionIndex = reportFunctionIndex;
             emitBody();

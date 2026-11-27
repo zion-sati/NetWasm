@@ -18,7 +18,8 @@ internal sealed class ValueObjectBlockMemoryEmitter(
     ICilTypeOperandResolver types,
     IRuntimeImportResolver runtimeImports,
     IAddressTakenAggregateProjectionEmitter aggregateProjections,
-    IReferenceWriteBarrierEmitter writeBarrier) : InstructionCommandProvider
+    IReferenceWriteBarrierEmitter writeBarrier,
+    INullDereferenceCheckEmitter nullChecks) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -40,15 +41,44 @@ internal sealed class ValueObjectBlockMemoryEmitter(
         InstructionFamily.ValueObjectBlockMemory,
         emit);
 
-    private void EmitSizeOf(InstructionEmissionRequest request, IWasmInstructionWriter code) => EmitConstant(
-        request, code, values.GetValueLayout(types.Resolve(request.Instruction, request.Header.MethodInstance)).Size,
-        CliValueKind.I4);
+    private void EmitSizeOf(InstructionEmissionRequest request, IWasmInstructionWriter code)
+    {
+        var size = values.GetValueLayout(types.Resolve(request.Instruction, request.Header.MethodInstance)).Size;
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(size)));
+        PushLocal(request, code, CliValueKind.I4);
+    }
 
     private void EmitInitializeObject(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
+        // An argument temporary in lanes clears its lanes.
+        if (request.Context.ArgumentLanes.Clears.TryGetValue(request.Instruction.Offset, out var argumentTemporary))
+        {
+            var shape = request.Context.ArgumentLanes.Locals[argumentTemporary];
+            var temporaryLanes = request.Context.ArgumentLaneLocals[argumentTemporary];
+            for (var lane = 0; lane < temporaryLanes.Length; lane++)
+            {
+                StructResults.ZeroValues.Emit(code, shape.Fields[lane].Kind, layouts.Target);
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)temporaryLanes[lane])));
+            }
+            request.Stack.RemoveAt(request.Stack.Count - 1);
+            return;
+        }
+        // A returned local in lanes clears its lanes.
+        if (request.Context.ReturnLanes is { } lanes && lanes.Clears.Contains(request.Instruction.Offset))
+        {
+            var laneLocals = request.Context.StructResultLocals.For(lanes.Shape);
+            for (var lane = 0; lane < laneLocals.Length; lane++)
+            {
+                StructResults.ZeroValues.Emit(code, lanes.Shape.Fields[lane].Kind, layouts.Target);
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)laneLocals[lane])));
+            }
+            request.Stack.RemoveAt(request.Stack.Count - 1);
+            return;
+        }
         var slot = request.Stack.Count - 1;
         var layout = values.GetValueLayout(types.Resolve(request.Instruction, request.Header.MethodInstance));
         var address = GetStackLocal(request.Context, slot, request.Stack[slot]);
+        nullChecks.Emit(request, code, address, request.Stack[slot]);
         if (!SmallBlockEmitter.TryEmitKnownSizeZero(code, address, layout.Size))
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)address)));
@@ -157,7 +187,10 @@ internal sealed class ValueObjectBlockMemoryEmitter(
         var type = types.Resolve(request.Instruction, request.Header.MethodInstance);
         if (type.StackKind != CliValueKind.ValueType)
         {
-            EmitConstant(request, code, 0, type.StackKind);
+            // The zero of the type's own Wasm type: an i64 for a long or a long-backed enum, and for a native integer
+            // or a reference on wasm64; an f32 or f64 for float and double; a v128 for a vector.
+            StructResults.ZeroValues.Emit(code, type.StackKind, layouts.Target);
+            PushLocal(request, code, type.StackKind);
             return;
         }
         var layout = values.GetValueLayout(type);
@@ -183,6 +216,7 @@ internal sealed class ValueObjectBlockMemoryEmitter(
             return;
         }
         var slot = request.Stack.Count - 1;
+        nullChecks.Emit(request, code, GetStackLocal(request.Context, slot, request.Stack[slot]), request.Stack[slot]);
         var type = types.Resolve(request.Instruction, request.Header.MethodInstance);
         var layout = values.GetValueLayout(type);
         if (type.StackKind == CliValueKind.ValueType &&
@@ -243,6 +277,8 @@ internal sealed class ValueObjectBlockMemoryEmitter(
         var destination = request.Stack.Count - 2;
         var type = types.Resolve(request.Instruction, request.Header.MethodInstance);
         var layout = values.GetValueLayout(type);
+        nullChecks.Emit(request, code, GetStackLocal(request.Context, destination, request.Stack[destination]),
+            request.Stack[destination]);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
             request.Context,
             destination,
@@ -275,6 +311,11 @@ internal sealed class ValueObjectBlockMemoryEmitter(
         var destination = request.Stack.Count - 2;
         var type = types.Resolve(request.Instruction, request.Header.MethodInstance);
         var layout = values.GetValueLayout(type);
+        // The destination, then the source, as desktop .NET dereferences them.
+        nullChecks.Emit(request, code, GetStackLocal(request.Context, destination, request.Stack[destination]),
+            request.Stack[destination]);
+        nullChecks.Emit(request, code, GetStackLocal(request.Context, destination + 1, request.Stack[destination + 1]),
+            request.Stack[destination + 1]);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
             request.Context,
             destination,
@@ -288,29 +329,6 @@ internal sealed class ValueObjectBlockMemoryEmitter(
         writeBarrier.Emit(request, code,
             GetStackLocal(request.Context, destination, request.Stack[destination]), type);
         request.Stack.RemoveRange(destination, 2);
-    }
-
-    private void EmitConstant(
-        InstructionEmissionRequest request, IWasmInstructionWriter code,
-        int value,
-        CliValueKind type)
-    {
-        if (type == CliValueKind.V128)
-        {
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.SimdPrefixed,
-                WasmInstructionOperand.FromBytes([(byte)WasmSimdOpcodes.V128Constant, .. new byte[16]])));
-        }
-        else if (layouts.Target.UsesMemory64 &&
-            type is CliValueKind.ManagedReference or CliValueKind.ManagedAddress)
-        {
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(value)));
-        }
-        else
-        {
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(value)));
-        }
-        PushLocal(request, code, type);
     }
 
     private void PushLocal(InstructionEmissionRequest request, IWasmInstructionWriter code, CliValueKind type)

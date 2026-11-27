@@ -30,9 +30,9 @@ internal sealed class AssignableTypeMetadataBuilder(
                 target.Type))
             .ToArray();
 
-    // The runtime types filed under their own relationship key with their first type argument's key, and those
-    // without a key.
-    private Dictionary<string, List<(CliTypeIdentity Type, int TypeId, string? Argument)>>? _targetsByKey;
+    // The runtime types filed under their own relationship key, each key's indexed by its targets' first type
+    // argument's (or element's) key, and those without a key.
+    private Dictionary<string, KeyFiling>? _targetsByKey;
     private readonly List<(CliTypeIdentity Type, int TypeId)> _unboundedTargets = [];
 
     public ImmutableArray<int> Build(CliTypeIdentity candidate)
@@ -46,11 +46,11 @@ internal sealed class AssignableTypeMetadataBuilder(
             return [];
         }
 
-        // A candidate classifies only the runtime types filed under the keys it reaches.
+        // A candidate classifies only the runtime types filed under the keys it reaches, each pair once. A shared
+        // array's casting list holds only what every array of its shape converts to; the rest depends on its element.
         return [.. Targets(candidate)
-            .Where(target => relationships
-                .Classify(candidate, target.Type)
-                .IsAssignmentCompatible)
+            .Where(target => relationships.Classify(candidate, target.Type) is
+                { IsAssignmentCompatible: true, RequiresElementCheck: false })
             .Select(target => target.TypeId)
             .Distinct()
             .Order()];
@@ -67,15 +67,13 @@ internal sealed class AssignableTypeMetadataBuilder(
                 if (keys.Unbounded)
                 {
                     _unboundedTargets.Add(target);
+                    continue;
                 }
-                else if (_targetsByKey.TryGetValue(keys.Own, out var filed))
+                if (!_targetsByKey.TryGetValue(keys.Own, out var filing))
                 {
-                    filed.Add((target.Type, target.TypeId, keys.ArgumentKey));
+                    _targetsByKey.Add(keys.Own, filing = new KeyFiling());
                 }
-                else
-                {
-                    _targetsByKey.Add(keys.Own, [(target.Type, target.TypeId, keys.ArgumentKey)]);
-                }
+                File(filing, new(target.Type, target.TypeId, keys.ArgumentKey, keys.NestedArgumentKey));
             }
         }
         var candidateKeys = relationshipKeys.Resolve(candidate);
@@ -85,23 +83,67 @@ internal sealed class AssignableTypeMetadataBuilder(
         }
         // Instantiations of a generic definition the candidate reaches are filtered by their first type argument:
         // every array type would otherwise be classified against every IEnumerable<T>, IList<T> and
-        // IReadOnlyList<T> in the program, and Newtonsoft.Json's program held over 12 GB of such pairs.
+        // IReadOnlyList<T> in the program, and Newtonsoft.Json's program held over 12 GB of such pairs. An array's
+        // targets under the keys whose argument is its element are filtered one level further, by what the element
+        // admits of their argument's argument: every array of some IEnumerable<T> was classified against every other
+        // (about 5,000 targets a candidate on Devolutions' Avalonia sample, 380 million pairs). A key's targets are
+        // indexed by argument, so a candidate visits only those it admits: scanning each key's whole list filtered
+        // the same 175,000 runtime types for every candidate there, 840 of 916 s.
         return candidateKeys.Reachable
             .SelectMany(key =>
             {
-                var filed = _targetsByKey.GetValueOrDefault(key);
-                if (filed is null)
+                if (_targetsByKey.GetValueOrDefault(key) is not { } filing)
                 {
                     return [];
                 }
                 IReadOnlySet<string>? admitted = null;
                 var filtered = candidateKeys.Arguments?.TryGetValue(key, out admitted) == true && admitted is not null;
-                return filed
-                    .Where(target => !filtered || target.Argument is null || admitted!.Contains(target.Argument))
+                var nested = candidateKeys.ElementKeys?.Contains(key) == true ? candidateKeys.ElementArguments : null;
+                return Admitted(filing, filtered ? admitted : null)
+                    .Where(target => nested is null || target.Argument is null || target.NestedArgument is null ||
+                        nested.GetValueOrDefault(target.Argument) is not { } admittedNested ||
+                        admittedNested.Contains(target.NestedArgument))
                     .Select(target => (target.Type, target.TypeId));
             })
             .Concat(_unboundedTargets);
     }
+
+    private static void File(KeyFiling filing, FiledTarget target)
+    {
+        filing.All.Add(target);
+        if (target.Argument is null)
+        {
+            filing.WithoutArgument.Add(target);
+        }
+        else if (filing.ByArgument.TryGetValue(target.Argument, out var filed))
+        {
+            filed.Add(target);
+        }
+        else
+        {
+            filing.ByArgument.Add(target.Argument, [target]);
+        }
+    }
+
+    // A key's every target when nothing narrows it, else those whose argument the set admits and those without one.
+    private static IEnumerable<FiledTarget> Admitted(KeyFiling filing, IReadOnlySet<string>? arguments) =>
+        arguments is null
+            ? filing.All
+            : arguments
+                .SelectMany(argument => filing.ByArgument.GetValueOrDefault(argument) ?? [])
+                .Concat(filing.WithoutArgument);
+
+    // One key's targets: all of them, and by argument key with those that have none.
+    private sealed class KeyFiling
+    {
+        public List<FiledTarget> All { get; } = [];
+
+        public List<FiledTarget> WithoutArgument { get; } = [];
+
+        public Dictionary<string, List<FiledTarget>> ByArgument { get; } = new(StringComparer.Ordinal);
+    }
+
+    private sealed record FiledTarget(CliTypeIdentity Type, int TypeId, string? Argument, string? NestedArgument);
 
     private static bool IsClosedRuntimeAssignableTarget(
         ITypeDefinitionResolver typeDefinitions,

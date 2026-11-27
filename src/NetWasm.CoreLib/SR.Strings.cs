@@ -22,6 +22,8 @@ namespace System
         internal const string Arg_EnumIllegalVal = "Illegal enum value: {0}.";
         internal const string Arg_InvalidHandle = "Invalid handle.";
         internal const string Arg_KeyNotFoundWithKey = "The given key '{0}' was not present in the dictionary.";
+        internal const string Arg_LongerThanDestArray = "Destination array was not long enough. Check the destination index, length, and the array's lower bounds.";
+        internal const string Arg_LongerThanSrcArray = "Source array was not long enough. Check the source index, length, and the array's lower bounds.";
         internal const string Arg_LowerBoundsMustMatch = "The arrays' lower bounds must be identical.";
         internal const string Arg_MustBeEnum = "Type provided must be an Enum.";
         internal const string Arg_MustBePrimArray = "Object must be an array of primitives.";
@@ -49,6 +51,7 @@ namespace System
         internal const string ArgumentNull_SafeHandle = "SafeHandle cannot be null.";
         internal const string ArgumentNull_String = "String reference not set to an instance of a String.";
         internal const string ArgumentNull_TypedRefType = "Type in TypedReference cannot be null.";
+        internal const string ArgumentOutOfRange_ArrayLB = "Number was less than the array's lower bound in the first dimension.";
         internal const string ArgumentOutOfRange_BadHourMinuteSecond = "Hour, Minute, and Second parameters describe an un-representable DateTime.";
         internal const string ArgumentOutOfRange_BadYearMonthDay = "Year, Month, and Day parameters describe an un-representable DateTime.";
         internal const string ArgumentOutOfRange_BiggerThanCollection = "Larger than collection size.";
@@ -92,6 +95,7 @@ namespace System
         internal const string Argument_InvalidFlag = "Value of flags is invalid.";
         internal const string Argument_InvalidOffLen = "Offset and length were out of bounds for the array or count is greater than the number of elements from index to the end of the source collection.";
         internal const string Argument_InvalidTimeSpanStyles = "An undefined TimeSpanStyles value is being used.";
+        internal const string Argument_MustHaveAttributeBaseClass = "Type passed in must be derived from System.Attribute or System.Attribute itself.";
         internal const string Argument_NoUninitializedStrings = "Uninitialized Strings cannot be created.";
         internal const string Argument_OverlapAlignmentMismatch = "Overlapping spans have mismatching alignment.";
         internal const string Argument_SearchValues_UnsupportedStringComparison = "SearchValues<string> supports only StringComparison.Ordinal and StringComparison.OrdinalIgnoreCase.";
@@ -200,6 +204,7 @@ namespace System
         internal const string PlatformNotSupported_NamedSyncObjectWaitAnyWaitAll = "Wait operations on multiple wait handles including a named synchronization primitive are not supported on this platform.";
         internal const string PlatformNotSupported_NamedSynchronizationPrimitives = "The named version of this synchronization primitive is not supported on this platform.";
         internal const string Rank_MultiDimNotSupported = "Only single dimension arrays are supported here.";
+        internal const string Rank_MustMatch = "The specified arrays must have the same number of dimensions.";
         internal const string Serialization_MissingKeys = "The Keys for this Hashtable are missing.";
         internal const string Serialization_NullKey = "One of the serialized keys is null.";
         internal const string TaskCompletionSourceT_TrySetException_NoExceptions = "The exceptions collection was empty.";

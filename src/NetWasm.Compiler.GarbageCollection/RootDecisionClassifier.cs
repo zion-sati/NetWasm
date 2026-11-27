@@ -48,20 +48,31 @@ public sealed class RootDecisionClassifier(
         ArgumentNullException.ThrowIfNull(request.AllocatingMethods);
         ArgumentNullException.ThrowIfNull(request.AllocatingConstructedMethods);
         var instruction = request.Instruction;
-        if (CilSafepointClassifier.RequiresUnconditionalRootDecision(instruction) ||
-            CilSafepointClassifier.MayTransferControlExceptionally(instruction) &&
-            !request.Method.ControlFlow.Graph.ExceptionalSuccessors[request.Block].IsEmpty)
+        if (CilSafepointClassifier.RequiresUnconditionalRootDecision(instruction))
         {
             return true;
         }
+        var protectedBlock = !request.IgnoresHandlers &&
+            !request.Method.ControlFlow.Graph.ExceptionalSuccessors[request.Block].IsEmpty;
+        // A static field access throws only from the type initializer it may run, which it runs only where it has an
+        // initialization check (StaticInitializerGuardResolver plans no other): in a protected block such an access is
+        // a decision point, as what it throws may reach a handler here, and elsewhere where the initializer may
+        // collect. One without a check neither throws nor collects. A runtime-async method's body is one protected
+        // block, so its accesses of the result slot and the direct-call request published and cleared roots around
+        // stores that can do neither.
         if (instruction.Operation is CilOperation.LoadStaticField or
             CilOperation.LoadStaticFieldAddress or CilOperation.StoreStaticField)
         {
-            return IsAllocatingStaticInitialization(
-                request.Method,
-                instruction,
-                request.AllocatingMethods,
-                request.AllocatingConstructedMethods);
+            return MayRunTypeInitializer(request.Method, instruction) &&
+                (protectedBlock || IsAllocatingStaticInitialization(
+                    request.Method,
+                    instruction,
+                    request.AllocatingMethods,
+                    request.AllocatingConstructedMethods));
+        }
+        if (CilSafepointClassifier.MayTransferControlExceptionally(instruction) && protectedBlock)
+        {
+            return true;
         }
         if (instruction.Operation is not (CilOperation.Call or CilOperation.CallVirtual))
             return false;
@@ -118,6 +129,23 @@ public sealed class RootDecisionClassifier(
                 target.Value.Definition.HasManagedBody,
             _ => false,
         };
+    }
+
+    // Whether the access has an initialization check: its field's type has an initializer this access may be the first
+    // to run.
+    private bool MayRunTypeInitializer(ManagedMethodBody accessor, CilInstruction instruction)
+    {
+        var field = instruction.Operand switch
+        {
+            CilOperand.FieldInstance instance => instance.Value.Definition,
+            CilOperand.Entity entity => _fields.GetField(entity.Key),
+            _ => null,
+        };
+        return field is not null &&
+            _types.GetTypeDefinition(field.DeclaringType).Methods.Select(_methods.GetMethod)
+                .Any(static method => method.Name == ".cctor") &&
+            !_initializedFields.IsInitializedFor(accessor.Method.Definition, accessor.Method.DeclaringType,
+                accessor.Body.Instructions, instruction);
     }
 
     private bool IsAllocatingStaticInitialization(

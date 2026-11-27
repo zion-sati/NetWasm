@@ -29,4 +29,15 @@ internal sealed record TypeRelationshipKeys(
     // A generic instantiation's first type argument's own key, or an array's element's, by which it is filed as a
     // target; null otherwise.
     public string? ArgumentKey { get; init; }
+
+    // The argument key of the type ArgumentKey names (the array's element, or the first type argument), by which a
+    // target is filed one level further down: an array of IEnumerable<Dog> by Dog's key. Null when that type has none.
+    public string? NestedArgumentKey { get; init; }
+
+    // For an array, the keys whose argument is its element (the array key and the array interfaces) and the element's
+    // own Arguments, which narrow a target filed under one of them by its NestedArgumentKey: the element converts to
+    // the target's argument type only where its Arguments admit that type's argument key. Null for other types.
+    public IReadOnlySet<string>? ElementKeys { get; init; }
+
+    public IReadOnlyDictionary<string, IReadOnlySet<string>?>? ElementArguments { get; init; }
 }

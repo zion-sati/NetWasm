@@ -3,6 +3,7 @@
 
 using NetWasm.Compiler.Core.ManagedExecutables;
 using NetWasm.Compiler.ComponentModel.Optimization;
+using NetWasm.Compiler.ComponentModel.Debugging;
 
 namespace NetWasm.Compiler.ComponentModel;
 
@@ -19,6 +20,9 @@ public sealed record ComponentBuildRequest(
     bool StructuredDiagnostics = false)
 {
     public WasmOptimizationOverrides? OptimizationOverrides { get; init; }
+
+    // Debug information (NetWasmDebugInfo): the module's names, and DWARF lines with the program's method symbols.
+    public WasmDebugInformation? DebugInformation { get; init; }
 
     // Write the linked plain core module, without WASI, rather than a component.
     public bool PlainCoreModule { get; init; }

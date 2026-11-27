@@ -62,4 +62,11 @@ public sealed record WasmOptimizationSettings(
     RangeBranchFoldingPolicy RangeBranchFolding = RangeBranchFoldingPolicy.Disabled,
     UnwrittenStaticFieldFoldingPolicy UnwrittenStaticFieldFolding = UnwrittenStaticFieldFoldingPolicy.Disabled,
     ObjectDispatchPolicy ObjectDispatch = ObjectDispatchPolicy.SharedAtLargeSites,
-    ConditionalSelectPolicy ConditionalSelects = ConditionalSelectPolicy.Disabled);
+    ConditionalSelectPolicy ConditionalSelects = ConditionalSelectPolicy.Disabled,
+    LocalSlotSharingPolicy LocalSlotSharing = LocalSlotSharingPolicy.Disabled,
+    RuntimeAsyncSuspensionPolicy RuntimeAsyncSuspension = RuntimeAsyncSuspensionPolicy.Local,
+    ByRefNullCheckEliminationPolicy ByRefNullCheckElimination = ByRefNullCheckEliminationPolicy.Disabled,
+    // How many instructions a finally's copies may take (its handler's instructions times its targets) for its normal
+    // exits to run them in place of the handler (FinallyCloner); 0 copies none.
+    int FinallyCloningBudget = 0,
+    ReceiverFlowDispatchPolicy ReceiverFlowDispatch = ReceiverFlowDispatchPolicy.GenericVirtualCalls);

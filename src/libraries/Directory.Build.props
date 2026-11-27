@@ -5,6 +5,10 @@
   <PropertyGroup>
     <!-- As upstream builds its libraries, so their sources port verbatim. -->
     <LangVersion>preview</LangVersion>
+    <!-- Their async methods are compiled with runtime async, which NetWasm's compiler lowers, as CoreLib's are and as
+         upstream builds its in-box libraries (src/libraries/Directory.Build.targets). Async iterators stay state
+         machines, as Roslyn compiles them either way. -->
+    <Features>$(Features);runtime-async=on</Features>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
     <NoStandardLibraries>true</NoStandardLibraries>
     <NoStdLib>true</NoStdLib>

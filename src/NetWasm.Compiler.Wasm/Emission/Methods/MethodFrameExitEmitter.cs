@@ -8,7 +8,8 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 
 internal sealed class MethodFrameExitEmitter(
     IRuntimeImportResolver runtimeImports,
-    IStackTraceFrameExitEmitter stackTraceFrames) : IMethodFrameExitEmitter
+    IStackTraceFrameExitEmitter stackTraceFrames,
+    ILazyRootFrameEmitter lazyRootFrames) : IMethodFrameExitEmitter
 {
     public void Emit(IWasmInstructionWriter code, MethodEmissionContext context)
     {
@@ -37,7 +38,11 @@ internal sealed class MethodFrameExitEmitter(
                     ? RuntimeImportSymbol.ValueFrameLeave
                     : RuntimeImportSymbol.ValueFrameLeaveMapped))));
         }
-        if (context.RootSlotCount != 0)
+        if (context.RootSlotCount != 0 && context.LazyRootFrame is not null)
+        {
+            lazyRootFrames.Emit(code, LazyRootFrameStep.Leave, context);
+        }
+        else if (context.RootSlotCount != 0)
         {
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalGet,

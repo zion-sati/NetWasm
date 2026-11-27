@@ -60,6 +60,7 @@ public sealed class LinkedCorpusBuildPlanFactoryTests
         Assert.Contains("--enable-exception-handling", merge.Arguments);
         Assert.Contains("--enable-bulk-memory", merge.Arguments);
         Assert.Contains("--enable-multimemory", merge.Arguments);
+        Assert.Contains("--enable-multivalue", merge.Arguments);
         Assert.Equal(new[] { "-g", "-o", plan.MergedModulePath }, merge.Arguments.TakeLast(3));
         Assert.Equal(request.Tools.Validate, plan.Steps[2].Process.FileName);
         Assert.Equal(new[] { "validate", plan.MergedModulePath, "--features", "all" }, plan.Steps[2].Process.Arguments);

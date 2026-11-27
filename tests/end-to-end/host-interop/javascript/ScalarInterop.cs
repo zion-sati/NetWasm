@@ -261,7 +261,7 @@ public static class EntryPoint
         {
             return (int)RawHost.Scale(input);
         }
-        catch (System.JSException)
+        catch (System.Runtime.InteropServices.JavaScript.JSException)
         {
             return -1;
         }
@@ -274,7 +274,7 @@ public static class EntryPoint
         {
             return ConsumerMath.Add(-1, input);
         }
-        catch (System.JSException)
+        catch (System.Runtime.InteropServices.JavaScript.JSException)
         {
             return input + 1;
         }
@@ -392,7 +392,7 @@ public static class EntryPoint
             ConsumerMath.InvokeSubscription(subscription, input);
             return 0;
         }
-        catch (System.JSException)
+        catch (System.Runtime.InteropServices.JavaScript.JSException)
         {
             return input;
         }
@@ -416,7 +416,7 @@ public static class EntryPoint
             ConsumerMath.InvokeSubscription(subscription, input);
             return 0;
         }
-        catch (System.JSException)
+        catch (System.Runtime.InteropServices.JavaScript.JSException)
         {
             subscription.Dispose();
             return input;

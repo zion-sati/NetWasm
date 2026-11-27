@@ -80,6 +80,16 @@ internal sealed class AsyncTaskCompletionEmitter(
         // Transfer ownership from the dispatch root to our explicit root.
         Call(imports.Resolve(RuntimeImportSymbol.EndCatch));
         ReleaseHandle();
+        if (plan.ExceptionObserverFunctionIndex is { } observer)
+        {
+            // A JSException's JavaScript error goes back to JavaScript; the root keeps the exception across the call,
+            // which may move it, so it is read back from the root.
+            LocalGet(exception);
+            Call(observer);
+            LocalGet(root);
+            ManagedMemoryEmitter.EmitLoadBySize(code.Instructions, layouts.Target, 0, layouts.Target.ObjectReferenceSize);
+            Local(WasmOpcodes.LocalSet, exception);
+        }
 
         // Consume before reporting: a repeated/reentrant completion cannot report
         // twice. A foreign reporter exception must release our root and propagate

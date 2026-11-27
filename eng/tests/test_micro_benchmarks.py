@@ -30,6 +30,9 @@ RUN = load("run")
 class FamilyTests(unittest.TestCase):
     def test_names_each_case_by_its_namespace(self) -> None:
         self.assertEqual("NetWasm workloads", TABLE.family("NetWasm.Workloads.TrialDivision.LargestPrimeRemainder()"))
+        self.assertEqual("Async", TABLE.family("NetWasm.Workloads.Async.CallCost.AsyncCallingAsync()"))
+        self.assertEqual("Async", TABLE.family("System.Threading.Tasks.Tests.Perf_AsyncMethods.Yield()"))
+        self.assertEqual("Async", TABLE.family("System.Threading.Channels.Tests.BoundedChannelPerfTests.PingPong()"))
         self.assertEqual("Math", TABLE.family("System.MathBenchmarks.Double.Sqrt()"))
         self.assertEqual("`System.Memory` spans", TABLE.family("System.Memory.Span<Int32>.Reverse(Size: 512)"))
         self.assertEqual("`System.Numerics` vectors", TABLE.family("System.Numerics.Tests.Perf_Vector2.AddOperator()"))

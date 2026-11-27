@@ -56,7 +56,7 @@ public sealed class DelegateInvokeCallEmitterTests
         var code = new RecordingInstructionWriter();
         var emitter = new DelegateInvokeCallEmitter(
             layouts,
-            new ImplicitExceptionEmitter(layouts));
+            new ImplicitExceptionEmitter(layouts), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory());
 
         EmitCall(
             emitter,
@@ -84,7 +84,7 @@ public sealed class DelegateInvokeCallEmitterTests
         var code = new RecordingInstructionWriter();
         var emitter = new DelegateInvokeCallEmitter(
             layouts,
-            new ImplicitExceptionEmitter(layouts));
+            new ImplicitExceptionEmitter(layouts), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory());
 
         EmitCall(
             emitter,
@@ -129,7 +129,7 @@ public sealed class DelegateInvokeCallEmitterTests
         var code = new InstructionRecordingWriter();
         var emitter = new DelegateInvokeCallEmitter(
             layouts,
-            new ImplicitExceptionEmitter(layouts));
+            new ImplicitExceptionEmitter(layouts), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory());
 
         EmitCall(
             emitter,

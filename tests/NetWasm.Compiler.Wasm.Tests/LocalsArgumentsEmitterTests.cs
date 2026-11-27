@@ -979,7 +979,8 @@ public sealed class LocalsArgumentsEmitterTests
             new AddressTakenAggregateSynchronizationEmitter(layouts),
             new NetWasm.Compiler.Wasm.Emission.Arrays.ArrayMetadataSnapshotEmitter(
                 layouts, layouts, new RectangularArrayLayoutProvider(layouts, layouts), CreateAddressInstructions(layouts),
-                new ImplicitExceptionEmitter(layouts))));
+                new ImplicitExceptionEmitter(layouts)),
+            new LazyRootFrameEmitter(layouts, WasmRuntimeImports.CreateCatalog())));
     }
 
     private static IInstructionCommandProvider CreateEmitter(CliTypeIdentity argumentType)
@@ -1004,7 +1005,8 @@ public sealed class LocalsArgumentsEmitterTests
             new AddressTakenAggregateSynchronizationEmitter(layouts),
             new NetWasm.Compiler.Wasm.Emission.Arrays.ArrayMetadataSnapshotEmitter(
                 layouts, layouts, new RectangularArrayLayoutProvider(layouts, layouts), CreateAddressInstructions(layouts),
-                new ImplicitExceptionEmitter(layouts))));
+                new ImplicitExceptionEmitter(layouts)),
+            new LazyRootFrameEmitter(layouts, WasmRuntimeImports.CreateCatalog())));
     }
 
     private static CliTypeIdentity CreateValueType() => CliTypeIdentity.Named(

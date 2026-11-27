@@ -42,7 +42,7 @@ internal static class UnitStoreFormat
     public const uint Magic = 0x5554574E; // "NWTU"
     // Raised whenever the queries units record change, so older units, validated against
     // other queries or numbering them otherwise, are not restored.
-    public const int Version = 19;
+    public const int Version = 22;
     public const uint SegmentKind = 1;
     public const uint ManifestKind = 2;
     public const int SegmentHeaderSize = 64;
@@ -275,6 +275,8 @@ internal readonly ref struct UnitRecord
         return dependencies.MoveToImmutable();
     }
     public int ParameterCount => BinaryPrimitives.ReadUInt16LittleEndian(_bytes[30..]);
+    // The results after the first, stored after the parameters.
+    public int MoreResultCount => _bytes[84];
     public ReadOnlySpan<char> FunctionName => _segment.String(Ref(32));
     public ReadOnlySpan<char> EnvironmentKey => _segment.String(Ref(40));
     public ReadOnlySpan<byte> Body => _segment.Blob(Ref(48));
@@ -311,6 +313,10 @@ internal readonly ref struct UnitRecord
     public NetWasm.Compiler.Core.CliValueKind Parameter(int index) =>
         (NetWasm.Compiler.Core.CliValueKind)_bytes[UnitStoreFormat.FixedRecordSize + Checked(index, ParameterCount)];
 
+    public NetWasm.Compiler.Core.CliValueKind MoreResult(int index) =>
+        (NetWasm.Compiler.Core.CliValueKind)_bytes[UnitStoreFormat.FixedRecordSize + ParameterCount +
+            Checked(index, MoreResultCount)];
+
     public UnitRelocationRecord Relocation(int index)
     {
         var at = RelocationsStart + Checked(index, RelocationCount) * UnitStoreFormat.RelocationSize;
@@ -336,6 +342,8 @@ internal readonly ref struct UnitRecord
     {
         var parameters = ImmutableArray.CreateBuilder<NetWasm.Compiler.Core.CliValueKind>(ParameterCount);
         for (var index = 0; index < ParameterCount; index++) parameters.Add(Parameter(index));
+        var moreResults = ImmutableArray.CreateBuilder<NetWasm.Compiler.Core.CliValueKind>(MoreResultCount);
+        for (var index = 0; index < MoreResultCount; index++) moreResults.Add(MoreResult(index));
         var relocations = ImmutableArray.CreateBuilder<UnitRelocation>(RelocationCount);
         for (var index = 0; index < RelocationCount; index++)
         {
@@ -361,6 +369,7 @@ internal readonly ref struct UnitRecord
             FunctionName = FunctionName.ToString(),
             Parameters = parameters.MoveToImmutable(),
             Result = Result,
+            MoreResults = moreResults.MoveToImmutable(),
             IsAggressiveInlining = IsAggressiveInlining,
             IsNoInlining = IsNoInlining,
             EnvironmentKey = EnvironmentKey.ToString(),
@@ -373,7 +382,7 @@ internal readonly ref struct UnitRecord
 
     private static int Word(ReadOnlySpan<byte> words, int index) => BinaryPrimitives.ReadInt32LittleEndian(words[(index * 4)..]);
 
-    private int RelocationsStart => UnitStoreFormat.FixedRecordSize + UnitStoreFormat.Align8(ParameterCount);
+    private int RelocationsStart => UnitStoreFormat.FixedRecordSize + UnitStoreFormat.Align8(ParameterCount + MoreResultCount);
     private int QueriesStart => RelocationsStart + RelocationCount * UnitStoreFormat.RelocationSize;
     private int BlocksStart => QueriesStart + UnitStoreFormat.Align8(QueryCount * 4);
     private int RootMapQueriesStart => BlocksStart + BlockCount * UnitStoreFormat.BlockSize +
@@ -385,7 +394,7 @@ internal readonly ref struct UnitRecord
 
     private static int SizeOf(ReadOnlySpan<byte> head)
     {
-        var parameters = BinaryPrimitives.ReadUInt16LittleEndian(head[30..]);
+        var parameters = BinaryPrimitives.ReadUInt16LittleEndian(head[30..]) + head[84];
         var relocations = (long)BinaryPrimitives.ReadInt32LittleEndian(head[56..]);
         var queries = (long)BinaryPrimitives.ReadInt32LittleEndian(head[60..]);
         var blocks = (long)BinaryPrimitives.ReadInt32LittleEndian(head[64..]);
@@ -629,7 +638,7 @@ internal sealed class UnitSegmentWriter(long sectionLimit = UnitSegmentWriter.Se
     {
         ArgumentNullException.ThrowIfNull(unit);
         full = false;
-        if (_identities.Contains(unit.Identity) || unit.Parameters.Length > ushort.MaxValue)
+        if (_identities.Contains(unit.Identity) || unit.Parameters.Length > ushort.MaxValue || unit.MoreResults.Length > byte.MaxValue)
             return false;
         if (!TryKeys(unit.Dependencies, out var keys))
             return false;
@@ -640,7 +649,7 @@ internal sealed class UnitSegmentWriter(long sectionLimit = UnitSegmentWriter.Se
         var groupWords = GroupWords(unit.ExceptionGroups);
         var (answerCount, answerBytes) = PendingAnswers(unit.Dependencies, keys);
         var (rootMapAnswerCount, rootMapAnswerBytes) = PendingAnswers(rootMapDependencies, rootMapKeys);
-        var size = UnitStoreFormat.FixedRecordSize + UnitStoreFormat.Align8(unit.Parameters.Length) +
+        var size = UnitStoreFormat.FixedRecordSize + UnitStoreFormat.Align8(unit.Parameters.Length + unit.MoreResults.Length) +
             (long)unit.Relocations.Length * UnitStoreFormat.RelocationSize +
             UnitStoreFormat.Align8(keys.Length * 4) + (long)unit.BlockEmissionCounts.Count * UnitStoreFormat.BlockSize +
             UnitStoreFormat.Align8(Math.Max(0, groupWords) * 4) + UnitStoreFormat.Align8(rootMapKeys.Length * 4);
@@ -681,10 +690,13 @@ internal sealed class UnitSegmentWriter(long sectionLimit = UnitSegmentWriter.Se
             WriteRef(record, 72, UnitStoreFormat.Pack(map, rootMap.Length));
         }
         BinaryPrimitives.WriteInt32LittleEndian(record[80..], rootMapKeys.Length);
+        record[84] = (byte)unit.MoreResults.Length;
         var at = UnitStoreFormat.FixedRecordSize;
         for (var index = 0; index < unit.Parameters.Length; index++)
             record[at + index] = (byte)unit.Parameters[index];
-        at += UnitStoreFormat.Align8(unit.Parameters.Length);
+        for (var index = 0; index < unit.MoreResults.Length; index++)
+            record[at + unit.Parameters.Length + index] = (byte)unit.MoreResults[index];
+        at += UnitStoreFormat.Align8(unit.Parameters.Length + unit.MoreResults.Length);
         foreach (var relocation in unit.Relocations)
         {
             BinaryPrimitives.WriteInt32LittleEndian(record[at..], relocation.Offset);
@@ -699,7 +711,7 @@ internal sealed class UnitSegmentWriter(long sectionLimit = UnitSegmentWriter.Se
             BinaryPrimitives.WriteInt32LittleEndian(record[at..],
                 QueryId(unit.Dependencies[index], keys[index]));
         }
-        at = UnitStoreFormat.FixedRecordSize + UnitStoreFormat.Align8(unit.Parameters.Length) +
+        at = UnitStoreFormat.FixedRecordSize + UnitStoreFormat.Align8(unit.Parameters.Length + unit.MoreResults.Length) +
             unit.Relocations.Length * UnitStoreFormat.RelocationSize + UnitStoreFormat.Align8(keys.Length * 4);
         foreach (var (block, count) in unit.BlockEmissionCounts)
         {

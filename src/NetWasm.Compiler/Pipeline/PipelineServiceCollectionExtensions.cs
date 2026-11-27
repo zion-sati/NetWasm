@@ -26,6 +26,7 @@ internal static class PipelineServiceCollectionExtensions
         services.AddSingleton<IUnlinkedNativeImportReporter, UnlinkedNativeImportReporter>();
         services.AddSingleton<IDeclinedJavaScriptBindingReporter, DeclinedJavaScriptBindingReporter>();
         services.AddSingleton<IMissingMemberReporter, MissingMemberReporter>();
+        services.AddSingleton<IUnplannedAttributeQueryReporter, UnplannedAttributeQueryReporter>();
         services.AddSingleton<IMissingMemberBodyReaderFactory, MissingMemberBodyReaderFactory>();
         services.AddSingleton<INativeImportBinderFactory, NativeImportBinderFactory>();
         services.AddSingleton<INativeVariadicCallPlannerFactory, NativeVariadicCallPlannerFactory>();

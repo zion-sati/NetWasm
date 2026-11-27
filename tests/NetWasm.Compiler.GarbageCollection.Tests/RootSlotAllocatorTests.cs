@@ -54,6 +54,44 @@ public sealed class RootSlotAllocatorTests
         Assert.Equal(3, CreateRootMap(slots).SlotCount);
     }
 
+    // The last root's safepoints hold slots 0 and 2 (the first) and 1 (the second): the lowest slot neither holds is 3,
+    // above the lowest slot free at each of them.
+    [Fact]
+    public void ARootTakesTheLowestSlotNoneOfItsSafepointsHolds()
+    {
+        var first = new RootSource(RootSourceKind.Local, 0);
+        var second = new RootSource(RootSourceKind.Local, 1);
+        var third = new RootSource(RootSourceKind.Local, 2);
+        var last = new RootSource(RootSourceKind.Local, 3);
+
+        var slots = CreateAllocator().Allocate([
+            new SafepointRootMap(0, [first, third, last], []),
+            new SafepointRootMap(1, [second, last], []),
+            new SafepointRootMap(2, [first, second], []),
+            new SafepointRootMap(3, [second, third], []),
+        ]);
+
+        Assert.Equal([0, 1, 2, 3], [slots[first], slots[second], slots[third], slots[last]]);
+    }
+
+    // A Debug method keeps its locals live at every safepoint: 3,000 locals at 3,000 safepoints, each with a stack root
+    // of its own. Listing each safepoint's pairs of roots took 3,000 times 4.5 million steps.
+    [Fact]
+    public void ManyRootsLiveAtManySafepointsAllocateInLinearTime()
+    {
+        const int Count = 3_000;
+        var locals = Enumerable.Range(0, Count).Select(index => new RootSource(RootSourceKind.Local, index)).ToArray();
+        var safepoints = Enumerable.Range(0, Count)
+            .Select(index => new SafepointRootMap(index, [.. locals, new RootSource(RootSourceKind.EvaluationStack, index)], []))
+            .ToArray();
+
+        var slots = CreateAllocator().Allocate(safepoints);
+
+        Assert.All(locals, local => Assert.Equal(local.Index, slots[local]));
+        Assert.All(Enumerable.Range(0, Count), index =>
+            Assert.Equal(Count, slots[new RootSource(RootSourceKind.EvaluationStack, index)]));
+    }
+
     [Fact]
     public void ConstructorRootsInterfereWithoutBlockingDisjointReuse()
     {

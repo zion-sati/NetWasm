@@ -46,6 +46,7 @@ internal sealed class AddressInductionRewriter(
         RuntimeIntrinsic.UnsafeAdd, RuntimeIntrinsic.UnsafeAs, RuntimeIntrinsic.UnsafeAsRef,
         RuntimeIntrinsic.UnsafeAsRefManaged, RuntimeIntrinsic.UnsafeNullRef, RuntimeIntrinsic.UnsafeIsAddressGreaterThan,
         RuntimeIntrinsic.UnsafeSizeOf, RuntimeIntrinsic.UnsafeByteOffset, RuntimeIntrinsic.UnsafeAddByteOffset,
+        RuntimeIntrinsic.NonZeroAddress,
     ];
 
     // Instructions that call code or allocate, either of which may collect.

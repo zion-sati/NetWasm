@@ -433,7 +433,10 @@ public sealed class YoungObjectStoreTests
 
     private static NetWasm.Compiler.Metadata.Inputs.InputFingerprint Contribution(ManagedMethodBody body) =>
         MethodContributionFingerprint.Of(new ReachableMethodAnalysis(body.Method, body, [], [],
-            new ReachabilityInstructionAnalysis([], [], [], [], [], [], [], [], [], [], [])));
+            new ReachabilityInstructionAnalysis([], [], [], [], [], [], [], [], [], [], []))
+        {
+            ReachableRegions = body.Body.ExceptionRegions,
+        });
 
     private static ImmutableHashSet<int> Find(ManagedMethodBody body, params SafepointRootMap[] safepoints) =>
         new YoungObjectStoreFinder().Find(body, safepoints.ToImmutableDictionary(safepoint => safepoint.IlOffset));

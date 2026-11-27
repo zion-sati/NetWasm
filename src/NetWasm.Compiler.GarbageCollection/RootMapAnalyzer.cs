@@ -65,12 +65,13 @@ public sealed class RootMapAnalyzer(
             .SelectMany(pair => pair.Value.Select(instruction =>
                 (instruction.Offset, Block: pair.Key)))
             .ToImmutableDictionary(pair => pair.Offset, pair => pair.Block);
-        var liveAfter = AnalyzeVariableLiveness(method, blockInstructions);
+        var (liveAfter, liveIntoHandlers) = AnalyzeVariableLiveness(method, blockInstructions);
         var exposed = AnalyzeAddressExposure(method, blockInstructions);
         ImmutableArray<RootSource> persistent =
             [.. GetPersistentManagedAddressArgumentRoots(method), .. GetPinnedLocalRoots(method)];
         var safepoints = new List<SafepointRootMap>();
-        var selected = new List<(CilInstruction Instruction, ImmutableArray<CliValueKind> Stack, int CalleeRooted)>();
+        var selected = new List<(CilInstruction Instruction, ImmutableArray<CliValueKind> Stack, int CalleeRooted,
+            int? ThrowingBlock)>();
         foreach (var instruction in method.Body.Instructions)
         {
             if (!method.ControlFlow.InstructionEntryStacks.TryGetValue(
@@ -92,14 +93,22 @@ public sealed class RootMapAnalyzer(
                 instruction,
                 allocatingMethods,
                 allocatingConstructedMethods));
-            selected.Add((instruction, entryStack, calleeRooted));
+            // A point decided only because what it throws may reach a handler here collects only on the way there.
+            var throwsOnly = !_rootDecisions.Decide(new(
+                method,
+                block,
+                instruction,
+                allocatingMethods,
+                allocatingConstructedMethods) { IgnoresHandlers = true });
+            selected.Add((instruction, entryStack, calleeRooted, throwsOnly ? block : null));
         }
         var storage = selected.Count == 0
             ? StackStorageAnalysis.Empty
             : _stackStorage.Analyze(method);
-        var pending = new List<(CilInstruction Instruction, ImmutableHashSet<RootSource> Roots)>();
+        var pending = new List<(CilInstruction Instruction, ImmutableHashSet<RootSource> Roots,
+            ImmutableHashSet<RootSource>? Kept)>();
         var demands = ImmutableDictionary.CreateBuilder<int, ImmutableHashSet<StackStorageAnchor>>();
-        foreach (var (instruction, entryStack, calleeRooted) in selected)
+        foreach (var (instruction, entryStack, calleeRooted, throwingBlock) in selected)
         {
             var roots = liveAfter[instruction.Offset].ToBuilder();
             var demanded = ImmutableHashSet.CreateBuilder<StackStorageAnchor>();
@@ -118,14 +127,19 @@ public sealed class RootMapAnalyzer(
             AddStackRoots(roots, entryStack, calleeRooted);
             if (storage.Entries.TryGetValue(instruction.Offset, out var stackTypes))
             {
-                AddEmbeddedStackRoots(method, instruction, entryStack, stackTypes, roots);
+                AddEmbeddedStackRoots(method, instruction, entryStack, stackTypes, calleeRooted, roots);
                 for (var index = 0; index < stackTypes.Length; index++)
                 {
                     AddAnchorDemands(method, instruction, stackTypes[index],
                         new(StackStorageLocationKind.EvaluationStack, index), demanded);
                 }
             }
-            pending.Add((instruction, roots.ToImmutable()));
+            // What a throw-only point must still publish: what its handlers read, and storage that stays a root wherever
+            // its address reaches.
+            var kept = throwingBlock is { } thrower
+                ? liveIntoHandlers[thrower].Union(persistent).Union(exposedRoots ?? [])
+                : null;
+            pending.Add((instruction, roots.ToImmutable(), kept));
             if (demanded.Count != 0) demands.Add(instruction.Offset, demanded.ToImmutable());
         }
 
@@ -133,7 +147,7 @@ public sealed class RootMapAnalyzer(
             _anchors.Plan(new(method, storage, demands.ToImmutable()));
         var anchorSlots = anchorPlan.Anchors.Select((anchor, index) => (anchor, index))
             .ToDictionary(item => item.anchor, item => item.index);
-        foreach (var (instruction, ordinaryRoots) in pending)
+        foreach (var (instruction, ordinaryRoots, kept) in pending)
         {
             var roots = ordinaryRoots.ToBuilder();
             if (demands.TryGetValue(instruction.Offset, out var demanded))
@@ -157,7 +171,12 @@ public sealed class RootMapAnalyzer(
             safepoints.Add(new SafepointRootMap(
                 instruction.Offset,
                 orderedRoots,
-                constructorRoots));
+                constructorRoots)
+            {
+                // Anchors stay published: they hold storage a managed address may still reach.
+                Deferrable = kept is null || !constructorRoots.IsEmpty ? [] :
+                    [.. orderedRoots.Where(source => source.Kind != RootSourceKind.StackStorageAnchor && !kept.Contains(source))],
+            });
         }
 
         var byOffset = safepoints.ToImmutableDictionary(safepoint => safepoint.IlOffset);
@@ -171,7 +190,10 @@ public sealed class RootMapAnalyzer(
         };
     }
 
-    private ImmutableDictionary<int, ImmutableHashSet<RootSource>>
+    // What is live after each instruction (on its normal and exceptional paths both), and what each block's handlers
+    // read on entry.
+    private (ImmutableDictionary<int, ImmutableHashSet<RootSource>> LiveAfter,
+        ImmutableDictionary<int, ImmutableHashSet<RootSource>> LiveIntoHandlers)
         AnalyzeVariableLiveness(
             ManagedMethodBody method,
             ImmutableDictionary<int, ImmutableArray<CilInstruction>> blockInstructions)
@@ -217,7 +239,10 @@ public sealed class RootMapAnalyzer(
         }
         while (changed);
 
-        return liveAfter.ToImmutableDictionary();
+        var liveIntoHandlers = graph.Blocks.ToImmutableDictionary(
+            block => block.Index,
+            block => flow.Exceptional[block.Index].SelectMany(successor => blockLiveIn[successor.Block]).ToImmutableHashSet());
+        return (liveAfter.ToImmutableDictionary(), liveIntoHandlers);
     }
 
     // A local or an argument whose address is taken can be read and written
@@ -375,17 +400,21 @@ public sealed class RootMapAnalyzer(
             : ReferenceSourcesForStorage(kind, index, type);
     }
 
+    // The references a value on the stack holds, but for the arguments a callee that roots its parameters takes
+    // (calleeRooted, the top of the stack): it copies a value-type parameter it keeps across its own safepoints into its
+    // own frame before the first of them, as it publishes an object reference (AddStackRoots).
     private void AddEmbeddedStackRoots(
         ManagedMethodBody method,
         CilInstruction instruction,
         ImmutableArray<CliValueKind> stack,
         ImmutableArray<StackStorageType> stackTypes,
+        int calleeRooted,
         ImmutableHashSet<RootSource>.Builder roots)
     {
         for (var stackIndex = 0; stackIndex < stackTypes.Length; stackIndex++)
         {
             // A byref on the stack is a root of its own (AddStackRoots).
-            if (stack[stackIndex] != CliValueKind.ValueType) continue;
+            if (stack[stackIndex] != CliValueKind.ValueType || stackIndex >= stack.Length - calleeRooted) continue;
             if (stackTypes[stackIndex].Type is not { } type)
             {
                 if (!stackTypes[stackIndex].BackingCovered && !stackTypes[stackIndex].CompleteBackingKnown)

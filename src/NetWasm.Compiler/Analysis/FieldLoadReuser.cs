@@ -26,7 +26,10 @@ internal interface IFieldLoadReuser
 // store to the slot, a call other than a pure Math one, a store through an
 // address, or, for statics, a first access to another type's statics, whose
 // initializer may run. Slots whose address the method takes and fields whose
-// address it takes are left alone, as are methods with exception handlers.
+// address it takes are left alone. A handler or filter begins knowing nothing
+// available, as does the target of a leave out of a finally, whose stores and
+// calls the graph's edge skips (ExceptionalFlowFinder), and a filter's reads,
+// which run in a funclet with locals of its own, are neither reused nor kept.
 // A store makes the value it stores available as a read does, when its object
 // is a slot's (`this.length = at + 1; ... this.length`) or the field is
 // static, and the field holds the stored value unchanged: a 4- or 8-byte
@@ -38,12 +41,15 @@ internal sealed class FieldLoadReuser(
     ICalledMethodResolver calledMethods,
     IFieldRepository fields,
     IFieldStoreOwnerFinder storeOwners,
+    IExceptionalFlowFinder exceptionalFlow,
     bool enabled) : IFieldLoadReuser
 {
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly IFieldRepository _fields = fields ?? throw new ArgumentNullException(nameof(fields));
     private readonly IFieldStoreOwnerFinder _storeOwners = storeOwners ?? throw new ArgumentNullException(nameof(storeOwners));
+    private readonly IExceptionalFlowFinder _exceptionalFlow =
+        exceptionalFlow ?? throw new ArgumentNullException(nameof(exceptionalFlow));
 
     // A slot's field, or a static field when Owner is null.
     private readonly record struct Key(Slot? Owner, string Field, EntityKey Definition, string DeclaringType);
@@ -51,7 +57,7 @@ internal sealed class FieldLoadReuser(
     public CilMethodBody Rewrite(CilMethodBody body)
     {
         ArgumentNullException.ThrowIfNull(body);
-        if (!enabled || !body.ExceptionRegions.IsEmpty) return body;
+        if (!enabled) return body;
         var instructions = body.Instructions;
         var exposed = instructions
             .Where(static instruction => instruction.Operation is CilOperation.LoadLocalAddress or CilOperation.LoadArgumentAddress)
@@ -64,12 +70,17 @@ internal sealed class FieldLoadReuser(
             .ToHashSet();
 
         var graph = _graphs.Build(body);
+        var flow = _exceptionalFlow.Find(graph);
         var starts = graph.Blocks.Select(static block => block.StartOffset).ToHashSet();
+        // A filter's instructions, which take no part.
+        var inFilter = flow.FilterBlocks.SelectMany(block => graph.GetBlock(block).Instructions)
+            .Select(static instruction => instruction.Offset).ToHashSet();
         // The reads that can take part: the instruction index of the ldfld or ldsfld, with its key and type.
         var reads = new Dictionary<int, (Key Key, CliTypeIdentity Type)>();
         for (var index = 0; index < instructions.Length; index++)
         {
-            if (Read(instructions, index, starts) is { } read && !addressed.Contains(read.Key.Definition) &&
+            if (!inFilter.Contains(instructions[index].Offset) &&
+                Read(instructions, index, starts) is { } read && !addressed.Contains(read.Key.Definition) &&
                 !(read.Key.Owner is { } owner && exposed.Contains(owner)) &&
                 read.Type.StackKind is not (CliValueKind.ValueType or CliValueKind.Unknown))
             {
@@ -77,6 +88,7 @@ internal sealed class FieldLoadReuser(
             }
         }
         var stores = Stores(instructions, starts, exposed, addressed);
+        foreach (var index in stores.Keys.Where(index => inFilter.Contains(instructions[index].Offset)).ToArray()) stores.Remove(index);
         // Nothing to reuse unless some read's field is read or stored once more.
         if (!reads.Values.Select(static read => read.Key).Concat(stores.Values).GroupBy(static key => key)
                 .Any(group => group.Skip(1).Any() && reads.Values.Any(read => read.Key == group.Key)))
@@ -96,9 +108,10 @@ internal sealed class FieldLoadReuser(
             changed = false;
             foreach (var block in order)
             {
-                var entry = block == graph.Entry.Index
+                var entry = block == graph.Entry.Index || flow.Entries.Contains(block)
                     ? []
-                    : Meet(graph.Predecessors[block].Where(exits.ContainsKey).Select(predecessor => exits[predecessor]));
+                    : Meet(graph.Predecessors[block].Where(exits.ContainsKey).Select(predecessor =>
+                        flow.FinallyLeaves.Contains((predecessor, block)) ? [] : exits[predecessor]));
                 entries[block] = entry;
                 var exit = new HashSet<Key>(entry);
                 foreach (var instruction in graph.GetBlock(block).Instructions)
@@ -175,10 +188,10 @@ internal sealed class FieldLoadReuser(
         };
     }
 
-    // What every predecessor's exit holds. Without protected regions, each
-    // reachable block but the entry has a reachable predecessor.
+    // What every predecessor's exit holds; nothing for a block none reaches.
     private static HashSet<Key> Meet(IEnumerable<HashSet<Key>> predecessors) =>
-        predecessors.Aggregate(static (meet, predecessor) => [.. meet.Intersect(predecessor)]);
+        predecessors.Aggregate((HashSet<Key>?)null, static (meet, predecessor) =>
+            meet is null ? [.. predecessor] : [.. meet.Intersect(predecessor)]) ?? [];
 
     // A slot's field read, `ldloc s; ldfld f` within one block, or a static field read.
     private (Key Key, CliTypeIdentity Type)? Read(ImmutableArray<CilInstruction> instructions, int index, HashSet<int> starts)

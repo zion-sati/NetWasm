@@ -24,5 +24,6 @@ internal interface IMethodSpecializerFactory
         WasmOptimizationSettings optimizationSettings,
         IRuntimeIntrinsicRegistry intrinsics,
         PlatformWorldCapabilities world,
-        ITypeIdentityResolver typeIdentities);
+        ITypeIdentityResolver typeIdentities,
+        CompositeFormats.IToStringOnlyTypeClassifier toStringOnlyTypes);
 }

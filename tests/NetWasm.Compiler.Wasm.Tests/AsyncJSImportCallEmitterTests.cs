@@ -152,7 +152,6 @@ public sealed class AsyncJSImportCallEmitterTests
             IWasmInstructionWriter code,
             CliTypeIdentity type,
             int local,
-            MethodEmissionContext context,
             InteropImportPlan interop) => Called = true;
     }
 }

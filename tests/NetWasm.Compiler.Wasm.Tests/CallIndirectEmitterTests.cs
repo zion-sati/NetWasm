@@ -223,7 +223,7 @@ public sealed class CallIndirectEmitterTests
             new ImplicitExceptionEmitter(layouts),
             new ValueFrameAddressEmitter(layouts),
             new NativeAbiCallEmitter(layouts, new NoInitialization(), new AddressInstructionEmitter(layouts),
-                new ImplicitExceptionEmitter(layouts)));
+                new ImplicitExceptionEmitter(layouts)), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory());
     }
 
     private static MethodInstanceModel CreateCallable(FakeProgram program)

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using NetWasm.Compiler.ComponentModel.Debugging;
 using NetWasm.Compiler.ComponentModel.ManagedExecutables;
 using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -30,6 +31,23 @@ public sealed class ComponentCoreModuleLinkExecutionTests
         Assert.Equal(FinalWasmOptimization.O1, stages.Optimization!.Value.Item4);
         Assert.True(stages.Converge);
         Assert.True(stages.LowMemoryUnused);
+    }
+
+    // A Debug build keeps its names through the merge and the optimizer; a product build keeps none.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DebugInformationKeepsNamesThroughMergeAndOptimizer(bool debugInfo)
+    {
+        var stages = new RecordingStages();
+        var request = new ComponentCoreModuleLinkRequest("application", "runtime", "output", ComponentTarget.Wasm32Wasi02,
+            Optimization: FinalWasmOptimization.O0)
+        { DebugInformation = debugInfo ? new() : null };
+
+        CreateExecution(stages).Run(request, CreateWorkspace(stages));
+
+        Assert.Equal(debugInfo, stages.Merge!.KeepNames);
+        Assert.Equal(debugInfo, stages.KeepNames);
     }
 
     [Fact]
@@ -171,6 +189,7 @@ public sealed class ComponentCoreModuleLinkExecutionTests
         public (string, string, ComponentTarget, FinalWasmOptimization)? Optimization { get; private set; }
         public bool? Converge { get; private set; }
         public bool? LowMemoryUnused { get; private set; }
+        public bool? KeepNames { get; private set; }
 
         public void Write(string outputPath, ComponentTarget target)
         {
@@ -203,12 +222,14 @@ public sealed class ComponentCoreModuleLinkExecutionTests
             ComponentTarget target,
             FinalWasmOptimization optimization,
             bool converge,
-            bool lowMemoryUnused)
+            bool lowMemoryUnused,
+            bool keepNames)
         {
             Calls.Add("optimize");
             Optimization = (inputPath, outputPath, target, optimization);
             Converge = converge;
             LowMemoryUnused = lowMemoryUnused;
+            KeepNames = keepNames;
         }
 
         public void Delete(string path) => Calls.Add("delete:" + path);

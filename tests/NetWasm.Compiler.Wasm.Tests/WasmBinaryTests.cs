@@ -205,6 +205,36 @@ public sealed class WasmBinaryTests
         Assert.Equal([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0], result[..8]);
     }
 
+    // A function returning several values has a type of several results; two types that differ only in the results
+    // after the first are two types; a function returning nothing has no further results.
+    [Fact]
+    public void ModuleEncoderWritesEveryResultOfAType()
+    {
+        WasmModuleBuildRequest Request(params WasmFunctionType[] types) => new(
+            [],
+            "runtime",
+            "memory",
+            [.. types.Select((type, index) => new WasmFunctionDefinition($"F{index}", type, [0, 0x00, 0x0B]))],
+            [],
+            [],
+            false,
+            WasmTarget.Wasm32);
+        var pair = WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4) with { MoreResults = [CliValueKind.I8, CliValueKind.F4] };
+        var single = WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4);
+
+        var module = CreateModuleEncoder().Encode(Request(pair, single));
+
+        // The type section follows the header: its id, size, two types; the first takes an i32 and returns i32, i64, f32.
+        Assert.Equal(1, module[8]);
+        Assert.Equal([2, 0x60, 1, 0x7F, 3, 0x7F, 0x7E, 0x7D, 0x60, 1, 0x7F, 1, 0x7F], module[10..23]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => CreateModuleEncoder().Encode(
+            Request(WasmFunctionType.Create(CliValueKind.Void) with { MoreResults = [CliValueKind.I4] })));
+        Assert.True(pair.SameAs(pair with { }));
+        Assert.False(pair.SameAs(single));
+        Assert.Equal([CliValueKind.I4, CliValueKind.I8, CliValueKind.F4], pair.Results);
+        Assert.Empty(WasmFunctionType.Create(CliValueKind.Void).Results);
+    }
+
     [Fact]
     public void ModuleEncoderNamesAFunctionBodyOverTheEngineLimit()
     {

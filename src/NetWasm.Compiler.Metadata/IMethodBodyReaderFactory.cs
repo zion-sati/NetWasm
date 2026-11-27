@@ -7,5 +7,7 @@ namespace NetWasm.Compiler.Metadata;
 
 public interface IMethodBodyReaderFactory
 {
-    IMethodBodyReader Create(MetadataCompilationSnapshot snapshot);
+    // wholeProgramSuspension: whether the runtime async lowering may lower a direct await of a method that cannot suspend
+    // as a plain call (RuntimeAsyncSuspensionFacts), which compiles each method from its callees' bodies too.
+    IMethodBodyReader Create(MetadataCompilationSnapshot snapshot, bool wholeProgramSuspension = false);
 }

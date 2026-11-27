@@ -25,6 +25,7 @@ internal static class CallEmissionServiceCollectionExtensions
             VirtualDispatchEmissionPlanBuilder>();
         services.AddSingleton<IVirtualDispatchCasePlanner, VirtualDispatchCasePlanner>();
         services.AddSingleton<IKeyedDispatchEmitter, KeyedDispatchEmitter>();
+        services.AddSingleton<IReceiverFlowAuditEmitter, ReceiverFlowAuditEmitter>();
         services.AddSingleton<DelegateInvokeCallEmitter>();
         services.AddSingleton<VirtualDispatchCallEmitter>();
         services.AddSingleton<SharedObjectDispatchCallEmitter>();

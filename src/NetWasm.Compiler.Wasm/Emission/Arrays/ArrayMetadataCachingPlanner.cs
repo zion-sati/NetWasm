@@ -126,7 +126,7 @@ internal sealed class ArrayMetadataCachingPlanner(
     // Instructions with no effect a caller could observe once a null check
     // ahead of them throws: the method has no handlers, so a store to a local
     // is lost with the frame.
-    private static readonly FrozenSet<CilOperation> Unobservable = new[]
+    internal static readonly FrozenSet<CilOperation> Unobservable = new[]
     {
         CilOperation.Nop, CilOperation.LoadLocal, CilOperation.LoadArgument, CilOperation.StoreLocal,
         CilOperation.StoreArgument, CilOperation.LoadInt32, CilOperation.LoadInt64, CilOperation.LoadFloat32,
@@ -188,6 +188,9 @@ internal sealed class ArrayMetadataCachingPlanner(
             {
                 case StructuredCode code:
                     Add(code.Occurrence, repeating);
+                    break;
+                case StructuredSwitch table:
+                    Add(table.Head, repeating);
                     break;
                 case StructuredIf conditional:
                     Add(conditional.Condition, repeating);

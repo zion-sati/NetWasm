@@ -51,6 +51,24 @@ public sealed class FieldLoadReuseTests
             instruction.Operand is CilOperand.Entity { Key.MetadataToken: 0x04000001 or 0x04000003 or 0x04000004 or 0x04000005 }));
     }
 
+    // Protected blocks: a read in a try reuses one before it there; a handler begins knowing nothing, even when its loop
+    // branches back to its first instruction; a leave out of a finally that is not copied (its handler holds a try) runs
+    // the finally's store, which the graph's edge skips; and a filter, a funclet with locals of its own, keeps its reads.
+    [Theory]
+    [InlineData("try { return a.X + a.X; } catch (System.Exception) { return -1; }", 1)]
+    [InlineData("var r = a.X; try { r += Next(); } catch (System.Exception) { return r + a.X; } return r;", 2)]
+    [InlineData("var r = a.X; try { r++; } finally { try { a.X = 9; } catch (System.Exception) { } } return r + a.X;", 2)]
+    [InlineData("var r = a.X; try { r += a.X; } catch (System.Exception) when (a.X + a.X == r) { return -1; } return r;", 3)]
+    [InlineData("var r = a.X; try { r += Next(); } finally { do { r += a.X; } while (r < 50); } return r;", 3)]
+    public void ReadsAroundProtectedBlocksReuseOnlyWhatEveryPathRead(string statement, int reads)
+    {
+        var body = Probe(statement, new());
+
+        Assert.Equal(reads, body.Instructions.Count(static instruction =>
+            instruction.Operation is CilOperation.LoadField or CilOperation.LoadStaticField &&
+            instruction.Operand is CilOperand.Entity { Key.MetadataToken: 0x04000001 or 0x04000003 or 0x04000004 or 0x04000005 }));
+    }
+
     [Theory]
     [InlineData("if (c) a.X = 1; else a.X = 2; return 0;", 1)]
     [InlineData("if (a.X == 0) a.X = 16; else a.X--; return 0;", 1)]
@@ -95,7 +113,8 @@ public sealed class FieldLoadReuseTests
             2, [], [.. code.Select((instruction, offset) => new CilInstruction(offset, offset + 1, instruction.Item1, instruction.Item2))]);
 
         var result = new FieldLoadReuser(new ControlFlowGraphBuilderFactory().Create(), new NoCalls(), new OneField(field),
-                new FieldStoreOwnerFinder(new StackValueConsumerFinder(new StackEffectResolver(new NoCalls()))), true)
+                new FieldStoreOwnerFinder(new StackValueConsumerFinder(new StackEffectResolver(new NoCalls()))),
+                new ExceptionalFlowFinder(), true)
             .Rewrite(body);
 
         Assert.Equal(prefixed ? 2 : 1, result.Instructions.Count(static instruction => instruction.Operation == CilOperation.LoadStaticField));

@@ -95,11 +95,38 @@ public sealed class ManagedBodyBatchEmitterFactoryTests
                 NetWasm.Compiler.ControlFlow.Structured.StructuredMethod>(),
             new Dictionary<EntityKey, MethodRootMap>(),
             null!,
-            null!));
+            null!,
+            static (_, _) => { }));
 
         Assert.False(publisher.Published);
         batch.Dispose();
         Assert.True(provider.Disposed);
+    }
+
+    // Bodies are consumed in order a window at a time, each window before the next is emitted, so what a body carries
+    // until it is consumed (with compiled units on, its queries) lives for one window, not the whole set.
+    [Fact]
+    public void BatchConsumesEachWindowInOrderBeforeEmittingTheNext()
+    {
+        var publisher = new CountingPublisher();
+        static ManagedBodyWorker Worker() => new(new TrackedDisposable(), null!, null!,
+            new MethodBufferedLogger(NullLogger<WasmModuleEmitterFactory>.Instance));
+        using var batch = new ManagedBodyBatchEmitter(new ManagedLayoutForks([], publisher), [Worker(), Worker()]);
+        var window = ManagedBodyBatchEmitter.Window;
+        var count = 2 * window + 3;
+        var consumedWhenEmitted = new int[count];
+        var consumed = new List<int>();
+
+        batch.Run(count, (index, _) => consumed.Add(index), (_, index) =>
+        {
+            // Nothing is consumed while a window is emitted, so the workers read the list without a race.
+            consumedWhenEmitted[index] = consumed.Count;
+            return null!;
+        });
+
+        Assert.Equal(Enumerable.Range(0, count), consumed);
+        Assert.All(Enumerable.Range(0, count), index => Assert.Equal(index / window * window, consumedWhenEmitted[index]));
+        Assert.Equal(3, publisher.Count);
     }
 
     [Fact]
@@ -135,6 +162,12 @@ public sealed class ManagedBodyBatchEmitterFactoryTests
     private sealed class NoOpPublisher : IManagedLayoutForkPublisher
     {
         public void Publish() { }
+    }
+
+    private sealed class CountingPublisher : IManagedLayoutForkPublisher
+    {
+        public int Count { get; private set; }
+        public void Publish() => Count++;
     }
 
     private sealed class RecordingPublisher : IManagedLayoutForkPublisher

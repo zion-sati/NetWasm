@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.NativeInterop;
@@ -9,6 +10,8 @@ using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
+
+using NetWasm.Compiler.Wasm.Emission.StructResults;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
@@ -18,7 +21,9 @@ internal sealed class NativeCallbackThunkEmitter(
     IAddressInstructionEmitter addresses,
     IStaticInitializationEmitter staticInitialization,
     IManagedTerminalExceptionBoundaryEmitter terminalExceptions,
-    IGeneratedFunctionWriterFactory writers) : INativeCallbackThunkEmitter
+    IGeneratedFunctionWriterFactory writers,
+    IValueTypeArgumentConventionFactory argumentConventions,
+    IValueTypeResultConventionFactory resultConventions) : INativeCallbackThunkEmitter
 {
     public byte[] Emit(
         NativeCallbackMethodPlan callback,
@@ -49,6 +54,11 @@ internal sealed class NativeCallbackThunkEmitter(
         var frameLocal = stackTraceLengthLocal + 1;
         var vectorAddressLocal = frameLocal + 1;
         var vectorValueLocal = vectorAddressLocal + 1;
+        // A struct the managed method returns in results is stored where it would have written it, through locals
+        // after the rest.
+        var managedResult = callback.Method.Signature.ReturnSignatureType;
+        var resultConvention = managedResult.StackKind == CliValueKind.ValueType ? resultConventions.Create(managedResult) : null;
+        var firstStructResultLocal = vectorValueLocal + 1;
         WasmLocalDeclarationWriter.Write(
             code.Bytes,
             [
@@ -65,6 +75,7 @@ internal sealed class NativeCallbackThunkEmitter(
                 CliValueKind.ManagedAddress,
                 CliValueKind.ManagedAddress,
                 CliValueKind.V128,
+                .. resultConvention?.FieldLocalKinds ?? [],
             ],
             layouts.Target);
         var vectors = new VectorScratch(vectorAddressLocal, vectorValueLocal);
@@ -116,49 +127,66 @@ internal sealed class NativeCallbackThunkEmitter(
                 }
                 var result = callback.Abi.Result;
                 var structResult = result.LogicalType.StackKind is CliValueKind.ValueType or CliValueKind.V128;
-                // A struct result's storage: the C caller's buffer, or the frame. A struct the managed method returns
-                // through its leading address, a vector as a value stored there after the call.
-                if (structResult)
+                void EmitCall(IWasmInstructionWriter instructions)
                 {
-                    if (result.Kind == NativeAbiValueKind.IndirectAggregate)
-                        Local(WasmOpcodes.LocalGet, callback.Abi.HiddenResultParameterIndex!.Value);
-                    else
-                        FrameAddress(scratch[-1]);
-                }
-                foreach (var parameter in callback.Abi.Parameters)
-                {
-                    var value = parameter.Value;
-                    var vector = value.LogicalType.StackKind == CliValueKind.V128;
-                    switch (value.Kind)
+                    foreach (var parameter in callback.Abi.Parameters)
                     {
-                        case NativeAbiValueKind.IndirectAggregate:
-                            Local(WasmOpcodes.LocalGet, parameter.PhysicalIndex!.Value);
-                            if (vector)
-                                ManagedMemoryEmitter.EmitVectorLoad(code.Instructions, 0, value.Size, vectors);
-                            break;
-                        case NativeAbiValueKind.ScalarizedAggregate:
-                            FrameAddress(scratch[parameter.LogicalIndex]);
-                            Local(WasmOpcodes.LocalGet, parameter.PhysicalIndex!.Value);
-                            ManagedMemoryEmitter.EmitStoreByType(code.Instructions, layouts.Target, value.ScalarOffset,
-                                value.ScalarStorageType!, value.Size);
-                            FrameAddress(scratch[parameter.LogicalIndex]);
-                            if (vector)
-                                ManagedMemoryEmitter.EmitVectorLoad(code.Instructions, 0, value.Size, vectors);
-                            break;
-                        case NativeAbiValueKind.IgnoredAggregate:
-                            FrameAddress(scratch[parameter.LogicalIndex]);
-                            break;
-                        default:
-                            Local(WasmOpcodes.LocalGet, parameter.PhysicalIndex!.Value);
-                            break;
+                        var value = parameter.Value;
+                        var vector = value.LogicalType.StackKind == CliValueKind.V128;
+                        // A struct goes by its address or its fields as the managed parameter takes it.
+                        switch (value.Kind)
+                        {
+                            case NativeAbiValueKind.IndirectAggregate:
+                                argumentConventions.Create(value.LogicalType).Emit(instructions, _ =>
+                                {
+                                    Local(WasmOpcodes.LocalGet, parameter.PhysicalIndex!.Value);
+                                    if (vector)
+                                        ManagedMemoryEmitter.EmitVectorLoad(code.Instructions, 0, value.Size, vectors);
+                                }, new(Scratch: vectors));
+                                break;
+                            case NativeAbiValueKind.ScalarizedAggregate:
+                                FrameAddress(scratch[parameter.LogicalIndex]);
+                                Local(WasmOpcodes.LocalGet, parameter.PhysicalIndex!.Value);
+                                ManagedMemoryEmitter.EmitStoreByType(code.Instructions, layouts.Target, value.ScalarOffset,
+                                    value.ScalarStorageType!, value.Size);
+                                argumentConventions.Create(value.LogicalType).Emit(instructions, _ =>
+                                {
+                                    FrameAddress(scratch[parameter.LogicalIndex]);
+                                    if (vector)
+                                        ManagedMemoryEmitter.EmitVectorLoad(code.Instructions, 0, value.Size, vectors);
+                                }, new(Scratch: vectors));
+                                break;
+                            case NativeAbiValueKind.IgnoredAggregate:
+                                argumentConventions.Create(value.LogicalType).Emit(instructions,
+                                    _ => FrameAddress(scratch[parameter.LogicalIndex]), new(Scratch: vectors));
+                                break;
+                            default:
+                                Local(WasmOpcodes.LocalGet, parameter.PhysicalIndex!.Value);
+                                break;
+                        }
                     }
+                    code.Instructions.Write(WasmInstruction.WithOperand(
+                        WasmOpcodes.Call,
+                        WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
+                            callback.Method))));
                 }
-                code.Instructions.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.Call,
-                    WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
-                        callback.Method))));
-                if (structResult && result.LogicalType.StackKind == CliValueKind.V128)
-                    ManagedMemoryEmitter.EmitVectorStore(code.Instructions, 0, result.Size, vectors);
+                // A struct result's storage: the C caller's buffer, or the frame. A struct goes there as the managed
+                // method's return convention takes it; a vector's address goes first, the value stored there after.
+                if (resultConvention is not null)
+                {
+                    resultConvention.Emit(code.Instructions,
+                        _ => ResultAddress(), new(StructResultLocals.Sequential(firstStructResultLocal, resultConvention.FieldLocalKinds),
+                            vectors),
+                        EmitCall);
+                }
+                else
+                {
+                    if (structResult)
+                        ResultAddress();
+                    EmitCall(code.Instructions);
+                    if (structResult && result.LogicalType.StackKind == CliValueKind.V128)
+                        ManagedMemoryEmitter.EmitVectorStore(code.Instructions, 0, result.Size, vectors);
+                }
                 if (structResult && result.Kind == NativeAbiValueKind.ScalarizedAggregate)
                 {
                     FrameAddress(scratch[-1]);
@@ -184,6 +212,15 @@ internal sealed class NativeCallbackThunkEmitter(
 
         void Local(byte opcode, int index) =>
             code.Instructions.Write(WasmInstruction.WithOperand(opcode, WasmInstructionOperand.Unsigned((uint)index)));
+
+        // A struct result's storage: the C caller's buffer, or the frame.
+        void ResultAddress()
+        {
+            if (callback.Abi.Result.Kind == NativeAbiValueKind.IndirectAggregate)
+                Local(WasmOpcodes.LocalGet, callback.Abi.HiddenResultParameterIndex!.Value);
+            else
+                FrameAddress(scratch[-1]);
+        }
 
         void FrameAddress(int offset)
         {

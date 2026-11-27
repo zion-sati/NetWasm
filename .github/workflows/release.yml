@@ -274,136 +274,27 @@ jobs:
           retention-days: 90
           overwrite: true
 
-  # The full suite: every compiler test with each corpus fixture at its declared
-  # matrix, which pull request CI narrows to the Fast profile. It starts with the
-  # package build for a preview tag, and the release train is retained only after
-  # it passes, so a stable promotion never needs it again.
-  full-suite:
-    name: Full suite
+  # The compiler validation (.github/workflows/validation.yml): the full suite
+  # with coverage, the GC stress sweeps, the O3 corpus, the dev-loop levels and
+  # the verified compiled-unit corpus, which a validate/** branch also runs before
+  # its pull request. It starts with the package build for a preview tag, and the
+  # release train is retained only after it passes, so a stable promotion never
+  # needs it again.
+  validation:
+    name: Validation
     if: contains(github.event.release.tag_name || inputs.tag, '-preview.')
-    uses: ./.github/workflows/compiler-tests.yml
+    uses: ./.github/workflows/validation.yml
     with:
       ref: ${{ github.event.release.tag_name || inputs.tag }}
-      shards: '[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]'
-      timings: eng/compiler-test-full-durations.json
-      timeout-minutes: 120
-      artifact-prefix: full-suite-timings
-      coverage: true
-
-  # Every class that runs differential fixtures, on the linked runtime with a
-  # collection before every allocation, under each collector: a reference the
-  # compiler leaves unrooted is freed at once instead of now and then. Under
-  # NetWasmGen each minor collection also checks that every reference stored
-  # into old memory went through the write barrier.
-  gc-stress:
-    name: GC stress (${{ matrix.collector }})
-    if: contains(github.event.release.tag_name || inputs.tag, '-preview.')
-    strategy:
-      fail-fast: false
-      matrix:
-        collector: [compact, netwasm, netwasmgen]
-    uses: ./.github/workflows/compiler-tests.yml
-    with:
-      ref: ${{ github.event.release.tag_name || inputs.tag }}
-      shards: '[1, 2, 3, 4]'
-      timings: eng/compiler-test-full-durations.json
-      classes: eng/compiler-gc-stress-classes.txt
-      corpus-backend: linked
-      collector: ${{ matrix.collector }}
-      gc-stress: true
-      timeout-minutes: 120
-      artifact-prefix: gc-stress-${{ matrix.collector }}-timings
-
-  # The same differential classes on the linked runtime with NetWasmGC and with
-  # NetWasmGen, every fixture that names no preset compiled at O3, so the speed
-  # preset's whole optimization pipeline, write barriers included, meets the
-  # corpus and .NET 11's results.
-  speed-preset:
-    name: Corpus at O3 (${{ matrix.collector }})
-    if: contains(github.event.release.tag_name || inputs.tag, '-preview.')
-    strategy:
-      fail-fast: false
-      matrix:
-        collector: [netwasm, netwasmgen]
-    uses: ./.github/workflows/compiler-tests.yml
-    with:
-      ref: ${{ github.event.release.tag_name || inputs.tag }}
-      shards: '[1, 2, 3, 4]'
-      timings: eng/compiler-test-full-durations.json
-      classes: eng/compiler-gc-stress-classes.txt
-      corpus-backend: linked
-      collector: ${{ matrix.collector }}
-      optimization: O3
-      timeout-minutes: 120
-      artifact-prefix: speed-preset-${{ matrix.collector }}-timings
-
-  # The same differential classes with every corpus request also compiled at its own level with
-  # compiled units under verification, in stores the shard's requests share: units
-  # are reused across programs, targets and builds, every reused method is compiled
-  # again and compared, and each module must equal a plain compile's.
-  compiled-units:
-    name: Corpus with compiled units verified
-    if: contains(github.event.release.tag_name || inputs.tag, '-preview.')
-    uses: ./.github/workflows/compiler-tests.yml
-    with:
-      ref: ${{ github.event.release.tag_name || inputs.tag }}
-      shards: '[1, 2, 3, 4]'
-      timings: eng/compiler-test-full-durations.json
-      classes: eng/compiler-gc-stress-classes.txt
-      compiled-units: verify
-      timeout-minutes: 120
-      artifact-prefix: compiled-units-timings
-
-  # The full suite's merged coverage must meet eng/coverage-baseline.json. The
-  # badge it writes is attached to the release for the README.
-  coverage:
-    needs: full-suite
-    if: contains(github.event.release.tag_name || inputs.tag, '-preview.')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - name: Check out the tested source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
-      - name: Download shard coverage
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          pattern: full-suite-timings-coverage-*
-          path: ${{ runner.temp }}/shard-coverage
-      - name: Check the coverage baseline
-        shell: bash
-        run: |
-          mapfile -t reports < <(find "$RUNNER_TEMP/shard-coverage" -name coverage.json | sort)
-          mkdir -p "$RUNNER_TEMP/coverage"
-          python3 eng/merge-coverlet-reports.py --output "$RUNNER_TEMP/coverage.json" "${reports[@]}"
-          node eng/check-coverage.mjs "$RUNNER_TEMP/coverage.json" eng/coverage-baseline.json \
-            "$RUNNER_TEMP/coverage/coverage-report.json"
-          node eng/write-coverage-badge.mjs "$RUNNER_TEMP/coverage/coverage-report.json" \
-            "$RUNNER_TEMP/coverage/coverage-badge.json"
-      - name: Retain the coverage report
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: coverage-report
-          path: ${{ runner.temp }}/coverage/
-          if-no-files-found: warn
-          retention-days: 90
 
   aggregate:
-    needs: [build, host-tools, full-suite, gc-stress, speed-preset, compiled-units, coverage]
+    needs: [build, host-tools, validation]
     if: >-
       ${{ always() && needs.build.result == 'success' &&
           ((needs.build.outputs.mode == 'build' && needs.host-tools.result == 'success' &&
-            needs.full-suite.result == 'success' && needs.gc-stress.result == 'success' &&
-            needs.speed-preset.result == 'success' && needs.compiled-units.result == 'success' &&
-            needs.coverage.result == 'success') ||
+            needs.validation.result == 'success') ||
            (needs.build.outputs.mode != 'build' && needs.host-tools.result == 'skipped' &&
-            contains(fromJSON('["success", "skipped"]'), needs.full-suite.result) &&
-            contains(fromJSON('["success", "skipped"]'), needs.gc-stress.result) &&
-            contains(fromJSON('["success", "skipped"]'), needs.speed-preset.result) &&
-            contains(fromJSON('["success", "skipped"]'), needs.compiled-units.result) &&
-            contains(fromJSON('["success", "skipped"]'), needs.coverage.result))) }}
+            contains(fromJSON('["success", "skipped"]'), needs.validation.result))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -508,13 +399,13 @@ jobs:
             gh release upload "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
           fi
       - name: Download the coverage badge
-        if: needs.coverage.result == 'success'
+        if: needs.validation.result == 'success'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: coverage-report
           path: artifacts/coverage
       - name: Attach the coverage badge to the preview GitHub Release
-        if: needs.coverage.result == 'success'
+        if: needs.validation.result == 'success'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

@@ -222,7 +222,8 @@ public sealed class RawModuleLinkExecutionTests
             ComponentTarget target,
             FinalWasmOptimization optimization,
             bool converge,
-            bool lowMemoryUnused)
+            bool lowMemoryUnused,
+            bool keepNames)
         {
             Enter("optimize");
             Optimization = (inputPath, outputPath, target, optimization);

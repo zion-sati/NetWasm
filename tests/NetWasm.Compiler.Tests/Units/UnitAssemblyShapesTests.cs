@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Metadata.Inputs;
 using NetWasm.Compiler.Pipeline;
+using NetWasm.Compiler.Wasm.Units;
 
 namespace NetWasm.Compiler.Tests.Units;
 
@@ -66,10 +67,12 @@ public sealed class UnitAssemblyShapesTests
 public sealed class CompiledUnitStateFactoryTests
 {
     [Fact]
-    public void ItNeedsItsStoreAndItsStructuring()
+    public void ItNeedsItsStoreItsStructuringAndItsSealer()
     {
-        Assert.Throws<ArgumentNullException>(() => new CompiledUnitStateFactory(null!, new NoStructuring(), null!, null!, null!, null!));
-        Assert.Throws<ArgumentNullException>(() => new CompiledUnitStateFactory(new NoStore(), null!, null!, null!, null!, null!));
+        var sealer = new FileUnitSegmentSealer();
+        Assert.Throws<ArgumentNullException>(() => new CompiledUnitStateFactory(null!, new NoStructuring(), null!, null!, null!, null!, sealer));
+        Assert.Throws<ArgumentNullException>(() => new CompiledUnitStateFactory(new NoStore(), null!, null!, null!, null!, null!, sealer));
+        Assert.Throws<ArgumentNullException>(() => new CompiledUnitStateFactory(new NoStore(), new NoStructuring(), null!, null!, null!, null!, null!));
     }
 
     [Fact]

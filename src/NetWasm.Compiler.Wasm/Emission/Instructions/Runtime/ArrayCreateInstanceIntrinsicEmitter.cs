@@ -36,6 +36,10 @@ internal sealed class ArrayCreateInstanceIntrinsicEmitter(
             if (descriptor.Type.Shape != CliTypeShape.SzArray || descriptor.Type.ContainsGenericParameters)
                 continue;
             var element = descriptor.Type.ElementType!;
+            // An array of references is the shared array (ArrayCreateSharedInstanceIntrinsicEmitter), whose casts
+            // check its element: a vector type the program only names is not one the analysis saw allocated.
+            if (element.StackKind == CliValueKind.ManagedReference)
+                continue;
             // An element type the program never lays out has no type id, so no runtime Type names it
             // and Array.CreateInstance cannot ask for its vector (a DynamicMetaObject[] parameter, say).
             if (!types.GetObjectLayout(element, out var elementLayout))

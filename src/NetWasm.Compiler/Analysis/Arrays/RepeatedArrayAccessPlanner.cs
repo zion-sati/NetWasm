@@ -29,8 +29,9 @@ internal sealed record RepeatedArrayAccessPlan(ImmutableHashSet<int> Checked, Im
 }
 
 // An access whose array and index an earlier access already checked cannot
-// fail its checks again: without exception handlers, a failed check leaves the
-// method. Within a block, an access repeats an earlier one while neither its
+// fail its checks again: a failed check leaves its block, for a handler or the
+// caller, and the dominance roots each handler's first block, so a block a
+// handler reaches is dominated by no access the handler's protected block made. Within a block, an access repeats an earlier one while neither its
 // array nor its index slot has been stored. Across blocks, a slot that is never
 // stored or exposed keeps the reference an earlier access checked for null, so
 // an access in a block dominated by one holding such an access skips its null
@@ -58,7 +59,6 @@ internal sealed class RepeatedArrayAccessPlanner(
     {
         ArgumentNullException.ThrowIfNull(controlFlow);
         var graph = controlFlow.Graph;
-        if (!graph.MethodBody.ExceptionRegions.IsEmpty) return RepeatedArrayAccessPlan.Empty;
         var exposed = ExposedSlots(graph.MethodBody);
         var stable = StableSlots(graph, exposed);
         var checkedAccesses = ImmutableHashSet.CreateBuilder<int>();

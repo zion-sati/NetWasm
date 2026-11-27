@@ -225,8 +225,6 @@ Configuration failures identify the mismatched boundary:
 - `NW1009` means reached imports are outside the selected WIT world.
 - `NW1010` rejects a requested component boundary that cannot represent the
   reached application-owned JavaScript imports.
-- `NetWasmComponentContract` is no longer used; a project that still sets it
-  fails with a message asking you to remove it.
 
 JavaScript module and worker projects select their boundary with `OutputType`.
 Use `dotnet new netwasm-app --host page`, `--host worker` or `--worker wit` for

@@ -13,6 +13,8 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime.MemberExecution;
 
 internal sealed class MemberArgumentEmitter(
@@ -21,7 +23,8 @@ internal sealed class MemberArgumentEmitter(
     IAddressInstructionEmitter addresses,
     IValueLayoutProvider values,
     IMemberReferenceCheckEmitter referenceChecks,
-    IBoxPayloadAddressEmitter payloads) : IMemberArgumentEmitter
+    IBoxPayloadAddressEmitter payloads,
+    IValueTypeArgumentConventionFactory argumentConventions) : IMemberArgumentEmitter
 {
     private readonly ITargetLayout _layouts = layouts ??
         throw new ArgumentNullException(nameof(layouts));
@@ -35,6 +38,8 @@ internal sealed class MemberArgumentEmitter(
         throw new ArgumentNullException(nameof(referenceChecks));
     private readonly IBoxPayloadAddressEmitter _payloads = payloads ??
         throw new ArgumentNullException(nameof(payloads));
+    private readonly IValueTypeArgumentConventionFactory _argumentConventions = argumentConventions ??
+        throw new ArgumentNullException(nameof(argumentConventions));
 
     public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, int argumentsLocal,
         IReadOnlyList<CliTypeIdentity> parameters)
@@ -58,8 +63,9 @@ internal sealed class MemberArgumentEmitter(
             _referenceChecks.Check(code, argumentLocal, parameter, request.Instruction.Context.ManagedThrowFunction);
             if (parameter.StackKind == CliValueKind.ValueType)
             {
-                // A struct goes by its box's contents; a callee that writes its parameter copies it first.
-                _payloads.Emit(code, argumentLocal, parameter);
+                // A struct goes by its box's contents (a callee that writes its parameter copies it first), its
+                // address or its fields as the parameter's convention takes it.
+                _argumentConventions.Create(parameter).Emit(code, writer => _payloads.Emit(writer, argumentLocal, parameter), new(Scratch: request.Instruction.Context.VectorScratch));
                 continue;
             }
             code.Write(WasmInstruction.WithOperand(

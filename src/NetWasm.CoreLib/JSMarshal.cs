@@ -12,41 +12,47 @@ namespace System.Runtime.InteropServices.JavaScript
     // whatever its Kind, and a DateTime from JavaScript is UTC. An object, an
     // exception or an array of references crosses as a host handle to its
     // JavaScript value, 0 for null; whoever receives a handle releases it.
+    //
+    // A conversion that takes a struct takes it by reference, and one that gives one writes it through a reference its
+    // first parameter names: the boundaries hold such a value at an address, so each conversion's Wasm signature is that
+    // address however managed calls pass a struct.
     internal static class JSMarshal
     {
         private const long MaxSafeInteger = 9007199254740991;
 
-        internal static double FromDateTime(DateTime value) =>
+        internal static double FromDateTime(in DateTime value) =>
             new DateTimeOffset(value.Ticks, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
-        internal static DateTime ToDateTime(double milliseconds) =>
+        internal static void ToDateTime(out DateTime value, double milliseconds) => value = Date(milliseconds);
+
+        private static DateTime Date(double milliseconds) =>
             DateTimeOffset.FromUnixTimeMilliseconds((long)milliseconds).UtcDateTime;
 
-        internal static double FromDateTimeOffset(DateTimeOffset value) =>
+        internal static double FromDateTimeOffset(in DateTimeOffset value) =>
             value.ToUnixTimeMilliseconds();
 
         // An ArraySegment crosses as .NET's MemoryView: JavaScript reads and writes the array through the view until it
         // disposes or collects it, and the view keeps the array alive until then. The kind is the element type, in the
         // order the host's value_from_memory_view lists them; a segment without an array is null.
-        internal static int FromByteSegment(ArraySegment<byte> segment) => FromSegment(segment, 0);
+        internal static int FromByteSegment(in ArraySegment<byte> segment) => FromSegment(segment, 0);
 
-        internal static int FromSByteSegment(ArraySegment<sbyte> segment) => FromSegment(segment, 1);
+        internal static int FromSByteSegment(in ArraySegment<sbyte> segment) => FromSegment(segment, 1);
 
-        internal static int FromInt16Segment(ArraySegment<short> segment) => FromSegment(segment, 2);
+        internal static int FromInt16Segment(in ArraySegment<short> segment) => FromSegment(segment, 2);
 
-        internal static int FromUInt16Segment(ArraySegment<ushort> segment) => FromSegment(segment, 3);
+        internal static int FromUInt16Segment(in ArraySegment<ushort> segment) => FromSegment(segment, 3);
 
-        internal static int FromInt32Segment(ArraySegment<int> segment) => FromSegment(segment, 4);
+        internal static int FromInt32Segment(in ArraySegment<int> segment) => FromSegment(segment, 4);
 
-        internal static int FromUInt32Segment(ArraySegment<uint> segment) => FromSegment(segment, 5);
+        internal static int FromUInt32Segment(in ArraySegment<uint> segment) => FromSegment(segment, 5);
 
-        internal static int FromInt64Segment(ArraySegment<long> segment) => FromSegment(segment, 6);
+        internal static int FromInt64Segment(in ArraySegment<long> segment) => FromSegment(segment, 6);
 
-        internal static int FromUInt64Segment(ArraySegment<ulong> segment) => FromSegment(segment, 7);
+        internal static int FromUInt64Segment(in ArraySegment<ulong> segment) => FromSegment(segment, 7);
 
-        internal static int FromSingleSegment(ArraySegment<float> segment) => FromSegment(segment, 8);
+        internal static int FromSingleSegment(in ArraySegment<float> segment) => FromSegment(segment, 8);
 
-        internal static int FromDoubleSegment(ArraySegment<double> segment) => FromSegment(segment, 9);
+        internal static int FromDoubleSegment(in ArraySegment<double> segment) => FromSegment(segment, 9);
 
         // The garbage collector does not move an array, so its elements' address holds while the view keeps it alive.
         private static unsafe int FromSegment<T>(ArraySegment<T> segment, int kind)
@@ -61,8 +67,8 @@ namespace System.Runtime.InteropServices.JavaScript
             return JSHostValue.FromMemoryView(Pin(array), address, segment.Count, kind);
         }
 
-        internal static DateTimeOffset ToDateTimeOffset(double milliseconds) =>
-            DateTimeOffset.FromUnixTimeMilliseconds((long)milliseconds);
+        internal static void ToDateTimeOffset(out DateTimeOffset value, double milliseconds) =>
+            value = DateTimeOffset.FromUnixTimeMilliseconds((long)milliseconds);
 
         // A value of a type JavaScript has no counterpart for crosses as an opaque
         // object that gives the same value back.
@@ -107,7 +113,7 @@ namespace System.Runtime.InteropServices.JavaScript
                 JSValueKind.Number => JSHostValue.Number(handle),
                 JSValueKind.BigInt => JSHostValue.BigInt(handle),
                 JSValueKind.String => JSHostValue.String(handle),
-                JSValueKind.Date => ToDateTime(JSHostValue.Number(handle)),
+                JSValueKind.Date => Date(JSHostValue.Number(handle)),
                 JSValueKind.Error or JSValueKind.ManagedError => ToException(handle),
                 JSValueKind.Array => ToArray(handle),
                 JSValueKind.ManagedObject => GCHandle.FromIntPtr((nint)JSHostValue.Managed(handle)).Target,
@@ -117,6 +123,10 @@ namespace System.Runtime.InteropServices.JavaScript
                 _ => JSHostValue.Object(handle),
             };
         }
+
+        // An export's catch, synchronous or async, gives its exception here: a JSException holding a JavaScript error offers it to the
+        // host, which throws it instead of a managed failure (JavaScriptConversion.ExportFailure).
+        internal static void OfferExportFailure(Exception exception) => JSHostError.OfferExportFailure(exception);
 
         // A JavaScript error comes back as itself; any other exception crosses as
         // an Error carrying its message, which gives the exception back.
@@ -357,12 +367,93 @@ namespace System.Runtime.InteropServices.JavaScript
         internal static extern long Collected();
     }
 
-    // Owns a host handle and releases it once collected.
+    // Owns a host handle and releases it once collected, or when its owner is done with it. The handle is released
+    // once: after Release the finalizer finds none, since the host may already have given the number to another value.
     internal sealed class JSHandleOwner(int handle)
     {
-        internal int Handle { get; } = handle;
+        private int _handle = handle;
 
-        ~JSHandleOwner() => JSHostValue.Release(Handle);
+        internal int Handle => _handle;
+
+        internal void Release()
+        {
+            var released = _handle;
+            _handle = 0;
+            JSHostValue.Release(released);
+        }
+
+        ~JSHandleOwner()
+        {
+            if (_handle != 0)
+            {
+                JSHostValue.Release(_handle);
+            }
+        }
+    }
+
+    // The JavaScript error a failed import threw or rejected with, which the host holds until the import's JSException
+    // takes it. Served by the runtime's own import module.
+    internal static class JSHostError
+    {
+        private const string Module = "netwasm.host.v1";
+
+        // The pending error's message, or null when no JavaScript error is pending.
+        [JSImport("error_pending_message", Module)]
+        internal static extern string? PendingMessage();
+
+        // The pending error's handle, which the caller owns; the host holds no error afterwards.
+        [JSImport("error_take", Module)]
+        internal static extern int Take();
+
+        // The JavaScript stack of an error a JSException holds, or null where it has none.
+        [JSImport("error_stack", Module)]
+        internal static extern string? Stack(int handle);
+
+        // The managed GC handle of the pending error when it is a managed exception that crossed to JavaScript, else 0.
+        [JSImport("error_pending_managed", Module)]
+        internal static extern long PendingManaged();
+
+        // Whether two error handles hold the same JavaScript value.
+        [JSImport("error_same", Module)]
+        internal static extern bool Same(int first, int second);
+
+        // Gives the host the JavaScript error an async export's Promise rejects with; the host takes the handle.
+        [JSImport("error_offer_export", Module)]
+        internal static extern void OfferExport(int error);
+
+        // The exception a failed import raises, as .NET's browser runtime marshals what it threw or rejected with
+        // (marshal_exception_to_cs): a managed exception that crossed to JavaScript comes back as itself; any other
+        // value becomes a JSException whose message is the value's toString() and which keeps the value. A failure
+        // with no JavaScript value behind it raises a plain JSException.
+        internal static Exception TakeFailure()
+        {
+            if (PendingMessage() is not { } message)
+            {
+                return new JSException();
+            }
+            var managed = PendingManaged();
+            var error = Take();
+            if (managed == 0)
+            {
+                return new JSException(message, error);
+            }
+            JSHostValue.Release(error);
+            return (Exception)GCHandle.FromIntPtr((nint)managed).Target!;
+        }
+
+        // As .NET's ToJS(Exception): a JSException holding a JavaScript error, alone or as an AggregateException's only
+        // exception, gives that error back, so an async export's Promise rejects with it.
+        internal static void OfferExportFailure(Exception exception)
+        {
+            if (exception is AggregateException { InnerExceptions.Count: 1 } aggregate)
+            {
+                exception = aggregate.InnerExceptions[0];
+            }
+            if (exception is JSException { Error: not 0 } error)
+            {
+                OfferExport(JSHostValue.Copy(error.Error));
+            }
+        }
     }
 
     // What value_kind reports a JavaScript value is.

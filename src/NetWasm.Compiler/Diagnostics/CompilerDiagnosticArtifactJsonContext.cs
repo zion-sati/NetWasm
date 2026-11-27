@@ -12,6 +12,7 @@ namespace NetWasm.Compiler.Diagnostics;
     WriteIndented = true,
     NewLine = "\n")]
 [JsonSerializable(typeof(CompilerOptionsArtifact))]
+[JsonSerializable(typeof(Analysis.ReceiverFlow.ReceiverFlowReport))]
 [JsonSerializable(typeof(CompilerSourceArtifact[]))]
 [JsonSerializable(typeof(CompilerProvenanceArtifact))]
 [JsonSerializable(typeof(CompilerEntryArtifact))]

@@ -19,18 +19,28 @@ internal sealed class ExceptionAwareDispatcherBlockSelector : IExceptionAwareDis
         ArgumentNullException.ThrowIfNull(component);
         ArgumentNullException.ThrowIfNull(allowed);
 
-        var exceptionGroups = state.ExceptionGroupsByEntry
-            .Where(entry => component.Contains(entry.Key))
-            .Select(entry => entry.Value)
-            .ToArray();
+        // The blocks from an exception group's try to the end of its last handler, for the groups the component
+        // enters, as sorted ranges that neither overlap nor touch: whether a block lies in one is a binary search,
+        // where testing each block against each group made a dispatcher over N groups cost N squared.
+        var exceptionGroups = component.Count < state.ExceptionGroupsByEntry.Count
+            ? component.Where(state.ExceptionGroupsByEntry.ContainsKey).Select(block => state.ExceptionGroupsByEntry[block])
+            : state.ExceptionGroupsByEntry.Where(entry => component.Contains(entry.Key)).Select(entry => entry.Value);
+        var extents = exceptionGroups
+            .Select(group => (Start: group.TryOffset, End: group.Clauses.Max(clause => checked(
+                clause.Region.HandlerOffset + clause.Region.HandlerLength))))
+            .Where(extent => extent.Start < extent.End)
+            .OrderBy(extent => extent.Start)
+            .ToList();
+        var ranges = new List<(int Start, int End)>(extents.Count);
+        foreach (var extent in extents)
+        {
+            if (ranges.Count > 0 && extent.Start <= ranges[^1].End)
+                ranges[^1] = (ranges[^1].Start, Math.Max(ranges[^1].End, extent.End));
+            else
+                ranges.Add(extent);
+        }
         var excluded = allowed
-            .Where(block => exceptionGroups.Any(group =>
-            {
-                var offset = state.Graph.GetBlock(block).StartOffset;
-                var extent = group.Clauses.Max(clause => checked(
-                    clause.Region.HandlerOffset + clause.Region.HandlerLength));
-                return offset >= group.TryOffset && offset < extent;
-            }))
+            .Where(block => InAny(ranges, state.Graph.GetBlock(block).StartOffset))
             .ToImmutableHashSet();
         var owned = ImmutableHashSet.CreateBuilder<int>();
         var pending = new Stack<int>(component.Where(block => !excluded.Contains(block)));
@@ -48,5 +58,19 @@ internal sealed class ExceptionAwareDispatcherBlockSelector : IExceptionAwareDis
         }
 
         return owned.ToImmutable();
+    }
+
+    private static bool InAny(List<(int Start, int End)> ranges, int offset)
+    {
+        var low = 0;
+        var high = ranges.Count - 1;
+        while (low <= high)
+        {
+            var middle = low + ((high - low) >> 1);
+            if (offset < ranges[middle].Start) high = middle - 1;
+            else if (offset >= ranges[middle].End) low = middle + 1;
+            else return true;
+        }
+        return false;
     }
 }

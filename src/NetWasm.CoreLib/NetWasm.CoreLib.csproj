@@ -21,6 +21,9 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!-- As upstream builds CoreLib, so its sources port verbatim. -->
     <LangVersion>preview</LangVersion>
+    <!-- CoreLib's async methods are compiled with runtime async, which NetWasm's compiler lowers, as upstream's
+         CoreCLR and Native AOT CoreLibs are compiled; programs compiled either way use this one CoreLib. -->
+    <Features>$(Features);runtime-async=on</Features>
     <!-- The reference contract follows System.Private.CoreLib's assembly-level
          CLS declaration. CLS diagnostics are consumer-facing; focused consumer
          tests retain genuine violations without failing this platform
@@ -80,6 +83,8 @@
     <Compile Include="Runtime/CompilerServices/InternalsVisibleToAttribute.cs" />
     <Compile Include="Runtime/CompilerServices/MetadataAttributes.cs" />
     <Compile Include="Runtime/CompilerServices/IntrinsicAttribute.cs" />
+    <Compile Include="Runtime/CompilerServices/AsyncHelpers.cs" />
+    <Compile Include="Runtime/CompilerServices/RuntimeAsync.cs" />
     <Compile Include="Runtime/CompilerServices/RuntimeCustomAttributes.cs" />
     <Compile Include="Runtime/CompilerServices/ConditionalWeakTableRuntime.cs" />
     <Compile Include="Runtime/CompilerServices/ConditionalWeakTable.cs" />
@@ -643,6 +648,7 @@
     <Compile Include="Runtime/InteropServices/Concurrency/IWasiSubtaskCancelInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/WasiSubtaskCancelInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/IWasiMonotonicWaitInvoker.cs" />
+    <Compile Include="Runtime/InteropServices/Concurrency/IWasiMonotonicNowInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/IEventLoopCollection.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/EventLoopCollection.cs" />
     <Compile Include="Runtime/InteropServices/Concurrency/WasiMonotonicWaitInvoker.cs" />
@@ -667,6 +673,7 @@
     <Compile Include="Runtime/InteropServices/Output/WasiOutputStreamResource.cs" />
     <Compile Include="Runtime/InteropServices/Output/WasiStreamBlockingOutputWriter.cs" />
     <Compile Include="Runtime/InteropServices/ConsoleServices/ConsoleTextWriter.cs" />
+    <Compile Include="Runtime/InteropServices/ConsoleServices/ConsoleUtf8Encoder.cs" />
     <Compile Include="Runtime/InteropServices/ConsoleServices/ConsoleCompositionRoot.cs" />
     <Compile Include="Runtime/InteropServices/ConsoleServices/ConsoleStream.cs" />
     <Compile Include="Runtime/InteropServices/ConsoleServices/IWasiTerminalInvoker.cs" />
@@ -682,6 +689,8 @@
     <Compile Include="Runtime/InteropServices/Streams/IWasiByteStreamReadableDropInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Streams/WasiReadableStreamEnds.cs" />
     <Compile Include="CommandWorldScheduler.cs" />
+    <Compile Include="CommandWorldBatch.cs" />
+    <Compile Include="CommandWorldDelays.cs" />
     <Compile Include="ComponentExportTask.cs" />
     <Compile Include="SynchronousExportScope.cs" />
     <Compile Include="WitStreams.cs" />
@@ -792,6 +801,7 @@
     <Compile Include="Type.Helpers.cs" />
     <Compile Include="Type.Diagnostics.cs" />
     <Compile Include="TypeSymbols.cs" />
+    <Compile Include="SharedArrays.cs" />
     <Compile Include="Type.Reflection.cs" />
     <Compile Include="TypeCode.cs" />
     <Compile Include="IConvertible.cs" />
@@ -992,6 +1002,7 @@
     <Compile Include="Decimal.GenericMath.cs" />
     <Compile Include="Nullable.cs" />
     <Compile Include="NullableBool.cs" />
+    <Compile Include="NotImplemented.cs" />
     <Compile Include="ValueTuple.cs" />
     <Compile Include="Tuple.cs" />
     <Compile Include="TupleExtensions.LowArity.cs" />
@@ -1095,31 +1106,51 @@
     <Compile Include="Net/ICredentials.cs" />
     <Compile Include="Net/ICredentialsByHost.cs" />
     <Compile Include="Net/NetworkCredential.cs" />
-    <Compile Include="Text/Rune.cs" />
-    <Compile Include="Text/Rune.Ordinal.cs" />
-    <Compile Include="Text/StringRuneEnumerator.cs" />
+    <Compile Include="Text/TypedCompositeFormat.cs" />
+    <Compile Include="Text/HexadecimalDigits.cs" />
+    <Compile Include="Text/InterpolatedHexHoles.cs" />
     <Compile Include="Text/StringBuilderRuneEnumerator.cs" />
-    <Compile Include="Text/SpanRuneEnumerator.cs" />
-    <Compile Include="Text/SpanRuneEnumerator.Contracts.cs" />
-    <Compile Include="Text/SpanLineEnumerator.cs" />
-    <Compile Include="Text/RunePosition.cs" />
-    <Compile Include="Text/RunePosition.Enumeration.cs" />
-    <Compile Include="Text/Encoding.cs" />
-    <Compile Include="Text/EncodingProvider.cs" />
-    <Compile Include="Text/NormalizationForm.cs" />
-    <Compile Include="Text/Encoder.cs" />
-    <Compile Include="Text/Decoder.cs" />
-    <Compile Include="Text/EncoderFallback.cs" />
-    <Compile Include="Text/DecoderFallback.cs" />
     <Compile Include="Text/ASCIIEncoding.cs" />
-    <Compile Include="Text/UTF8Encoding.cs" />
-    <Compile Include="Text/UTF7Encoding.cs" />
-    <Compile Include="Text/SR.cs" />
-    <Compile Include="Text/UnicodeEncoding.cs" />
+    <Compile Include="Text/CodePageDataItem.cs" />
+    <Compile Include="Text/Decoder.cs" />
+    <Compile Include="Text/DecoderExceptionFallback.cs" />
+    <Compile Include="Text/DecoderFallback.cs" />
+    <Compile Include="Text/DecoderNLS.cs" />
+    <Compile Include="Text/DecoderReplacementFallback.cs" />
+    <Compile Include="Text/Encoder.cs" />
+    <Compile Include="Text/EncoderExceptionFallback.cs" />
+    <Compile Include="Text/EncoderFallback.cs" />
+    <Compile Include="Text/EncoderLatin1BestFitFallback.cs" />
+    <Compile Include="Text/EncoderLatin1BestFitFallback.Data.cs" />
+    <Compile Include="Text/EncoderNLS.cs" />
+    <Compile Include="Text/EncoderReplacementFallback.cs" />
+    <Compile Include="Text/Encoding.Internal.cs" />
+    <Compile Include="Text/Encoding.cs" />
+    <Compile Include="Text/EncodingData.cs" />
+    <Compile Include="Text/EncodingInfo.cs" />
+    <Compile Include="Text/EncodingProvider.cs" />
+    <Compile Include="Text/EncodingTable.cs" />
+    <Compile Include="Text/Latin1Encoding.cs" />
+    <Compile Include="Text/Latin1Encoding.Sealed.cs" />
+    <Compile Include="Text/Latin1Utility.cs" />
+    <Compile Include="Text/Latin1Utility.Helpers.cs" />
+    <Compile Include="Text/NormalizationForm.cs" />
+    <Compile Include="Text/Rune.cs" />
+    <Compile Include="Text/RunePosition.cs" />
+    <Compile Include="Text/SpanRuneEnumerator.cs" />
+    <Compile Include="Text/StringRuneEnumerator.cs" />
+    <Compile Include="Text/TranscodingStream.cs" />
     <Compile Include="Text/UTF32Encoding.cs" />
-    <Compile Include="Text/Ascii.cs" />
+    <Compile Include="Text/UTF7Encoding.cs" />
+    <Compile Include="Text/UTF8Encoding.cs" />
+    <Compile Include="Text/UTF8Encoding.Sealed.cs" />
+    <Compile Include="Text/UnicodeEncoding.cs" />
     <Compile Include="Text/Unicode/Utf8.cs" />
     <Compile Include="Text/Unicode/Utf16.cs" />
+    <Compile Include="Text/Unicode/Utf8Utility.Transcoding.cs" />
+    <Compile Include="Text/SpanLineEnumerator.cs" />
+    <Compile Include="Text/SR.cs" />
+    <Compile Include="Text/Ascii.cs" />
     <Compile Include="Text/StringBuilder.cs" />
     <Compile Include="Text/CompositeFormat.cs" />
     <Compile Include="Text/ValueStringBuilder.AppendFormat.cs" />
@@ -1244,6 +1275,7 @@
     <Compile Include="Threading/Lock.cs" />
     <Compile Include="Threading/LockRecursionException.cs" />
     <Compile Include="Threading/PeriodicTimer.cs" />
+    <Compile Include="Threading/AmbientContextChanges.cs" />
     <Compile Include="Threading/AsyncLocal.cs" />
     <Compile Include="Threading/AsyncLocalValueMap.cs" />
     <Compile Include="Threading/AsyncLocalValueChangedArgs.cs" />
@@ -1340,6 +1372,8 @@
     <Compile Include="Runtime/CompilerServices/ReadOnlyCollectionBuilder.cs" />
     <Compile Include="Runtime/CompilerServices/TrueReadOnlyCollection.cs" />
     <Compile Include="Runtime/CompilerServices/ArrayLoops.cs" />
+    <Compile Include="Runtime/CompilerServices/ReceiverFlowAudit.cs" />
+    <Compile Include="Runtime/CompilerServices/NonZeroAddress.cs" />
     <Compile Include="Runtime/CompilerServices/ObjectArrayDelegateAdapter.cs" />
     <Compile Include="Runtime/CompilerServices/RuntimeMemberExecution.cs" />
     <Compile Include="Runtime/CompilerServices/SharedObjectDispatch.cs" />
@@ -1643,9 +1677,6 @@
     <Compile Include="Environment.GetFolderPathCore.Unix.cs" />
     <Compile Include="IO/PersistedFiles.Unix.cs" />
     <Compile Include="IO/PersistedFiles.Names.Unix.cs" />
-    <Compile Include="Text/EncoderLatin1BestFitFallback.cs" />
-    <Compile Include="Text/EncoderLatin1BestFitFallback.Data.cs" />
-    <Compile Include="Text/Latin1Encoding.cs" />
     <Compile Include="Collections/Concurrent/IProducerConsumerQueue.cs" />
     <Compile Include="Collections/Concurrent/SingleProducerSingleConsumerQueue.cs" />
     <Compile Include="Collections/Concurrent/MultiProducerMultiConsumerQueue.cs" />

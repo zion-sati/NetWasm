@@ -29,12 +29,14 @@ public sealed class MemoryReportingProgressReporterTests
 
         Assert.Equal([CompilerProgressStage.Start, CompilerProgressStage.Metadata, CompilerProgressStage.Complete],
             inner.Stages);
+        const string memory = "Memory: 1.50 GB working set, 2.00 GB peak, 0.25 GB managed heap, 3.00 GB committed, " +
+            "0.50 GB fragmented";
         Assert.Equal(
         [
-            "Memory: 1.50 GB working set, 2.00 GB peak, 0.25 GB managed heap (0.0s elapsed)",
-            "Memory: 1.50 GB working set, 2.00 GB peak, 0.25 GB managed heap (2.5s elapsed)",
-            "Memory: 1.50 GB working set, 2.00 GB peak, 0.25 GB managed heap (32.5s elapsed)",
-            "Memory: 1.50 GB working set, 2.00 GB peak, 0.25 GB managed heap (32.5s elapsed)",
+            $"{memory} (0.0s elapsed)",
+            $"{memory} (2.5s elapsed)",
+            $"{memory} (32.5s elapsed)",
+            $"{memory} (32.5s elapsed)",
         ], logger.Messages);
         Assert.True(timer.Disposed);
     }
@@ -98,6 +100,8 @@ public sealed class MemoryReportingProgressReporterTests
         Assert.True(memory.WorkingSet > 0);
         Assert.True(memory.PeakWorkingSet >= memory.WorkingSet);
         Assert.True(memory.ManagedHeap > 0);
+        Assert.True(memory.Committed >= 0);
+        Assert.True(memory.Fragmented >= 0);
         Assert.True(later.PeakWorkingSet >= memory.PeakWorkingSet);
         Assert.True(later.PeakWorkingSet >= later.WorkingSet);
     }
@@ -123,7 +127,8 @@ public sealed class MemoryReportingProgressReporterTests
 
     private sealed class FixedMemory : ICompilerMemoryReader
     {
-        public CompilerMemorySnapshot Read() => new(3 * Gigabyte / 2, 2 * Gigabyte, Gigabyte / 4);
+        public CompilerMemorySnapshot Read() =>
+            new(3 * Gigabyte / 2, 2 * Gigabyte, Gigabyte / 4, 3 * Gigabyte, Gigabyte / 2);
     }
 
     private sealed class RecordingReporter : ICompilerProgressReporter

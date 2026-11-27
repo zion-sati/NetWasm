@@ -690,7 +690,6 @@ public sealed class FieldInstructionEmitterTests
     }
 
     private static IInstructionCommandProvider CreateEmitter(
-        ITypeRepository? types = null,
         IFieldRepository? fieldRepository = null,
         ITargetLayout? layouts = null,
         IInstanceFieldLayoutProvider? fields = null,
@@ -700,12 +699,11 @@ public sealed class FieldInstructionEmitterTests
         var program = new FakeProgram();
         var addresses = new AddressInstructionEmitter(actualLayouts);
         return AsProvider(new FieldInstructionEmitter(
-            types ?? program,
             fieldRepository ?? program,
             actualLayouts,
             fields ?? (IInstanceFieldLayoutProvider)actualLayouts,
             (IValueLayoutProvider)actualLayouts,
-            new RecordingImplicitExceptionEmitter(),
+            new NullDereferenceCheckEmitter(new RecordingImplicitExceptionEmitter(), addresses),
             addresses,
             projections ?? new AddressTakenAggregateProjectionEmitter(actualLayouts),
             new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy((IValueLayoutProvider)actualLayouts))));
@@ -714,7 +712,7 @@ public sealed class FieldInstructionEmitterTests
     private static IInstructionCommandProvider CreateEmitter(
         FieldProgram program,
         FieldLayoutScenario layouts) =>
-        CreateEmitter(program, program, layouts, layouts);
+        CreateEmitter(program, layouts, layouts);
 
     private static InstructionEmissionRequest CreateRequest(
         CilOperation operation,

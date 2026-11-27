@@ -5,12 +5,15 @@ using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Emission.StructResults;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 
 internal sealed class DelegateInvokeCallEmitter(
     ITargetLayout layouts,
-    IImplicitExceptionEmitter exceptions) : ICallEmitter
+    IImplicitExceptionEmitter exceptions,
+    IValueTypeArgumentConventionFactory argumentConventions,
+    IValueTypeResultConventionFactory resultConventions) : ICallEmitter
 {
     public void Emit(
         CallEmissionRequest request, IWasmInstructionWriter code,
@@ -24,25 +27,37 @@ internal sealed class DelegateInvokeCallEmitter(
             CliValueKind.ManagedReference);
         EmitNullCheck(code, delegateLocal, request.Instruction.Context.ManagedThrowFunction);
         var returnsValue = signature.ReturnSignatureType.StackKind == CliValueKind.ValueType;
-        var returnOffset = returnsValue
+        var lanes = instruction.Context.CallResultLanes.Calls.ContainsKey(instruction.Instruction.Offset);
+        var returnOffset = returnsValue && !lanes
             ? instruction.Context.ValueLayout.TemporaryOffsets[
                 instruction.Instruction.Offset]
             : 0;
+        void EmitCall(IWasmInstructionWriter code)
+        {
+            for (var index = 0; index < request.Consumed; index++)
+            {
+                var local = GetStackLocal(instruction.Context, request.ArgumentBase + index, instruction.Stack[request.ArgumentBase + index]);
+                argumentConventions.Create(StructParameters.Parameter(signature, false, index)).Emit(code,
+                    writer => WriteLocalGet(writer, local), new(instruction.Context, instruction.Instruction.Offset, index,
+                        instruction.Context.VectorScratch));
+            }
+            WriteCall(
+                code,
+                instruction.Target.FunctionIndices.GetDelegateInvokeHelper(
+                    request.Method.DeclaringType.CanonicalName).Value);
+        }
+        // The invoke helper returns as the delegate's Invoke signature does.
         if (returnsValue)
         {
-            EmitValueFrameAddress(code, instruction.Context, returnOffset);
+            resultConventions.Create(signature.ReturnSignatureType).Emit(code,
+                writer => EmitValueFrameAddress(writer, instruction.Context, returnOffset), new(instruction.Context.StructResultLocals,
+                    instruction.Context.VectorScratch, lanes),
+                EmitCall);
         }
-        for (var index = 0; index < request.Consumed; index++)
+        else
         {
-            WriteLocalGet(code, GetStackLocal(
-                instruction.Context,
-                request.ArgumentBase + index,
-                instruction.Stack[request.ArgumentBase + index]));
+            EmitCall(code);
         }
-        WriteCall(
-            code,
-            instruction.Target.FunctionIndices.GetDelegateInvokeHelper(
-                request.Method.DeclaringType.CanonicalName).Value);
         if (!returnsValue && signature.ReturnType != CliValueKind.Void)
         {
             WriteLocalSet(code, GetStackLocal(
@@ -51,7 +66,11 @@ internal sealed class DelegateInvokeCallEmitter(
                 signature.ReturnType));
         }
         instruction.Stack.RemoveRange(request.ArgumentBase, request.Consumed);
-        if (returnsValue)
+        if (returnsValue && lanes)
+        {
+            instruction.Stack.Add(CliValueKind.ValueType);
+        }
+        else if (returnsValue)
         {
             EmitValueFrameAddress(code, instruction.Context, returnOffset);
             WriteLocalSet(code, GetStackLocal(

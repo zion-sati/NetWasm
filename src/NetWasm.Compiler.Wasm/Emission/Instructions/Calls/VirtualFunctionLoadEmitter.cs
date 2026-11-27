@@ -57,7 +57,7 @@ internal sealed class VirtualFunctionLoadEmitter(
             ? value
             : throw new InvalidOperationException(
                 $"Missing virtual function-load site '{key}'.");
-        var dispatchCases = cases.Plan(dispatch.Targets, dispatch.Targets);
+        var dispatchCases = cases.Plan(dispatch.Targets, dispatch.Targets, exhaustive: !dispatch.PreciseTargets);
         var typeIdLocal = request.Context.NumericTemporaryI4;
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)receiverLocal)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, 0)));

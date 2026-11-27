@@ -21,10 +21,12 @@ public sealed class StructuringDependencyContractTests
         typeof(ReachableBlockFinder),
     ];
 
+    // Every required dependency; an optional one (a default of null) is absent by design.
     public static IEnumerable<object[]> MissingDependencies =>
         Actors.SelectMany(actor =>
             Assert.Single(actor.GetConstructors())
                 .GetParameters()
+                .Where(parameter => !parameter.HasDefaultValue)
                 .Select(parameter => new object[] { actor, parameter.Position }));
 
     [Theory]

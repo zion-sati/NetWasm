@@ -77,13 +77,70 @@ namespace System.Runtime.CompilerServices
                     previousSynchronizationContext,
                     Threading.SynchronizationContext.Current))
                 {
-                    Threading.SynchronizationContext.SetSynchronizationContext(
+                    Threading.SynchronizationContext.RestoreCurrent(
                         previousSynchronizationContext);
                 }
                 Threading.ExecutionContext.Restore(
                     previousExecutionContext,
                     previousFlowControlToken);
             }
+        }
+    }
+
+    // As upstream's GetStateMachineBox: at an async method's first suspension its state machine moves into a box, a task
+    // that runs MoveNext in the ExecutionContext captured at each suspension, and every later suspension of the same call
+    // reuses the box and its MoveNext delegate, so a call allocates one box however often it suspends. Task and ValueTask
+    // builders return the box as their task; the async void and async iterator builders keep it only to resume.
+    // The helpers stay out of line: each instantiation has one caller, the state machine's MoveNext, which would
+    // otherwise take in the box's allocation and copy and pay for them on its path that does not suspend.
+    internal static class AsyncStateMachineBox
+    {
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static Action MoveNextAction<TStateMachine>(
+            ref Threading.Tasks.Task? box,
+            ref TStateMachine stateMachine)
+            where TStateMachine : IAsyncStateMachine
+        {
+            if (box is AsyncStateMachineTask<TStateMachine> existing)
+            {
+                existing.UpdateExecutionContext();
+                return existing.MoveNextAction;
+            }
+
+            if (box is null)
+            {
+                var created = new AsyncStateMachineTask<TStateMachine>();
+                // Stored before the copy, so the boxed state machine's builder already holds its box.
+                box = created;
+                created.Initialize(ref stateMachine);
+                return created.MoveNextAction;
+            }
+
+            // The builder's task existed before the first suspension (its Task was read early): resume a copy.
+            return new AsyncStateMachineContinuation(stateMachine).MoveNext;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static Action MoveNextAction<TResult, TStateMachine>(
+            ref Threading.Tasks.Task<TResult>? box,
+            ref TStateMachine stateMachine)
+            where TStateMachine : IAsyncStateMachine
+        {
+            if (box is AsyncStateMachineTask<TResult, TStateMachine> existing)
+            {
+                existing.UpdateExecutionContext();
+                return existing.MoveNextAction;
+            }
+
+            if (box is null)
+            {
+                var created = new AsyncStateMachineTask<TResult, TStateMachine>();
+                box = created;
+                created.Initialize(ref stateMachine);
+                return created.MoveNextAction;
+            }
+
+            return new AsyncStateMachineContinuation(stateMachine).MoveNext;
         }
     }
 
@@ -137,32 +194,29 @@ namespace System.Runtime.CompilerServices
         internal void UpdateExecutionContext() =>
             _executionContext = Threading.ExecutionContext.Capture();
 
+        // As upstream's AsyncStateMachineBox.MoveNext: a state machine catches what its body throws, so the box clears
+        // its state after the call when the method has completed, with no protected region around it.
         private void MoveNext()
         {
             var executionContext = _executionContext;
-            try
+            if (executionContext is null)
             {
-                if (executionContext is null)
-                {
-                    _stateMachine.MoveNext();
-                }
-                else
-                {
-                    Threading.ExecutionContext.Run(
-                        executionContext,
-                        static state =>
-                            ((AsyncStateMachineTask<TStateMachine>)state!)
-                                ._stateMachine.MoveNext(),
-                        this);
-                }
+                _stateMachine.MoveNext();
             }
-            finally
+            else
             {
-                if (IsCompleted)
-                {
-                    _stateMachine = default!;
-                    _executionContext = null;
-                }
+                Threading.ExecutionContext.Run(
+                    executionContext,
+                    static state =>
+                        ((AsyncStateMachineTask<TStateMachine>)state!)
+                            ._stateMachine.MoveNext(),
+                    this);
+            }
+
+            if (IsCompleted)
+            {
+                _stateMachine = default!;
+                _executionContext = null;
             }
         }
     }
@@ -191,32 +245,29 @@ namespace System.Runtime.CompilerServices
         internal void UpdateExecutionContext() =>
             _executionContext = Threading.ExecutionContext.Capture();
 
+        // As upstream's AsyncStateMachineBox.MoveNext: a state machine catches what its body throws, so the box clears
+        // its state after the call when the method has completed, with no protected region around it.
         private void MoveNext()
         {
             var executionContext = _executionContext;
-            try
+            if (executionContext is null)
             {
-                if (executionContext is null)
-                {
-                    _stateMachine.MoveNext();
-                }
-                else
-                {
-                    Threading.ExecutionContext.Run(
-                        executionContext,
-                        static state =>
-                            ((AsyncStateMachineTask<TResult, TStateMachine>)state!)
-                                ._stateMachine.MoveNext(),
-                        this);
-                }
+                _stateMachine.MoveNext();
             }
-            finally
+            else
             {
-                if (IsCompleted)
-                {
-                    _stateMachine = default!;
-                    _executionContext = null;
-                }
+                Threading.ExecutionContext.Run(
+                    executionContext,
+                    static state =>
+                        ((AsyncStateMachineTask<TResult, TStateMachine>)state!)
+                            ._stateMachine.MoveNext(),
+                    this);
+            }
+
+            if (IsCompleted)
+            {
+                _stateMachine = default!;
+                _executionContext = null;
             }
         }
     }
@@ -239,7 +290,7 @@ namespace System.Runtime.CompilerServices
         public Threading.Tasks.Task Task
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => EnsureTask();
+            get => _task ?? InitializeTaskAsPromise();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -296,34 +347,24 @@ namespace System.Runtime.CompilerServices
             awaiter.UnsafeOnCompleted(GetCompletionAction(ref stateMachine));
         }
 
-        private Threading.Tasks.Task EnsureTask() =>
-            _task ??= new Threading.Tasks.Task();
+        private Threading.Tasks.Task EnsureTask() => _task ?? InitializeTaskAsPromise();
+
+        // As upstream: the task made when it is asked for before the method completes or suspends, out of line so the
+        // Task property inlines.
+        private Threading.Tasks.Task InitializeTaskAsPromise() => _task = new Threading.Tasks.Task();
 
         private Action GetCompletionAction<TStateMachine>(
             ref TStateMachine stateMachine)
-            where TStateMachine : IAsyncStateMachine
-        {
-            if (_task is AsyncStateMachineTask<TStateMachine> existing)
-            {
-                existing.UpdateExecutionContext();
-                return existing.MoveNextAction;
-            }
-
-            if (_task is null)
-            {
-                var created = new AsyncStateMachineTask<TStateMachine>();
-                _task = created;
-                created.Initialize(ref stateMachine);
-                return created.MoveNextAction;
-            }
-
-            return new AsyncStateMachineContinuation(stateMachine).MoveNext;
-        }
+            where TStateMachine : IAsyncStateMachine =>
+            AsyncStateMachineBox.MoveNextAction(ref _task, ref stateMachine);
     }
 
     public struct AsyncVoidMethodBuilder
     {
         private Threading.SynchronizationContext? _synchronizationContext;
+        // The state machine's box once it has suspended (see AsyncStateMachineBox); completed with the method, as
+        // upstream's builder completes its task, so the box lets go of the state machine.
+        private Threading.Tasks.Task? _box;
 
         public static AsyncVoidMethodBuilder Create()
         {
@@ -346,12 +387,14 @@ namespace System.Runtime.CompilerServices
 
         public void SetResult()
         {
+            _box?.TrySetResult();
             _synchronizationContext?.OperationCompleted();
         }
 
         public void SetException(Exception exception)
         {
             ArgumentNullException.ThrowIfNull(exception);
+            _box?.TrySetResult();
             var synchronizationContext = _synchronizationContext;
             if (synchronizationContext is not null)
             {
@@ -368,9 +411,8 @@ namespace System.Runtime.CompilerServices
                 return;
             }
 
-            Runtime.InteropServices.PlatformServices.Scheduler.Schedule(
-                () => throw exception,
-                0);
+            Runtime.InteropServices.PlatformServices.Scheduler.Post(
+                () => throw exception);
         }
 
         public void AwaitOnCompleted<TAwaiter, TStateMachine>(
@@ -379,8 +421,7 @@ namespace System.Runtime.CompilerServices
             where TAwaiter : INotifyCompletion
             where TStateMachine : IAsyncStateMachine
         {
-            var continuation = new AsyncStateMachineContinuation(stateMachine);
-            awaiter.OnCompleted(continuation.MoveNext);
+            awaiter.OnCompleted(AsyncStateMachineBox.MoveNextAction(ref _box, ref stateMachine));
         }
 
         public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
@@ -389,8 +430,7 @@ namespace System.Runtime.CompilerServices
             where TAwaiter : ICriticalNotifyCompletion
             where TStateMachine : IAsyncStateMachine
         {
-            var continuation = new AsyncStateMachineContinuation(stateMachine);
-            awaiter.UnsafeOnCompleted(continuation.MoveNext);
+            awaiter.UnsafeOnCompleted(AsyncStateMachineBox.MoveNextAction(ref _box, ref stateMachine));
         }
     }
 
@@ -403,7 +443,7 @@ namespace System.Runtime.CompilerServices
         public Threading.Tasks.Task<T> Task
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => EnsureTask();
+            get => _task ?? InitializeTaskAsPromise();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -460,29 +500,16 @@ namespace System.Runtime.CompilerServices
             awaiter.UnsafeOnCompleted(GetCompletionAction(ref stateMachine));
         }
 
-        private Threading.Tasks.Task<T> EnsureTask() =>
-            _task ??= new Threading.Tasks.Task<T>();
+        private Threading.Tasks.Task<T> EnsureTask() => _task ?? InitializeTaskAsPromise();
+
+        // As upstream: the task made when it is asked for before the method completes or suspends, out of line so the
+        // Task property inlines.
+        private Threading.Tasks.Task<T> InitializeTaskAsPromise() => _task = new Threading.Tasks.Task<T>();
 
         private Action GetCompletionAction<TStateMachine>(
             ref TStateMachine stateMachine)
-            where TStateMachine : IAsyncStateMachine
-        {
-            if (_task is AsyncStateMachineTask<T, TStateMachine> existing)
-            {
-                existing.UpdateExecutionContext();
-                return existing.MoveNextAction;
-            }
-
-            if (_task is null)
-            {
-                var created = new AsyncStateMachineTask<T, TStateMachine>();
-                _task = created;
-                created.Initialize(ref stateMachine);
-                return created.MoveNextAction;
-            }
-
-            return new AsyncStateMachineContinuation(stateMachine).MoveNext;
-        }
+            where TStateMachine : IAsyncStateMachine =>
+            AsyncStateMachineBox.MoveNextAction(ref _task, ref stateMachine);
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
@@ -535,9 +562,7 @@ namespace System.Runtime.CompilerServices
             where TAwaiter : INotifyCompletion
             where TStateMachine : IAsyncStateMachine
         {
-            EnsureTask();
-            var continuation = new AsyncStateMachineContinuation(stateMachine);
-            awaiter.OnCompleted(continuation.MoveNext);
+            awaiter.OnCompleted(AsyncStateMachineBox.MoveNextAction(ref _task, ref stateMachine));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -547,9 +572,7 @@ namespace System.Runtime.CompilerServices
             where TAwaiter : ICriticalNotifyCompletion
             where TStateMachine : IAsyncStateMachine
         {
-            EnsureTask();
-            var continuation = new AsyncStateMachineContinuation(stateMachine);
-            awaiter.UnsafeOnCompleted(continuation.MoveNext);
+            awaiter.UnsafeOnCompleted(AsyncStateMachineBox.MoveNextAction(ref _task, ref stateMachine));
         }
 
         private void EnsureTask()
@@ -618,9 +641,7 @@ namespace System.Runtime.CompilerServices
             where TAwaiter : INotifyCompletion
             where TStateMachine : IAsyncStateMachine
         {
-            EnsureTask();
-            var continuation = new AsyncStateMachineContinuation(stateMachine);
-            awaiter.OnCompleted(continuation.MoveNext);
+            awaiter.OnCompleted(AsyncStateMachineBox.MoveNextAction(ref _task, ref stateMachine));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -630,9 +651,7 @@ namespace System.Runtime.CompilerServices
             where TAwaiter : ICriticalNotifyCompletion
             where TStateMachine : IAsyncStateMachine
         {
-            EnsureTask();
-            var continuation = new AsyncStateMachineContinuation(stateMachine);
-            awaiter.UnsafeOnCompleted(continuation.MoveNext);
+            awaiter.UnsafeOnCompleted(AsyncStateMachineBox.MoveNextAction(ref _task, ref stateMachine));
         }
 
         private void EnsureTask()
@@ -711,6 +730,10 @@ namespace System.Runtime.CompilerServices
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     public struct AsyncIteratorMethodBuilder
     {
+        // The iterator's box once it has suspended (see AsyncStateMachineBox), reused by every later MoveNextAsync;
+        // Complete completes it, as upstream's builder completes its task.
+        private Threading.Tasks.Task? _box;
+
         public static AsyncIteratorMethodBuilder Create() => new();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -724,8 +747,7 @@ namespace System.Runtime.CompilerServices
             where TAwaiter : INotifyCompletion
             where TStateMachine : IAsyncStateMachine
         {
-            var continuation = new AsyncStateMachineContinuation(stateMachine);
-            awaiter.OnCompleted(continuation.MoveNext);
+            awaiter.OnCompleted(AsyncStateMachineBox.MoveNextAction(ref _box, ref stateMachine));
         }
 
         public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
@@ -734,13 +756,10 @@ namespace System.Runtime.CompilerServices
             where TAwaiter : ICriticalNotifyCompletion
             where TStateMachine : IAsyncStateMachine
         {
-            var continuation = new AsyncStateMachineContinuation(stateMachine);
-            awaiter.UnsafeOnCompleted(continuation.MoveNext);
+            awaiter.UnsafeOnCompleted(AsyncStateMachineBox.MoveNextAction(ref _box, ref stateMachine));
         }
 
-        public void Complete()
-        {
-        }
+        public void Complete() => _box?.TrySetResult();
     }
 
     public readonly struct ConfiguredTaskAwaitable
@@ -863,8 +882,9 @@ namespace System.Runtime.CompilerServices
     {
         private readonly global::System.Threading.Tasks.Task _task;
 
-        internal TaskAwaiter(global::System.Threading.Tasks.Task task) =>
-            _task = task ?? throw new ArgumentNullException(nameof(task));
+        // As upstream: only the task's own GetAwaiter and ConfigureAwait make one, for a task that is never null, so the
+        // constructor checks nothing and inlines into them.
+        internal TaskAwaiter(global::System.Threading.Tasks.Task task) => _task = task;
 
         public bool IsCompleted => _task.IsCompleted;
         public void OnCompleted(Action continuation) =>
@@ -890,8 +910,8 @@ namespace System.Runtime.CompilerServices
     {
         private readonly global::System.Threading.Tasks.Task<T> _task;
 
-        internal TaskAwaiter(global::System.Threading.Tasks.Task<T> task) =>
-            _task = task ?? throw new ArgumentNullException(nameof(task));
+        // As TaskAwaiter's: made only for the task itself, never null.
+        internal TaskAwaiter(global::System.Threading.Tasks.Task<T> task) => _task = task;
 
         public bool IsCompleted => _task.IsCompleted;
         public void OnCompleted(Action continuation) =>
@@ -1030,13 +1050,8 @@ namespace System.Threading.Tasks
         internal const int ExclusiveInt32Max = 9;
 
         // As upstream's cacheable tasks: shared, so Dispose leaves them alone.
-        internal static Task<TResult> CreateCacheableTask<TResult>(TResult result)
-        {
-            var task = new Task<TResult>();
-            task.SetResult(result);
-            task._doNotDispose = true;
-            return task;
-        }
+        internal static Task<TResult> CreateCacheableTask<TResult>(TResult result) =>
+            new Task<TResult>(result) { _doNotDispose = true };
 
         internal static class Boolean
         {
@@ -1248,10 +1263,14 @@ namespace System.Threading.Tasks
             }
         }
 
+        // A promise: TaskCreationOptions.None has nothing to validate or attach, so every field keeps its default.
         internal Task()
-            : this((object?)null, TaskCreationOptions.None)
         {
         }
+
+        // As upstream's Task(bool canceled, ...) for a result: a task created already run to completion, so it skips
+        // the completion path (it cannot have a delegate, registration, parent or continuation yet).
+        private protected Task(bool ranToCompletion) => _status = ranToCompletion ? 1 : 0;
 
         internal Task(object? state, TaskCreationOptions creationOptions)
         {
@@ -1368,7 +1387,8 @@ namespace System.Threading.Tasks
             }
         }
 
-        public bool IsCompleted => _status is 1 or 2 or 3;
+        // _status is 0 until the task completes, then 1, 2 or 3; one comparison keeps the getter inlinable.
+        public bool IsCompleted => _status != 0;
         public bool IsCompletedSuccessfully => _status == 1;
         public bool IsFaulted => _status == 2;
         public bool IsCanceled => _status == 3;
@@ -1563,7 +1583,7 @@ namespace System.Threading.Tasks
             }, null);
             if (milliseconds >= 0 && !task.IsCompleted)
             {
-                using (Threading.ExecutionContext.SuppressFlow())
+                using (Threading.ExecutionContext.SuppressFlowWhileCreatingTimer())
                 {
                     timer = timeProvider.CreateTimer(
                         _ =>
@@ -2135,7 +2155,7 @@ namespace System.Threading.Tasks
             OnCompleted(CompleteFromSource, continueOnCapturedContext: false);
             if (milliseconds >= 0 && !completion.Task.IsCompleted)
             {
-                using (Threading.ExecutionContext.SuppressFlow())
+                using (Threading.ExecutionContext.SuppressFlowWhileCreatingTimer())
                 {
                     timer = timeProvider.CreateTimer(
                         _ =>
@@ -2714,9 +2734,9 @@ namespace System.Threading.Tasks
         internal void SetCanceledForJavaScriptInterop() =>
             SetCanceled(new TaskCanceledException());
 
-        // A rejected JavaScript promise faults its task with a new JSException.
+        // A rejected JavaScript promise faults its task with the exception for the reason it rejected with.
         internal void SetExceptionForJavaScriptInterop() =>
-            SetException(new JSException());
+            SetException(System.Runtime.InteropServices.JavaScript.JSHostError.TakeFailure());
 
         // As upstream's WrappedTryRunInline (InternalWaitCore, WaitAllCore, GetResultCore): a wait with no timeout and no
         // cancellation first runs this task on the waiting thread if it is still queued to its scheduler. A wait that
@@ -2737,7 +2757,17 @@ namespace System.Threading.Tasks
             return IsCompleted;
         }
 
-        internal void GetVoidResult() => GetVoidResult(suppressThrowing: false);
+        // A task that ran to completion has no exception to observe or throw; anything else takes the full check.
+        // Inlined at every level, as Task<T>.GetResult.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void GetVoidResult()
+        {
+            if (_status != 1)
+            {
+                GetVoidResult(suppressThrowing: false);
+            }
+        }
+
 
         internal void GetVoidResult(bool suppressThrowing)
         {
@@ -2929,7 +2959,7 @@ namespace System.Threading.Tasks
                     return;
                 }
 
-                PlatformServices.Scheduler.Schedule(InvokeWithoutSchedulerTask, 0);
+                PlatformServices.Scheduler.Post(InvokeWithoutSchedulerTask);
             }
 
             private void InvokeWithoutSchedulerTask()
@@ -3214,6 +3244,10 @@ namespace System.Threading.Tasks
         {
         }
 
+        // As upstream's Task<TResult>(TResult result): already run to completion with the result.
+        internal Task(T result)
+            : base(ranToCompletion: true) => _result = result;
+
         internal Task(object? state, TaskCreationOptions creationOptions)
             : base(state, creationOptions)
         {
@@ -3404,9 +3438,16 @@ namespace System.Threading.Tasks
             }
         }
 
+        // A task that ran to completion has its result and no exception; anything else takes the full check. Inlined at
+        // every level, as upstream's TaskAwaiter.ValidateEnd, so a faulted await throws from no deeper a frame.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal T GetResult()
         {
-            GetResultCore();
+            if (!IsCompletedSuccessfully)
+            {
+                GetResultCore();
+            }
+
             return _result;
         }
 
@@ -3546,7 +3587,7 @@ namespace System.Threading.Tasks
             OnCompleted(CompleteFromSource, continueOnCapturedContext: false);
             if (milliseconds >= 0 && !completion.Task.IsCompleted)
             {
-                using (Threading.ExecutionContext.SuppressFlow())
+                using (Threading.ExecutionContext.SuppressFlowWhileCreatingTimer())
                 {
                     timer = timeProvider.CreateTimer(
                         _ =>
@@ -3648,6 +3689,20 @@ namespace System.Threading.Tasks
         private readonly IValueTaskSource? _source;
         private readonly short _token;
 
+        // What an await subscribes on and its token, for a runtime-async suspension that holds them rather than the
+        // value task (RuntimeAsync.HoldValueTask). Inlined, so a suspension's reads of them stay field reads.
+        internal object? Subscribable
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (object?)_source ?? _task;
+        }
+
+        internal short SubscriptionToken
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _token;
+        }
+
         // As upstream's DangerousCreateFromTypedValueTask, which reinterprets the typed value task's object.
         // NetWasm's ValueTask keeps typed and untyped sources apart, so a successful one yields a completed
         // ValueTask (consuming its result, as awaiting it would) and any other goes through AsTask.
@@ -3674,10 +3729,16 @@ namespace System.Threading.Tasks
             _token = 0;
         }
 
+        // Checked before any field is stored, as upstream does: a store through `?? throw` keeps the value task's
+        // address across the check, and an inlined constructor's value task then stays in memory.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask(IValueTaskSource source, short token)
         {
-            _source = source ?? throw new ArgumentNullException();
+            if (source == null)
+            {
+                throw new ArgumentNullException();
+            }
+            _source = source;
             _token = token;
             _task = null;
         }
@@ -3748,19 +3809,18 @@ namespace System.Threading.Tasks
         public ValueTask Preserve() => _source == null ? this : new ValueTask(AsTask());
 
         [Intrinsic]
-        public Task AsTask()
-        {
-            if (_source == null)
-            {
-                return _task ?? Task.CompletedTask;
-            }
+        public Task AsTask() => _source == null ? _task ?? Task.CompletedTask : GetTaskForValueTaskSource(_source, _token);
 
-            var status = _source.GetStatus(_token);
+        // The source's task, apart from AsTask as upstream keeps it, so AsTask inlines (static, so the value task's
+        // address stays in its caller): its outcome now if it has one, or a task its completion completes.
+        private static Task GetTaskForValueTaskSource(IValueTaskSource source, short token)
+        {
+            var status = source.GetStatus(token);
             if (status != ValueTaskSourceStatus.Pending)
             {
                 try
                 {
-                    _source.GetResult(_token);
+                    source.GetResult(token);
                     return Task.CompletedTask;
                 }
                 catch (OperationCanceledException exception)
@@ -3775,11 +3835,11 @@ namespace System.Threading.Tasks
                 }
             }
 
-            var completion = new ValueTaskSourceCompletion(_source, _token);
-            _source.OnCompleted(
+            var completion = new ValueTaskSourceCompletion(source, token);
+            source.OnCompleted(
                 static state => ((ValueTaskSourceCompletion)state!).Complete(),
                 completion,
-                _token,
+                token,
                 ValueTaskSourceOnCompletedFlags.None);
             return completion.Task;
         }
@@ -3837,7 +3897,7 @@ namespace System.Threading.Tasks
             }
             if (_task == null)
             {
-                PlatformServices.Scheduler.Schedule(continuation, 0);
+                PlatformServices.Scheduler.Post(continuation);
                 return;
             }
             _task.OnCompleted(
@@ -3846,6 +3906,9 @@ namespace System.Threading.Tasks
                 flowExecutionContext);
         }
 
+        // Inlined, as upstream inlines Result: it reads only this value task's fields, so its address goes no further
+        // than those reads.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void GetResult()
         {
             if (_source != null)
@@ -3865,6 +3928,20 @@ namespace System.Threading.Tasks
         private readonly Task<T>? _task;
         private readonly IValueTaskSource<T>? _source;
         private readonly short _token;
+
+        // What an await subscribes on and its token, for a runtime-async suspension that holds them rather than the
+        // value task (RuntimeAsync.HoldValueTask). Inlined, so a suspension's reads of them stay field reads.
+        internal object? Subscribable
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (object?)_source ?? _task;
+        }
+
+        internal short SubscriptionToken
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _token;
+        }
 
         [Intrinsic]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -3890,10 +3967,15 @@ namespace System.Threading.Tasks
             _token = 0;
         }
 
+        // Checked before any field is stored, as upstream does (see ValueTask's).
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask(IValueTaskSource<T> source, short token)
         {
-            _source = source ?? throw new ArgumentNullException();
+            if (source == null)
+            {
+                throw new ArgumentNullException();
+            }
+            _source = source;
             _token = token;
             _result = default!;
             _task = null;
@@ -3937,19 +4019,18 @@ namespace System.Threading.Tasks
         public ValueTask<T> Preserve() => _source == null ? this : new ValueTask<T>(AsTask());
 
         [Intrinsic]
-        public Task<T> AsTask()
-        {
-            if (_source == null)
-            {
-                return _task ?? Task<T>.FromResult(_result);
-            }
+        public Task<T> AsTask() => _source == null ? _task ?? Task<T>.FromResult(_result) : GetTaskForValueTaskSource(_source, _token);
 
-            var status = _source.GetStatus(_token);
+        // The source's task, apart from AsTask as upstream keeps it, so AsTask inlines (static, so the value task's
+        // address stays in its caller): its outcome now if it has one, or a task its completion completes.
+        private static Task<T> GetTaskForValueTaskSource(IValueTaskSource<T> source, short token)
+        {
+            var status = source.GetStatus(token);
             if (status != ValueTaskSourceStatus.Pending)
             {
                 try
                 {
-                    return Task<T>.FromResult(_source.GetResult(_token));
+                    return Task<T>.FromResult(source.GetResult(token));
                 }
                 catch (OperationCanceledException exception)
                 {
@@ -3963,11 +4044,11 @@ namespace System.Threading.Tasks
                 }
             }
 
-            var completion = new ValueTaskSourceCompletion(_source, _token);
-            _source.OnCompleted(
+            var completion = new ValueTaskSourceCompletion(source, token);
+            source.OnCompleted(
                 static state => ((ValueTaskSourceCompletion)state!).Complete(),
                 completion,
-                _token,
+                token,
                 ValueTaskSourceOnCompletedFlags.None);
             return completion.Task;
         }
@@ -4063,7 +4144,7 @@ namespace System.Threading.Tasks
             }
             if (_task == null)
             {
-                PlatformServices.Scheduler.Schedule(continuation, 0);
+                PlatformServices.Scheduler.Post(continuation);
                 return;
             }
             _task.OnCompleted(
@@ -4072,6 +4153,9 @@ namespace System.Threading.Tasks
                 flowExecutionContext);
         }
 
+        // Inlined, as upstream inlines Result: it reads only this value task's fields, so its address goes no further
+        // than those reads.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal T GetResult() => _source != null
             ? _source.GetResult(_token)
             : _task == null ? _result : _task.GetResult();

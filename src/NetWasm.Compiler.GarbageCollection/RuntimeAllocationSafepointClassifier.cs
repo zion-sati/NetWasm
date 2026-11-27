@@ -51,6 +51,8 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.Object", "MemberwiseClone"),
             ("System.Array", "InternalCreateInstance"),
             ("System.Array", "InternalCreateRectangularInstance"),
+            ("System.Array", "InternalCreateBoundedInstance"),
+            ("System.Array", "InternalCreateSharedInstance"),
             // GC.AllocateUninitializedArray's array, which the runtime allocates.
             ("System.GC", "InternalAllocateUninitializedArray"),
             ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "AllocateUninitializedObject"),

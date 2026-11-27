@@ -58,4 +58,9 @@ internal sealed partial record ManagedStaticData
 
     public int TypeObjectSize { get; init; }
 
+    // The shared arrays' cast table (SharedArrayTargetDataBuilder), and its entries after the shapes; 0 without one.
+    public int SharedArrayTargetsAddress { get; init; }
+
+    public int SharedArrayTargetCount { get; init; }
+
 }

@@ -46,13 +46,20 @@ internal sealed class CompilerHostArtifactFormatter : ICompilerHostArtifactForma
             };
             if (result.StaticDataEnd < 0)
                 throw new InvalidOperationException("application static-data extent is negative");
-            // The reached native imports, as nwc writes them: the C library functions CoreLib's Math and MathF
-            // import are among them, and a linked test runtime exports those (eng/build-netwasm-runtime.sh).
+            // Native callbacks need schema 4 and their object file, which this host does not write.
+            if (result.NativeCallbackSupport is not null)
+                throw new InvalidOperationException("the compiler host writes no native callback support");
+            // The layout nwc writes (schema 3): the runtime features the program uses, so the linked test runtime
+            // keeps what the program's own build would, and the reached native imports (the C library functions
+            // CoreLib's Math and MathF import, which the runtime exports; eng/build-netwasm-runtime.sh).
             Add(request.RuntimeLayoutPath, JsonSerializer.SerializeToUtf8Bytes(new
             {
-                schemaVersion = 2,
+                schemaVersion = 3,
                 target,
                 applicationStaticDataEnd = result.StaticDataEnd,
+                managedExecutableEntryPoint = (object?)null,
+                runtimeFeatures = result.RuntimeFeatures.Order(StringComparer.Ordinal).ToArray(),
+                importModules = Array.Empty<string>(),
                 nativeImports = result.NativeImports.Select(static import => new
                 {
                     libraryName = import.LibraryName,

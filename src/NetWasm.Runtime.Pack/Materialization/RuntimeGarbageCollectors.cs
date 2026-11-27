@@ -26,12 +26,10 @@ internal static class RuntimeGarbageCollectors
         value is Compact or NetWasm or NetWasmGen or Bump;
 
     // NetWasmGen finds an older object's newer ones only through the stores the program records, so with a
-    // program compiled without them it would free objects still in use. A program that says nothing of its
-    // features comes from a compiler that knew no such collector.
+    // program compiled without them it would free objects still in use.
     public static void RequireProgramFor(string garbageCollector, ImmutableArray<string> runtimeFeatures)
     {
-        if (garbageCollector == NetWasmGen &&
-            (runtimeFeatures.IsDefault || !runtimeFeatures.Contains(ReferenceWriteBarrierFeature)))
+        if (garbageCollector == NetWasmGen && !runtimeFeatures.Contains(ReferenceWriteBarrierFeature))
             throw new InvalidOperationException(UnrecordedWritesMessage);
     }
 }

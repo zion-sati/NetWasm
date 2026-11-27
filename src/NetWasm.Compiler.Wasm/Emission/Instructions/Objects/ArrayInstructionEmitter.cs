@@ -273,7 +273,8 @@ internal sealed class ArrayInstructionEmitter(
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
         EmitElementTypeId(code, arrayLocal);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.IsAssignable)))));
+        var selection = request.Target.RuntimeImportSelection;
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(selection.IsAssignable, selection)))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         exceptions.Emit(code, ManagedExceptionKind.ArrayTypeMismatch, request.Context.ManagedThrowFunction);

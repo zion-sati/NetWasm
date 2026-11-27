@@ -11,20 +11,9 @@ namespace NetWasm.Toolchain.Prerequisites;
 
 public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
 {
-    private static readonly ImmutableArray<string> RequiredRoles =
-        ["node", "wasm-ld", "wasm-opt"];
-
-    // wasm-merge, which packages carried until the compiler merged modules itself; an
-    // older package's copy is verified with the rest and not used.
-    private const string LegacyMergeRole = "wasm-merge";
-
-    // nwc, the NetWasm compiler, which packages carry from the release that
-    // moved it out of the compiler tasks; a project names one for older tools.
-    private const string CompilerRole = "nwc";
-
-    // The native wasm-tools, which packages carry from the release that added it;
-    // the build runs the toolchain's WASI wasm-tools without it.
-    private const string WasmToolsRole = "wasm-tools";
+    // Node, the linker, Binaryen, nwc (the NetWasm compiler) and the native wasm-tools.
+    private static readonly ImmutableArray<string> Roles =
+        ["node", "nwc", "wasm-ld", "wasm-opt", "wasm-tools"];
 
     private static readonly ImmutableArray<string> WasmToolsNotices =
     [
@@ -86,26 +75,12 @@ public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
         }
 
         var suffix = request.HostRid.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : string.Empty;
-        var carriesCompiler = manifest.Roles.ContainsKey(CompilerRole);
-        var carriesWasmTools = manifest.Roles.ContainsKey(WasmToolsRole);
-        if (carriesWasmTools != (manifest.WasmToolsVersion is not null) ||
-            carriesWasmTools && !Version.TryParse(manifest.WasmToolsVersion, out _))
+        if (!Version.TryParse(manifest.WasmToolsVersion, out _))
         {
             throw new InvalidDataException("Host-tools package declares an invalid wasm-tools version.");
         }
-        ImmutableArray<string> roles =
-        [
-            .. RequiredRoles,
-            .. carriesWasmTools ? [WasmToolsRole] : ImmutableArray<string>.Empty,
-            .. carriesCompiler ? [CompilerRole] : ImmutableArray<string>.Empty,
-        ];
-        ImmutableArray<string> declared =
-        [
-            .. roles,
-            .. manifest.Roles.ContainsKey(LegacyMergeRole) ? [LegacyMergeRole] : ImmutableArray<string>.Empty,
-        ];
-        if (manifest.Roles.Count != declared.Length ||
-            declared.Any(role => !manifest.Roles.TryGetValue(role, out var path) ||
+        if (manifest.Roles.Count != Roles.Length ||
+            Roles.Any(role => !manifest.Roles.TryGetValue(role, out var path) ||
                 path != $"tools/bin/{role}{suffix}"))
         {
             throw new InvalidDataException("Host-tools package role map is incomplete or unexpected.");
@@ -115,15 +90,8 @@ public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
         expectedPaths.UnionWith(["LICENSE.txt", "README.md", "licenses/Node-LICENSE",
             "licenses/LLVM-LICENSE.txt", "licenses/LLD-LICENSE.txt",
             "licenses/LLVM-BLAKE3-LICENSE", "licenses/LLVM-ThirdParty-NOTICES.txt",
-            "licenses/Binaryen-LICENSE"]);
-        if (carriesCompiler)
-        {
-            expectedPaths.UnionWith(["licenses/NetWasm-LICENSE.txt", "licenses/nwc-THIRD-PARTY-NOTICES.txt"]);
-        }
-        if (carriesWasmTools)
-        {
-            expectedPaths.UnionWith(WasmToolsNotices);
-        }
+            "licenses/Binaryen-LICENSE", "licenses/NetWasm-LICENSE.txt", "licenses/nwc-THIRD-PARTY-NOTICES.txt"]);
+        expectedPaths.UnionWith(WasmToolsNotices);
         if (request.HostRid.StartsWith("linux-", StringComparison.Ordinal))
         {
             expectedPaths.UnionWith(["tools/bin/libatomic.so.1",
@@ -156,7 +124,7 @@ public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
             {
                 throw new InvalidDataException($"Host-tools package executable lacks permission: {file.RelativePath}");
             }
-            foreach (var role in roles)
+            foreach (var role in Roles)
             {
                 if (manifest.Roles[role] == file.RelativePath)
                 {

@@ -10,6 +10,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Emission.StructResults;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
@@ -34,7 +35,8 @@ internal sealed class SharedVirtualDispatchFunctionEmitter(
     IImplicitExceptionEmitter exceptions,
     IStaticInitializationEmitter initialization,
     IMethodInitializationTriggerClassifier initializationTriggers,
-    IGeneratedFunctionWriterFactory writers) : ISharedVirtualDispatchFunctionEmitter
+    IGeneratedFunctionWriterFactory writers,
+    IStructResultClassifier? structResults = null) : ISharedVirtualDispatchFunctionEmitter
 {
     public byte[] Emit(
         SharedVirtualDispatchPlan dispatch,
@@ -46,10 +48,14 @@ internal sealed class SharedVirtualDispatchFunctionEmitter(
         ArgumentNullException.ThrowIfNull(functionIndices);
         var declaration = dispatch.Declaration;
         var parameterCount = functionTypes.Resolve(declaration).Parameters.Length;
-        var receiver = declaration.Signature.ReturnSignatureType.StackKind == CliValueKind.ValueType ? 1 : 0;
+        // A buffer for a value type the declaration returns comes before the receiver; results need none, and the
+        // target's results pass through the return.
+        var returned = declaration.Signature.ReturnSignatureType;
+        var receiver = returned.StackKind == CliValueKind.ValueType && structResults?.Classify(returned) is null ? 1 : 0;
         var typeIdLocal = parameterCount;
-        var plan = plans.Build(declaration, dispatch.Targets);
-        var dispatchCases = cases.Plan(plan.CheckedTargets, dispatch.Targets);
+        // The shared body serves unbounded calls on object: its targets are every allocated type.
+        var plan = plans.Build(declaration, dispatch.Targets, exhaustive: true);
+        var dispatchCases = cases.Plan(plan.CheckedTargets, dispatch.Targets, exhaustive: true);
 
         var output = writers.Create();
         var code = output.Instructions;

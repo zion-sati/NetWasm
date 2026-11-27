@@ -41,14 +41,20 @@ internal sealed class AttributeProvenanceAnalyzer(
         var entries = new Dictionary<int, ProofState>();
         var pending = new Queue<int>();
         var results = ImmutableDictionary.CreateBuilder<int, ImmutableArray<AttributeValueProof>>();
-        Merge(graph.Entry.Index, new([], new AttributeValueProof[body.Locals.Length]));
+        var values = new BlockLocalValues<AttributeValueProof>(graph.Blocks, body.Locals.Length, _ => true);
+        // The locals' proofs are a LocalValueTrie the blocks share: an array of them all at every block grew with the
+        // blocks times the locals that cross them.
+        var runtimeTypes = typeValues is not null;
+        Func<AttributeValueProof, AttributeValueProof, AttributeValueProof> meet =
+            (existing, incoming) => Joined(existing, incoming, runtimeTypes);
+        Merge(graph.Entry.Index, new([], LocalValueTrie<AttributeValueProof>.Empty(values.Crossing)));
 
         while (pending.TryDequeue(out var blockIndex))
         {
             var block = graph.GetBlock(blockIndex);
             var entry = entries[blockIndex];
             var stack = entry.Stack.ToList();
-            var locals = (AttributeValueProof[])entry.Locals.Clone();
+            var locals = entry.Locals;
             bool? condition = null;
             bool? filterAccepted = null;
             for (var index = 0; index < block.Instructions.Length; index++)
@@ -62,10 +68,10 @@ internal sealed class AttributeProvenanceAnalyzer(
                 {
                     foreach (var successor in graph.ExceptionalSuccessors[blockIndex])
                     {
-                        var exceptionalLocals = (AttributeValueProof[])locals.Clone();
+                        var exceptionalLocals = locals;
                         foreach (var local in unwindWrites)
                         {
-                            exceptionalLocals[local] = default;
+                            exceptionalLocals = values.Forget(exceptionalLocals, local);
                         }
                         Merge(successor, new(
                             new AttributeValueProof[controlFlow.EntryStacks[successor].Length], exceptionalLocals));
@@ -88,8 +94,9 @@ internal sealed class AttributeProvenanceAnalyzer(
                     : graph.Successors[blockIndex].IsEmpty
                         ? 0
                         : controlFlow.EntryStacks[graph.Successors[blockIndex][0]].Length;
-                Transfer(instruction, outgoingCount, stack, locals);
+                Transfer(instruction, outgoingCount, stack, ref locals);
             }
+            values.EndBlock();
 
             if (block.Terminator.Operation == CilOperation.EndFilter && filterAccepted != false)
             {
@@ -123,21 +130,24 @@ internal sealed class AttributeProvenanceAnalyzer(
         {
             if (!entries.TryGetValue(block, out var existing))
             {
-                entries.Add(block, new((AttributeValueProof[])incoming.Stack.Clone(),
-                    (AttributeValueProof[])incoming.Locals.Clone()));
+                entries.Add(block, new((AttributeValueProof[])incoming.Stack.Clone(), incoming.Locals));
                 pending.Enqueue(block);
                 return;
             }
-            var changed = Join(existing.Stack, incoming.Stack, typeValues is not null) |
-                Join(existing.Locals, incoming.Locals, typeValues is not null);
-            if (changed)
+            var stackChanged = Join(existing.Stack, incoming.Stack, runtimeTypes);
+            var locals = existing.Locals.Meet(incoming.Locals, meet);
+            if (!ReferenceEquals(locals, existing.Locals))
+            {
+                entries[block] = existing with { Locals = locals };
+            }
+            if (stackChanged || !ReferenceEquals(locals, existing.Locals))
             {
                 pending.Enqueue(block);
             }
         }
 
         void Transfer(CilInstruction instruction, int outgoingCount,
-            List<AttributeValueProof> stack, AttributeValueProof[] locals)
+            List<AttributeValueProof> stack, ref LocalValueTrie<AttributeValueProof> locals)
         {
             var operation = instruction.Operation;
             switch (operation)
@@ -155,6 +165,44 @@ internal sealed class AttributeProvenanceAnalyzer(
                     return;
                 case CilOperation.LoadArgument:
                     stack.Add(Typed(ArgumentType(((CilOperand.Index)instruction.Operand).Value)));
+                    return;
+                case CilOperation.LoadArgumentAddress:
+                    stack.Add(AddressOf(ArgumentType(((CilOperand.Index)instruction.Operand).Value)));
+                    return;
+                case CilOperation.LoadLocalAddress:
+                    stack.Add(AddressOf(body.LocalSignatureTypes.ElementAtOrDefault(((CilOperand.Index)instruction.Operand).Value)));
+                    return;
+                case CilOperation.LoadStaticFieldAddress when instruction.Operand is CilOperand.FieldInstance staticFieldAddress:
+                    stack.Add(AddressOf(staticFieldAddress.Value.FieldType));
+                    return;
+                case CilOperation.LoadStaticFieldAddress when instruction.Operand is CilOperand.Entity staticFieldAddressEntity:
+                    stack.Add(AddressOf(FieldType(staticFieldAddressEntity.Key)));
+                    return;
+                case CilOperation.LoadFieldAddress when instruction.Operand is CilOperand.FieldInstance fieldAddress:
+                    stack[^1] = AddressOf(fieldAddress.Value.FieldType);
+                    return;
+                case CilOperation.LoadFieldAddress when instruction.Operand is CilOperand.Entity fieldAddressEntity:
+                    stack[^1] = AddressOf(FieldType(fieldAddressEntity.Key));
+                    return;
+                case CilOperation.LoadArrayElementReference:
+                    var elements = stack[^2].Kind;
+                    stack.RemoveRange(stack.Count - 2, 2);
+                    stack.Add(elements == AttributeValueKind.RuntimeTypeArray ? new(AttributeValueKind.RuntimeType) : default);
+                    return;
+                case CilOperation.LoadArrayElement:
+                    stack.RemoveRange(stack.Count - 2, 2);
+                    stack.Add(typeValues is null ? default : Typed(types.Resolve(instruction, body.MethodInstance)));
+                    return;
+                case CilOperation.LoadArrayElementAddress:
+                    stack.RemoveRange(stack.Count - 2, 2);
+                    stack.Add(typeValues is null ? default : AddressOf(types.Resolve(instruction, body.MethodInstance)));
+                    return;
+                case CilOperation.LoadObject:
+                    // ldobj names the loaded type; ldind.ref names only an object, so its address says what it holds.
+                    var loadedType = typeValues is null ? default : Typed(types.Resolve(instruction, body.MethodInstance));
+                    stack[^1] = loadedType.Kind == AttributeValueKind.Unknown && stack[^1].Kind == AttributeValueKind.RuntimeTypeAddress
+                        ? new(AttributeValueKind.RuntimeType)
+                        : loadedType;
                     return;
                 case CilOperation.LoadStaticField when instruction.Operand is CilOperand.FieldInstance staticField:
                     stack.Add(Typed(staticField.Value.FieldType));
@@ -176,11 +224,11 @@ internal sealed class AttributeProvenanceAnalyzer(
                     return;
                 case CilOperation.LoadLocal:
                     var loaded = ((CilOperand.Index)instruction.Operand).Value;
-                    var held = addressedLocals.Contains(loaded) ? default : locals[loaded];
+                    var held = addressedLocals.Contains(loaded) ? default : values.Read(locals, loaded);
                     stack.Add(held.Kind == AttributeValueKind.Unknown ? Typed(body.LocalSignatureTypes.ElementAtOrDefault(loaded)) : held);
                     return;
                 case CilOperation.StoreLocal:
-                    locals[((CilOperand.Index)instruction.Operand).Value] = stack[^1];
+                    locals = values.Write(locals, ((CilOperand.Index)instruction.Operand).Value, stack[^1]);
                     stack.RemoveAt(stack.Count - 1);
                     return;
                 case CilOperation.CastClass:
@@ -201,7 +249,7 @@ internal sealed class AttributeProvenanceAnalyzer(
                     {
                         foreach (var local in WrittenLocals(region.HandlerOffset, region.HandlerOffset + region.HandlerLength))
                         {
-                            locals[local] = default;
+                            locals = values.Forget(locals, local);
                         }
                     }
                     foreach (var region in crossedFinally)
@@ -286,8 +334,27 @@ internal sealed class AttributeProvenanceAnalyzer(
         // A field of a non-generic type, which its definition types.
         CliTypeIdentity? FieldType(EntityKey key) => fieldTypes?.GetField(key).SignatureType;
 
-        AttributeValueProof Typed(CliTypeIdentity? type) =>
-            type is not null && typeValues?.IsTypeValue(type) == true ? new(AttributeValueKind.RuntimeType) : default;
+        // A Type, an array of Types or an address of a Type, by its static type.
+        AttributeValueProof Typed(CliTypeIdentity? type)
+        {
+            if (typeValues is null || Unmodified(type) is not { } unmodified)
+            {
+                return default;
+            }
+            return unmodified.Shape switch
+            {
+                CliTypeShape.SzArray => IsTypeValue(unmodified.ElementType) ? new(AttributeValueKind.RuntimeTypeArray) : default,
+                CliTypeShape.ManagedByReference => AddressOf(unmodified.ElementType),
+                _ => typeValues.IsTypeValue(unmodified) ? new(AttributeValueKind.RuntimeType) : default,
+            };
+        }
+
+        // The address of a location of the given static type.
+        AttributeValueProof AddressOf(CliTypeIdentity? type) =>
+            IsTypeValue(type) ? new(AttributeValueKind.RuntimeTypeAddress) : default;
+
+        bool IsTypeValue(CliTypeIdentity? type) =>
+            typeValues is not null && Unmodified(type) is { } unmodified && typeValues.IsTypeValue(unmodified);
 
         CliTypeIdentity? ArgumentType(int index)
         {
@@ -310,21 +377,34 @@ internal sealed class AttributeProvenanceAnalyzer(
         var changed = false;
         for (var index = 0; index < existing.Length; index++)
         {
-            if (existing[index].Kind != AttributeValueKind.Unknown && existing[index] != incoming[index])
-            {
-                // Types (or nulls) of different kinds still meet as a Type the analysis cannot name.
-                var joined = runtimeTypes && TypeLike(existing[index]) && TypeLike(incoming[index])
-                    ? new AttributeValueProof(AttributeValueKind.RuntimeType)
-                    : default;
-                changed |= existing[index] != joined;
-                existing[index] = joined;
-            }
+            var joined = Joined(existing[index], incoming[index], runtimeTypes);
+            changed |= existing[index] != joined;
+            existing[index] = joined;
         }
         return changed;
+    }
+
+    // What two paths' proofs of one value meet to: the same proof, or nothing known (the default), except that types
+    // (or nulls) of different kinds still meet as a Type the analysis cannot name.
+    private static AttributeValueProof Joined(AttributeValueProof existing, AttributeValueProof incoming, bool runtimeTypes) =>
+        existing.Kind == AttributeValueKind.Unknown || existing == incoming
+            ? existing
+            : runtimeTypes && TypeLike(existing) && TypeLike(incoming)
+                ? new AttributeValueProof(AttributeValueKind.RuntimeType)
+                : default;
+
+    // A type without its custom modifiers (a ref readonly return's modreq).
+    private static CliTypeIdentity? Unmodified(CliTypeIdentity? type)
+    {
+        while (type is { Shape: CliTypeShape.Modified })
+        {
+            type = type.ElementType;
+        }
+        return type;
     }
 
     private static bool TypeLike(AttributeValueProof proof) =>
         proof.Kind is AttributeValueKind.Type or AttributeValueKind.RuntimeType or AttributeValueKind.Null;
 
-    private sealed record ProofState(AttributeValueProof[] Stack, AttributeValueProof[] Locals);
+    private sealed record ProofState(AttributeValueProof[] Stack, LocalValueTrie<AttributeValueProof> Locals);
 }

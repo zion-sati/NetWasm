@@ -14,11 +14,15 @@ internal sealed class VirtualDispatchEmissionPlanBuilder :
 
     public VirtualDispatchEmissionPlan Build(
         MethodInstanceModel declaration,
-        ImmutableArray<DispatchTargetModel> targets)
+        ImmutableArray<DispatchTargetModel> targets,
+        bool exhaustive)
     {
         ArgumentNullException.ThrowIfNull(declaration);
 
-        if (declaration.Definition.IsAbstract ||
+        // Fail loudly: a receiver the flow did not find is an analysis gap, so it throws rather than running object's
+        // implementation in place of its own.
+        if (!exhaustive ||
+            declaration.Definition.IsAbstract ||
             declaration.DeclaringType.CanonicalName != ObjectCanonicalName)
         {
             return new(targets, null);

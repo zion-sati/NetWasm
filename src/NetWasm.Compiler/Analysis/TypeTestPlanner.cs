@@ -47,6 +47,22 @@ internal sealed class TypeTestPlanner(
             relationshipKeys.Resolve(target) is { Unbounded: false } keys
                 ? (byKey.GetValueOrDefault(keys.Own) ?? []).Concat(unbounded)
                 : allocated;
+        // The allocated types a target admits depend on the target alone, and a program tests the same targets at
+        // many sites (every cast to object or to a common interface), so each target's are classified once and its
+        // sites share them.
+        var matching = new Dictionary<CliTypeIdentity, ImmutableArray<CliTypeIdentity>>();
+        ImmutableArray<CliTypeIdentity> Matching(CliTypeIdentity target)
+        {
+            if (!matching.TryGetValue(target, out var types))
+            {
+                matching.Add(target, types = [.. Candidates(target)
+                    .Where(allocatedType => relationships
+                        .Classify(allocatedType, target)
+                        .IsAssignmentCompatible)
+                    .OrderBy(allocatedType => allocatedType.CanonicalName, StringComparer.Ordinal)]);
+            }
+            return types;
+        }
         return methods
             .SelectMany(method => method.Body.Instructions
                 .Where(instruction => instruction.Operation is
@@ -70,12 +86,7 @@ internal sealed class TypeTestPlanner(
                 candidate.Method.CanonicalName,
                 candidate.Instruction.Offset,
                 candidate.Target,
-                Candidates(candidate.MembershipTarget)
-                    .Where(allocatedType => relationships
-                        .Classify(allocatedType, candidate.MembershipTarget)
-                        .IsAssignmentCompatible)
-                    .OrderBy(allocatedType => allocatedType.CanonicalName, StringComparer.Ordinal)
-                    .ToImmutableArray()))
+                Matching(candidate.MembershipTarget)))
             .ToImmutableDictionary(site => site.Key, StringComparer.Ordinal);
     }
 }

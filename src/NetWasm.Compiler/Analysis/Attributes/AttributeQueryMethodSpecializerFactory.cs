@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Attributes;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis.Attributes;
@@ -30,7 +31,7 @@ internal sealed class AttributeQueryMethodSpecializerFactory(
         ITypeOperandResolver types,
         ISymbolFormatter symbols)
     {
-        if (!metadata.Types.Any(type => type.FullName == "System.Attribute")) return new(specializer, EmptyProgramReducer.Instance);
+        if (!metadata.Types.Any(type => type.FullName == "System.Attribute")) return new(specializer, EmptyProgramReducer.Instance, NoUnplannedAttributeQueries.Instance);
 
         var attributeType = typeFinder.FindType("System.Attribute");
         var typeType = typeFinder.FindType("System.Type");
@@ -44,12 +45,20 @@ internal sealed class AttributeQueryMethodSpecializerFactory(
             .SingleOrDefault(method => method.Name == "Of" && method.IsStatic);
         var typeAssembly = typeType.Methods.Select(methodRepository.GetMethod)
             .SingleOrDefault(method => method.Name == "get_Assembly" && !method.IsStatic);
+        // Module queries need Type.Module and Assembly.ManifestModule, which name a known assembly's module.
+        var moduleType = metadata.Types.SingleOrDefault(type => type.Key.Assembly == attributeType.Key.Assembly &&
+            type.FullName == "System.Reflection.Module");
+        var typeModule = typeType.Methods.Select(methodRepository.GetMethod)
+            .SingleOrDefault(method => method.Name == "get_Module" && !method.IsStatic);
+        var manifestModule = assemblyType?.Methods.Select(methodRepository.GetMethod)
+            .SingleOrDefault(method => method.Name == "get_ManifestModule" && !method.IsStatic);
         var assemblies = assemblyType is null || assemblyOf is null || typeAssembly is null
             ? null
-            : new AttributeAssemblySources(typeDefinitions, assemblyOf.Key, typeAssembly.Key);
+            : new AttributeAssemblySources(typeDefinitions, assemblyOf.Key, typeAssembly.Key, typeModule?.Key,
+                manifestModule?.Key);
         var queryOwners = metadata.Types
             .Where(type => type.Key.Assembly == attributeType.Key.Assembly && AttributeQueryApis.OwnerTypes.Contains(type.FullName))
-            .Where(type => type.FullName != "System.Reflection.Assembly" || assemblies is not null)
+            .Where(type => type.FullName is not ("System.Reflection.Assembly" or "System.Reflection.Module") || assemblies is not null)
             .ToImmutableDictionary(type => type.Key, type => type.FullName switch
             {
                 "System.Attribute" => AttributeQueryApiKind.AttributeStatic,
@@ -64,11 +73,20 @@ internal sealed class AttributeQueryMethodSpecializerFactory(
         var ambiguity = typeFinder.FindType("System.Reflection.AmbiguousMatchException").Methods
             .Select(methodRepository.GetMethod)
             .Single(method => method.Name == ".ctor" && !method.IsStatic && method.Signature.ParameterTypes.IsEmpty);
-        var synthesizedAttributes = metadata.Types
-            .Where(type => type.Key.Assembly == attributeType.Key.Assembly && type.FullName is
-                "System.SerializableAttribute" or "System.Runtime.InteropServices.ComImportAttribute" or
-                "System.Runtime.InteropServices.StructLayoutAttribute")
-            .Select(type => typeIdentities.GetTypeIdentity(type.Key)).ToImmutableHashSet();
+        var objectIdentity = typeIdentities.GetTypeIdentity(typeFinder.FindType("System.Object").Key);
+        var attributeIdentity = typeIdentities.GetTypeIdentity(attributeType.Key);
+        // The attributes desktop adds to a type's own from its flags, each built by its parameterless constructor.
+        AttributeConstructionPlan? Pseudo(string name)
+        {
+            var type = metadata.Types.SingleOrDefault(type => type.Key.Assembly == attributeType.Key.Assembly && type.FullName == name);
+            var constructor = type?.Methods.Select(methodRepository.GetMethod)
+                .SingleOrDefault(method => method.Name == ".ctor" && !method.IsStatic && method.Signature.ParameterTypes.IsEmpty);
+            return type is null || constructor is null ? null : new(typeIdentities.GetTypeIdentity(type.Key),
+                methodInstances.ResolveMethodInstance(constructor.Key.Assembly, constructor.Key.MetadataToken, constructor.Name, 0),
+                [], []);
+        }
+        var pseudoAttributes = new PseudoAttributeSelector(typeDefinitions, objectIdentity, attributeIdentity,
+            Pseudo("System.SerializableAttribute"), Pseudo("System.Runtime.InteropServices.ComImportAttribute"));
         var attributeValues = new CustomAttributeValueDecoderFactory().Create(metadata,
             typeDefinitions, typeIdentities, methodInstances, typeType.Key);
         var attributeDescriptors = new CustomAttributeDescriptorReaderFactory().Create(metadata,
@@ -84,7 +102,9 @@ internal sealed class AttributeQueryMethodSpecializerFactory(
             .Select(methodRepository.GetMethod).Single(method => method.Name == "ApplySetter");
         var typeIdentity = typeIdentities.GetTypeIdentity(typeType.Key);
         var classifier = new AttributeQueryClassifier(queryOwners, typeIdentities.GetTypeIdentity(memberType.Key),
-            typeIdentity, assemblies is null ? null : typeIdentities.GetTypeIdentity(assemblyType!.Key));
+            typeIdentity, assemblies is null ? null : typeIdentities.GetTypeIdentity(assemblyType!.Key),
+            objectIdentity, attributeIdentity,
+            assemblies is null || moduleType is null ? null : typeIdentities.GetTypeIdentity(moduleType.Key));
         var graphs = new ControlFlowGraphBuilderFactory().Create();
         var stacks = new TypedStackValidatorFactory(new StackTypeCompatibilityValidator())
             .Create(typeRepository, fieldRepository, methodRepository);
@@ -93,13 +113,13 @@ internal sealed class AttributeQueryMethodSpecializerFactory(
                 typeDefinitions, typeRepository, typeType.Key),
             unwrapMethods, nullableDefinition, assemblies, new AttributeTypeValueClassifier(relationships, typeIdentity),
             fieldRepository);
-        var resolver = new AttributeQueryResolver(typeDefinitions, relationships,
-            typeIdentities.GetTypeIdentity(attributeType.Key), synthesizedAttributes);
+        var resolver = new AttributeQueryResolver(typeDefinitions, relationships, attributeIdentity, objectIdentity);
         var planner = new AttributeQueryPlanner(attributeMatches, new AttributeConstructionPlanner(methodInstances,
             attributeValues, new CustomAttributeMemberResolverFactory(materializations).Create(metadata, typeDefinitions,
                 typeIdentities, typeRepository, fieldRepository, methodRepository, methodInstances),
             new AttributeArgumentDecoder(typeIdentity), baseTypes),
-            new AssemblyAttributeDescriptorReaderFactory().Create(metadata, typeDefinitions, typeIdentities), attributeTypes);
+            new AssemblyAttributeDescriptorReaderFactory().Create(metadata, typeDefinitions, typeIdentities), attributeTypes,
+            pseudoAttributes, new ModuleAttributeDescriptorReaderFactory().Create(metadata, typeDefinitions, typeIdentities));
         var fragments = new AttributeQueryCilBuilder(new AttributeConstructionCilBuilder(
             new AttributeSetterBindingResolver(methodInstances, setterDelegate.Key, setterInvoke.Key)));
         var bodies = new AttributeQueryBodyRewriter();
@@ -107,13 +127,25 @@ internal sealed class AttributeQueryMethodSpecializerFactory(
         var argumentNull = Constructor("System.ArgumentNullException", 1);
         var ambiguityConstructor = methodInstances.ResolveMethodInstance(ambiguity.Key.Assembly, ambiguity.Key.MetadataToken,
             ambiguity.Name, 0);
+        var runtimeTypeQueries = new RuntimeTypeAttributeQueryAcceptor(
+            new RuntimeTypeAttributeQueryResolver(resolver, objectIdentity, typeDefinitions, objectIdentity, attributeIdentity),
+            new RuntimeTypeAttributeCandidateSelector(planner));
+        var answers = new AttributeQueryCompileTimeAnswerer(resolver, planner, fragments, ambiguityConstructor);
         return new(
             new AttributeQueryMethodSpecializer(specializer, new AttributeQueryLowerer(calls, classifier, graphs, stacks,
-                provenance, resolver, planner, fragments, bodies, symbols, ambiguityConstructor)),
-            new RuntimeTypeAttributeQueryReducer(calls, classifier, graphs, stacks, provenance,
-                new RuntimeTypeAttributeQueryResolver(resolver, typeIdentities.GetTypeIdentity(typeFinder.FindType("System.Object").Key)),
-                new RuntimeTypeAttributeCandidateSelector(planner), new RuntimeTypeAttributeDispatchBuilder(fragments),
-                bodies, ambiguityConstructor, nullReference, argumentNull));
+                provenance, answers, bodies, symbols)),
+            new RuntimeTypeAttributeQueryReducer(calls, classifier, graphs, stacks, provenance, runtimeTypeQueries, answers,
+                new RuntimeTypeAttributeDispatchBuilder(fragments), bodies, ambiguityConstructor, nullReference, argumentNull),
+            new UnplannedAttributeQueryFinder(calls, classifier, provenance,
+                new AttributeQueryFallbackClassifier(resolver, planner, runtimeTypeQueries, typeDefinitions, relationships,
+                    attributeIdentity, objectIdentity,
+                    assemblyType is null ? null : typeIdentities.GetTypeIdentity(assemblyType.Key),
+                    moduleType is null ? null : typeIdentities.GetTypeIdentity(moduleType.Key),
+                    metadata.Types.SingleOrDefault(type => type.Key.Assembly == attributeType.Key.Assembly &&
+                        type.FullName == "System.Reflection.ParameterInfo") is { } parameterInfo
+                        ? typeIdentities.GetTypeIdentity(parameterInfo.Key)
+                        : null),
+                new UnplannedAttributeQueryDescriber(symbols)));
 
         // The exception constructor a run-time Type query throws through on a null target: NullReferenceException() and
         // ArgumentNullException(string paramName) are each their type's only constructor of that arity.

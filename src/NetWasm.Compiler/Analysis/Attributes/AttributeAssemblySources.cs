@@ -7,11 +7,14 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.Analysis.Attributes;
 
 // The calls whose result is an assembly the compile knows: RuntimeAssembly.Of<T>(), which Assembly.GetExecutingAssembly()
-// becomes (ExecutingAssemblyCallRewriter), and Type.Assembly on a type the analysis has proven.
+// becomes (ExecutingAssemblyCallRewriter), and Type.Assembly on a type the analysis has proven; and those whose result
+// is such an assembly's module: Type.Module and Assembly.ManifestModule.
 internal sealed class AttributeAssemblySources(
     ITypeDefinitionResolver definitions,
     EntityKey assemblyOf,
-    EntityKey typeAssembly) : IAttributeAssemblySources
+    EntityKey typeAssembly,
+    EntityKey? typeModule = null,
+    EntityKey? manifestModule = null) : IAttributeAssemblySources
 {
     public AttributeValueProof? Prove(CilOperation operation, MethodInstanceModel method, List<AttributeValueProof> stack)
     {
@@ -23,6 +26,17 @@ internal sealed class AttributeAssemblySources(
             stack[^1] is { Kind: AttributeValueKind.Type, Type: { } type })
         {
             return AssemblyOf(type);
+        }
+        if (operation is CilOperation.Call or CilOperation.CallVirtual && method.Definition.Key == typeModule &&
+            stack[^1] is { Kind: AttributeValueKind.Type, Type: { } moduleType } &&
+            AssemblyOf(moduleType) is { Assembly: { } owner })
+        {
+            return new(AttributeValueKind.Module, Assembly: owner);
+        }
+        if (operation is CilOperation.Call or CilOperation.CallVirtual && method.Definition.Key == manifestModule &&
+            stack[^1] is { Kind: AttributeValueKind.Assembly, Assembly: { } manifest })
+        {
+            return new(AttributeValueKind.Module, Assembly: manifest);
         }
         return null;
     }

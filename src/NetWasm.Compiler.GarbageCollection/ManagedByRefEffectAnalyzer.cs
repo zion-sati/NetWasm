@@ -622,7 +622,8 @@ public sealed class ManagedByRefEffectAnalyzer(
             RuntimeIntrinsic.UnsafeAs or
             RuntimeIntrinsic.UnsafeAsRef or
             RuntimeIntrinsic.UnsafeAsRefManaged or
-            RuntimeIntrinsic.UnsafeAddByteOffset;
+            RuntimeIntrinsic.UnsafeAddByteOffset or
+            RuntimeIntrinsic.NonZeroAddress;
 
     private static bool IsProvedReadOnlyConsumer(CilOperation operation) =>
         operation is CilOperation.Nop or CilOperation.Pop or

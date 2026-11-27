@@ -19,6 +19,9 @@ import sys
 from pathlib import Path
 
 FAMILIES = [
+    # First, since NetWasm's own async workloads would otherwise count as NetWasm workloads.
+    ('Async', lambda case: case.startswith(('System.Threading.', 'System.IO.', 'NetWasm.Workloads.Async.',
+                                            'Microsoft.AspNetCore.Server.Kestrel.Performance.PipeThroughputBenchmark.'))),
     ('NetWasm workloads', lambda case: case.startswith('NetWasm.Workloads.')),
     ('Runtime', lambda case: not case.startswith('System.') or case.startswith('System.Tests.')),
     ('Math', lambda case: case.startswith('System.MathBenchmarks.')),

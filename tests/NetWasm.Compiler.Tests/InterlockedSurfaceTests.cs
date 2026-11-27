@@ -56,12 +56,9 @@ public sealed class InterlockedSurfaceTests
             }
             """);
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "EntryPoint", "Run", []));
-        var methods = result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values)
-            .Select(body => body.Method)
-            .Where(method => method.DeclaringType.FullName == "System.Threading.Interlocked");
-        // At most Increment's own path; inlining may fold some of it into the caller.
-        Assert.Subset(IncrementMembers.ToHashSet(StringComparer.Ordinal),
-            methods.Select(method => method.Definition.Name).ToHashSet(StringComparer.Ordinal));
+        // Increment is the load, add and store it is on one thread: no Interlocked method comes with it.
+        Assert.DoesNotContain(result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values),
+            body => body.Method.DeclaringType.FullName == "System.Threading.Interlocked");
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
             assets.Directory, 41, WasmTarget.Wasm32, result.StaticDataEnd));
     }
@@ -162,6 +159,17 @@ public sealed class InterlockedSurfaceTests
                     {
                     }
 
+                    // A runtime handle is a struct the size of a native int, neither a primitive nor an enum.
+                    var handle = default(RuntimeMethodHandle);
+                    try
+                    {
+                        Interlocked.Exchange(ref handle, default);
+                        ok = false;
+                    }
+                    catch (NotSupportedException)
+                    {
+                    }
+
                     return ok && pair.Left == 0 ? input + 1 : -1;
                 }
             }
@@ -170,8 +178,6 @@ public sealed class InterlockedSurfaceTests
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
             assets.Directory, 41, WasmTarget.Wasm32, result.StaticDataEnd));
     }
-
-    private static readonly string[] IncrementMembers = ["Add", "Increment", "ValidateLocation"];
 
     // Frozen from NETStandard.Library.Ref 2.1.0; And/Or are explicitly newer additions.
     private static readonly string[] ExpectedMembers =

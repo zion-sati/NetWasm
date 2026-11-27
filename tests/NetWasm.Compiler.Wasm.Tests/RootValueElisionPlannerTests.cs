@@ -302,6 +302,24 @@ public sealed class RootValueElisionPlannerTests
         Assert.Equal(0, RootValueElisionPlanner.KeptStackPositions(Method(instructions), instructions, 0));
     }
 
+    // A root a throw-only point left unpublished (its slot known null there) is not in its slot afterwards, so the next
+    // point that collects stores it; one that point published is skipped at the next as usual.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ARootLeftUnpublishedIsStoredAtTheNextPointThatCollects(bool deferred)
+    {
+        var context = Context([new(0, [Source], []) { Deferrable = [Source] }, new(1, [Source], [])]) with
+        {
+            RootClearElisions = ImmutableDictionary<(int Offset, bool ConstructorCall), ImmutableHashSet<int>>.Empty
+                .Add((0, false), deferred ? [0] : []),
+        };
+
+        var plan = _planner.Plan(Method([I(0, CilOperation.Call), I(1, CilOperation.Call)]), context);
+
+        Assert.Equal(!deferred, plan[1].Contains(0));
+    }
+
     private static MethodEmissionContext Context(IEnumerable<SafepointRootMap> points, RootSource? source = null) =>
         CreateMethodEmissionContext() with
         {

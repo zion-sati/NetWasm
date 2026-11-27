@@ -49,17 +49,32 @@ public sealed class PureCallReuserTests
     {
         var body = Shape(shape);
 
-        var rewritten = new PureCallReuser(new OperandCalledMethodResolver(), enabled: true).Rewrite(body);
+        var depths = new RecordingDepths();
+        var rewritten = new PureCallReuser(new OperandCalledMethodResolver(), depths, enabled: true).Rewrite(body);
 
         Assert.Equal(calls, rewritten.Instructions.Count(static instruction => instruction.Operation == CilOperation.Call));
         Assert.Equal(calls == Calls(body), ReferenceEquals(body, rewritten));
+        // A rewritten body's maximum stack is fitted, as its dup can reach past it; an unchanged one is not.
+        Assert.Equal(ReferenceEquals(body, rewritten) ? 0 : 1, depths.Fitted);
         if (!ReferenceEquals(body, rewritten))
         {
             var local = Assert.Single(rewritten.Locals.Skip(body.Locals.Length));
             Assert.Equal(CliValueKind.F8, local);
             Assert.Contains(rewritten.Instructions, static instruction => instruction.Operation == CilOperation.Duplicate);
         }
-        Assert.Same(body, new PureCallReuser(new OperandCalledMethodResolver(), enabled: false).Rewrite(body));
+        Assert.Same(body, new PureCallReuser(new OperandCalledMethodResolver(), depths, enabled: false).Rewrite(body));
+        Assert.Throws<ArgumentNullException>(() => new PureCallReuser(new OperandCalledMethodResolver(), null!, true));
+    }
+
+    private sealed class RecordingDepths : IStackDepthFitter
+    {
+        public int Fitted { get; private set; }
+
+        public CilMethodBody Fit(CilMethodBody body)
+        {
+            Fitted++;
+            return body;
+        }
     }
 
     private static int Calls(CilMethodBody body) =>

@@ -5,6 +5,7 @@ namespace NetWasm.Compiler.ComponentModel;
 
 using NetWasm.Compiler.Core.ManagedExecutables;
 using NetWasm.Compiler.ComponentModel.Optimization;
+using NetWasm.Compiler.ComponentModel.Debugging;
 
 public sealed record ComponentCoreModuleLinkRequest(
     string ApplicationModulePath,
@@ -16,4 +17,7 @@ public sealed record ComponentCoreModuleLinkRequest(
     bool StructuredDiagnostics = false)
 {
     public WasmOptimizationOverrides? OptimizationOverrides { get; init; }
+
+    // Debug information (NetWasmDebugInfo): the module's names, and DWARF lines with the program's method symbols.
+    public WasmDebugInformation? DebugInformation { get; init; }
 }
