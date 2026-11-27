@@ -19,7 +19,8 @@ internal sealed class ReceiverFlowServices(
     IDispatchSiteKeyBuilder siteKeys,
     ITypeRelationshipClassifier relationships,
     IRuntimeIntrinsicRegistry intrinsics,
-    IRuntimeWrittenFields runtimeFields)
+    IRuntimeWrittenFields runtimeFields,
+    IReflectionObjectBounds reflectionObjects)
 {
     public ICalledMethodResolver Calls { get; } = calls;
     public ITypeOperandResolver TypeOperands { get; } = typeOperands;
@@ -29,6 +30,7 @@ internal sealed class ReceiverFlowServices(
     public ITypeRelationshipClassifier Relationships { get; } = relationships;
     public IRuntimeIntrinsicRegistry Intrinsics { get; } = intrinsics;
     public IRuntimeWrittenFields RuntimeFields { get; } = runtimeFields;
+    public IReflectionObjectBounds ReflectionObjects { get; } = reflectionObjects;
 }
 
 // The receiver flow analysis over a program view (RECEIVER_TYPE_FLOW_DESIGN.md, 4): methods join as flow reaches them,
@@ -135,7 +137,7 @@ internal sealed class ReceiverFlowEngine
             Graph = new ReceiverFlowGraph(services.Relationships);
             _summarizer = new ReceiverFlowSummarizer(services.Calls, services.TypeOperands, services.Fields,
                 services.Delegates, services.SiteKeys, view.DispatchSites.Contains, new ReachingLocalStores(),
-                services.RuntimeFields);
+                services.RuntimeFields, services.ReflectionObjects);
             var escape = Graph.Id(FlowNodeKey.Escape);
             Graph.Watch(escape, Escaped);
         }

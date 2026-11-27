@@ -13,7 +13,8 @@ namespace NetWasm.Compiler.Analysis.ReceiverFlow;
 // Runs the receiver flow analysis once over the final program, after every reduction round, and attaches its report.
 // With an audit failure method (the receiver flow audit, step B), each dispatched call whose receivers the analysis
 // follows precisely, and whose set is smaller than type-based dispatch's, carries its set and a message: a receiver
-// outside the set fails there.
+// outside the set fails there. A call whose targets a bound admitted carries its targets' receivers the same way, so a
+// bound too tight fails where the receiver it left out arrives, instead of taking dispatch's unchecked last case.
 internal sealed class ReceiverFlowReportingClosureBuilder(
     IReachabilityClosureBuilder inner,
     IReceiverFlowAnalyzer analyzer,
@@ -50,6 +51,19 @@ internal sealed class ReceiverFlowReportingClosureBuilder(
             var message = $"NetWasm receiver flow audit: a receiver outside the analysis's set at {key}";
             messages.Add(message);
             sites[key] = site with { AuditedReceivers = receivers, AuditMessage = message, AuditFailure = failure };
+        }
+        foreach (var (key, site) in program.DispatchCallSites)
+        {
+            if (!site.BoundedTargets || site.SharesObjectDispatch || !sites[key].AuditedReceivers.IsDefault) continue;
+            var message = $"NetWasm receiver flow audit: a receiver outside the bounded call's targets at {key}";
+            messages.Add(message);
+            sites[key] = site with
+            {
+                AuditedReceivers = [.. site.Targets.Select(static target => target.ReceiverType).Distinct()
+                    .OrderBy(static type => type.CanonicalName, StringComparer.Ordinal)],
+                AuditMessage = message,
+                AuditFailure = failure,
+            };
         }
         return program with
         {

@@ -9,8 +9,9 @@ using static NetWasm.Compiler.Tests.CompilerTestSupport;
 namespace NetWasm.Compiler.Tests;
 
 // The receiver flow audit (RECEIVER_TYPE_FLOW_DESIGN.md, step B): every dispatched call the analysis follows
-// precisely checks its receiver against the analysis's set and fails fast outside it, dispatch unchanged. Programs
-// whose receivers reach their calls through each source kind, and LINQ's iterator chains, run as without it.
+// precisely checks its receiver against the analysis's set, and every call whose targets a bound admitted against its
+// targets' receivers, and fails fast outside them, dispatch unchanged. Programs whose receivers reach their calls
+// through each source kind, and LINQ's iterator chains, run as without it; a bound too tight fails.
 public sealed class ReceiverFlowAuditCompilationTests
 {
     private const string Linq = """
@@ -128,5 +129,129 @@ public sealed class ReceiverFlowAuditCompilationTests
         // input 3: 0, 6, 12, 18 as strings, all shorter than 3: four names in two lengths; four longs; 1 + 2.
         Assert.Equal(4 * 100 + 4 + 3, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 3, target,
             result.StaticDataEnd));
+    }
+
+    // Unsafe.As does not check its claim, so a local declared Label[] holding Bigs bounds its elements by Label: a call
+    // on an element takes Label's targets only, and without the audit dispatch's unchecked last case would run Label's
+    // ToString on a Big. The audit fails where the Big arrives.
+    private const string TooTightBound = """
+        using System.Runtime.CompilerServices;
+
+        public sealed class Big { public override string ToString() => "big"; }
+
+        public sealed class Label { public override string ToString() => "label"; }
+
+        public static class EntryPoint
+        {
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static object[] Items(int input) => [input > 0 ? new Big() : new Label()];
+
+            public static int Run(int input)
+            {
+                Label[] labels = Unsafe.As<Label[]>(Items(input));
+                object element = labels[0];
+                return element.ToString()!.Length;
+            }
+        }
+        """;
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O1)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.Oz)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void AReceiverOutsideABoundedCallsTargetsFailsTheAudit(WasmTarget target, FinalWasmOptimization optimization)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource("ReceiverFlowAuditTooTightBoundFixture", TooTightBound);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target, Optimization: optimization)
+        {
+            ReceiverFlowAudit = true,
+        });
+
+        var site = Assert.Single(result.Program.DispatchCallSites.Values, static site =>
+            site.Caller.Contains("EntryPoint", StringComparison.Ordinal) && site.Declaration.Definition.Name == "ToString");
+        Assert.True(site.BoundedTargets);
+        Assert.Equal(["Label"], site.AuditedReceivers.Select(static type => type.FullName));
+        var failure = Assert.ThrowsAny<Exception>(() => ExecuteWithStandardWasiNode(result.ApplicationModule,
+            assets.Directory, 1, target, result.StaticDataEnd));
+        Assert.Contains("a receiver outside the bounded call's targets", failure.Message, StringComparison.Ordinal);
+    }
+
+    // A bounded call with as many targets as SharedDispatchPolicy shares calls its declaration's shared dispatch
+    // function, which serves every sharing call's targets: the call checks its own audited receivers before it. The
+    // Unsafe.As claim bounds the element by Many, whose 32 subclasses are the call's targets; the Outside that arrives
+    // fails the audit.
+    private static string SharedDispatchTooTightBound()
+    {
+        var source = new System.Text.StringBuilder("""
+            using System.Runtime.CompilerServices;
+
+            public abstract class Base { public abstract int Id(); }
+
+            public abstract class Many : Base { }
+
+            public sealed class Outside : Base { public override int Id() => 99; }
+
+            """);
+        for (var index = 0; index < SharedDispatchPolicy.MinimumTargets; index++)
+        {
+            source.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"public sealed class M{index} : Many {{ public override int Id() => {index}; }}");
+        }
+        source.AppendLine("""
+            public static class EntryPoint
+            {
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                private static Base Make(int input) => input switch
+                {
+            """);
+        for (var index = 0; index < SharedDispatchPolicy.MinimumTargets; index++)
+        {
+            source.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"        {index + 2} => new M{index}(),");
+        }
+        source.AppendLine("""
+                    _ => new Outside(),
+                };
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                private static object[] Items(int input) => [Make(input)];
+
+                public static int Run(int input)
+                {
+                    Many[] many = Unsafe.As<Many[]>(Items(input));
+                    Base element = many[0];
+                    return element.Id();
+                }
+            }
+            """);
+        return source.ToString();
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O1)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.Oz)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void AReceiverOutsideASharedDispatchCallsTargetsFailsTheAudit(WasmTarget target,
+        FinalWasmOptimization optimization)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource("ReceiverFlowAuditSharedDispatchFixture", SharedDispatchTooTightBound());
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target, Optimization: optimization)
+        {
+            ReceiverFlowAudit = true,
+        });
+
+        var site = Assert.Single(result.Program.DispatchCallSites.Values, static site =>
+            site.Caller.Contains("EntryPoint", StringComparison.Ordinal) && site.Declaration.Definition.Name == "Id");
+        Assert.True(site.BoundedTargets);
+        Assert.Equal(SharedDispatchPolicy.MinimumTargets, site.Targets.Length);
+        Assert.Equal(SharedDispatchPolicy.MinimumTargets, site.AuditedReceivers.Length);
+        Assert.Equal(7, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 9, target,
+            result.StaticDataEnd));
+        var failure = Assert.ThrowsAny<Exception>(() => ExecuteWithStandardWasiNode(result.ApplicationModule,
+            assets.Directory, 1, target, result.StaticDataEnd));
+        Assert.Contains("a receiver outside the bounded call's targets", failure.Message, StringComparison.Ordinal);
     }
 }

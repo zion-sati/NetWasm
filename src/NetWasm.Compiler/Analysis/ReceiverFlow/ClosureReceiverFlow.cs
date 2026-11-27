@@ -26,7 +26,9 @@ internal sealed class ReceiverFlowDispatchGate(
     bool passesUnknownSlots = false)
 {
     private readonly Func<CliTypeIdentity, FlowBound, bool> _within = within ?? throw new ArgumentNullException(nameof(within));
-    private readonly Dictionary<DispatchSlot, Dictionary<CliTypeIdentity, DispatchCandidate>> _held = [];
+    // Each held candidate with the order the closure filed it in, which releases keep.
+    private readonly Dictionary<DispatchSlot, Dictionary<CliTypeIdentity, (DispatchCandidate Candidate, long Order)>> _held = [];
+    private long _filed;
     private readonly Dictionary<DispatchSlot, HashSet<CliTypeIdentity>> _admitted = [];
     private readonly Dictionary<DispatchSlot, List<FlowBound>> _bounds = [];
 
@@ -50,13 +52,16 @@ internal sealed class ReceiverFlowDispatchGate(
         // A replayed gate admits by type a slot use the flow never saw.
         if (passesUnknownSlots && !_admitted.ContainsKey(candidate.Slot)) return false;
         if (!_held.TryGetValue(candidate.Slot, out var held)) _held.Add(candidate.Slot, held = []);
-        held.TryAdd(candidate.Receiver, candidate);
+        held.TryAdd(candidate.Receiver, (candidate, _filed++));
         return true;
     }
 
-    // The flow admits these receivers and bounds at the slot use: the candidates they release, in a fixed order.
-    internal ImmutableArray<DispatchCandidate> Admit(DispatchSlot slot, IEnumerable<CliTypeIdentity> receivers,
-        IEnumerable<FlowBound> bounds)
+    // The flow admits these receivers and bounds at the slot use: the candidates they release, in the order the closure
+    // filed them, each with that order. The gate delays candidates and must not reorder them: the closure files them
+    // level by level, as type-based dispatch queues them, and the generic cycle cutoff gives its breadth to the shallow
+    // instances that come first (GenericCycleSessionFactory). Released by name, deep instantiations took that breadth.
+    internal ImmutableArray<(DispatchCandidate Candidate, long Order)> Admit(DispatchSlot slot,
+        IEnumerable<CliTypeIdentity> receivers, IEnumerable<FlowBound> bounds)
     {
         if (!_admitted.TryGetValue(slot, out var admitted)) _admitted.Add(slot, admitted = []);
         if (!_bounds.TryGetValue(slot, out var slotBounds)) _bounds.Add(slot, slotBounds = []);
@@ -67,9 +72,8 @@ internal sealed class ReceiverFlowDispatchGate(
         }
         if (!_held.TryGetValue(slot, out var held)) return [];
         var released = held.Where(pair => Admits(slot, pair.Key))
-            .OrderBy(static pair => pair.Key.CanonicalName, StringComparer.Ordinal)
-            .Select(static pair => pair.Value).ToImmutableArray();
-        foreach (var candidate in released) held.Remove(candidate.Receiver);
+            .Select(static pair => pair.Value).OrderBy(static item => item.Order).ToImmutableArray();
+        foreach (var item in released) held.Remove(item.Candidate.Receiver);
         return released;
     }
 
@@ -217,8 +221,10 @@ internal sealed class ClosureReceiverFlow
     private int Release()
     {
         var released = 0;
-        // Slot uses in a fixed order and each one's candidates by receiver: the queue order feeds the program's ids,
-        // and the engine's own order follows the order it reached methods in, which hashing can change between runs.
+        var releases = new List<(DispatchCandidate Candidate, long Order)>();
+        // The queue order feeds the program's ids and the generic cycle cutoff: the released candidates go in the order
+        // the closure filed them, which is fixed, not in the engine's order, which follows the order it reached methods
+        // in and which hashing can change between runs. Slot uses are visited in a fixed order only for that reason.
         foreach (var group in GatedAdmissions().GroupBy(static admission => admission.Slot)
             .OrderBy(static group => group.Key.Declaration, StringComparer.Ordinal)
             .ThenBy(static group => group.Key.Operation))
@@ -231,11 +237,12 @@ internal sealed class ClosureReceiverFlow
             {
                 if (!slot.Bounds.Contains(bound)) slot.Bounds.Add(bound);
             }
-            foreach (var candidate in Gate.Admit(group.Key, receivers, bounds))
-            {
-                _ledger.PendingDispatches.Enqueue((candidate.Slot, candidate.Declaration, candidate.Receiver));
-                released++;
-            }
+            releases.AddRange(Gate.Admit(group.Key, receivers, bounds));
+        }
+        foreach (var (candidate, _) in releases.OrderBy(static item => item.Order))
+        {
+            _ledger.PendingDispatches.Enqueue((candidate.Slot, candidate.Declaration, candidate.Receiver));
+            released++;
         }
         return released;
     }

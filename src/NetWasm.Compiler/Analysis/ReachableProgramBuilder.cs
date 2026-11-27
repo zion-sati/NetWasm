@@ -204,6 +204,7 @@ internal sealed class ReachableProgramBuilder(
             {
                 SharesObjectDispatch = SharesObjectDispatch(declaration, targets, state),
                 PreciseTargets = admission is { Bounded: false },
+                BoundedTargets = admission is { Bounded: true },
             });
         }
         return sites.ToImmutable();

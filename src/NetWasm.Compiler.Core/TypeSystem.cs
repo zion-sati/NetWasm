@@ -1091,6 +1091,10 @@ public sealed record DispatchCallSiteModel(
     // receiver outside them is an analysis gap and throws, so no unchecked fallback serves it.
     public bool PreciseTargets { get; init; }
 
+    // The targets are those of the receivers the receiver flow admitted, some through a bound (a value it could not
+    // follow, bounded by a declared type): dispatch serves a receiver outside them with its last case, unchecked.
+    public bool BoundedTargets { get; init; }
+
     // Qualification (the receiver flow audit): the receiver types the receiver flow analysis found reach the call. A
     // receiver of any other type fails with AuditMessage through AuditFailure; dispatch itself is unchanged.
     // Default when the call is not audited.

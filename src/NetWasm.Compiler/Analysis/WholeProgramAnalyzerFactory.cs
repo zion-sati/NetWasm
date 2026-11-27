@@ -286,7 +286,8 @@ internal sealed class WholeProgramAnalyzerFactory(
             baseTypes);
         var receiverFlowServices = new ReceiverFlow.ReceiverFlowServices(calls, types, fieldRepository,
             delegateTypeRecognizer, dispatchSiteKeys, relationships, intrinsics,
-            new ReceiverFlow.RuntimeWrittenFields(typeRepository));
+            new ReceiverFlow.RuntimeWrittenFields(typeRepository),
+            new ReceiverFlow.ReflectionObjectBounds(typeFinder, typeIdentities));
         var closure = new ReachabilityClosureBuilder(
             new ReachabilitySessionFactory(
                 ledgers,

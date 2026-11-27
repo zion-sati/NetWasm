@@ -12,14 +12,16 @@ using NetWasm.Compiler.Wasm.Emission.StructResults;
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 
 // A virtual call with many targets (SharedVirtualDispatch) calls its declaration's shared dispatch function, which
-// carries the one copy of the dispatch: the receiver checked for null here, then a value-type result's address, the
-// receiver and the arguments, as the targets take them.
+// carries the one copy of the dispatch: the receiver checked for null here (and, in an audit build, against the call's
+// own audited receivers, since the shared function serves every sharing call's targets), then a value-type result's
+// address, the receiver and the arguments, as the targets take them.
 internal sealed class SharedVirtualDispatchCallEmitter(
     ITargetLayout layouts,
     IImplicitExceptionEmitter exceptions,
     IConstrainedReferenceReceiverEmitter constrainedReceivers,
     IValueTypeArgumentConventionFactory argumentConventions,
-    IValueTypeResultConventionFactory resultConventions) : ICallEmitter
+    IValueTypeResultConventionFactory resultConventions,
+    IReceiverFlowAuditEmitter audits) : ICallEmitter
 {
     public void Emit(CallEmissionRequest request, IWasmInstructionWriter code, IFunctionIndexResolver functionIndices)
     {
@@ -41,6 +43,7 @@ internal sealed class SharedVirtualDispatchCallEmitter(
             exceptions.Emit(code, ManagedExceptionKind.NullReference, context.ManagedThrowFunction);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         }
+        audits.Emit(code, site, receiverLocal, context.NumericTemporaryI4, functionIndices);
         var signature = request.Method.Signature;
         var returnsValue = signature.ReturnSignatureType.StackKind == CliValueKind.ValueType;
         var lanes = context.CallResultLanes.Calls.ContainsKey(instruction.Instruction.Offset);

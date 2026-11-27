@@ -121,6 +121,30 @@ public sealed class ClosureReceiverFlowReplayTests
         Assert.False(ReceiverFlowDispatchGate.Gates(policy, CilOperation.Call, MapToString, null));
     }
 
+    // The gate delays a slot use's candidates and must not reorder them: it releases them in the order the closure
+    // filed them, across slot uses, as type-based dispatch queues them. The generic cycle cutoff counts on that order.
+    [Fact]
+    public void TheGateReleasesCandidatesInTheOrderTheClosureFiledThem()
+    {
+        var gate = new ReceiverFlowDispatchGate(static (_, _) => false, ReceiverFlowDispatchPolicy.EveryVirtualCall);
+        var text = new DispatchSlot(CilOperation.CallVirtual, MapToString.CanonicalName);
+        var number = new DispatchSlot(CilOperation.CallVirtual, MapToNumber.CanonicalName);
+        Assert.True(gate.Holds(new(number, Call("Caller", 31, MapToNumber), ListSeq)));
+        Assert.True(gate.Holds(new(text, Call("Caller", 20, MapToString), ListSeq)));
+        Assert.True(gate.Holds(new(text, Call("Caller", 20, MapToString), ArraySeq)));
+        Assert.True(gate.Holds(new(number, Call("Caller", 31, MapToNumber), ArraySeq)));
+
+        var texts = gate.Admit(text, [ArraySeq, ListSeq], []);
+        var numbers = gate.Admit(number, [ArraySeq, ListSeq], []);
+
+        // By name ArraySeq comes first.
+        Assert.Equal([ListSeq, ArraySeq], texts.Select(static item => item.Candidate.Receiver));
+        Assert.Equal([ListSeq, ArraySeq], numbers.Select(static item => item.Candidate.Receiver));
+        Assert.Equal([(number, ListSeq), (text, ListSeq), (text, ArraySeq), (number, ArraySeq)],
+            texts.Concat(numbers).OrderBy(static item => item.Order)
+                .Select(static item => (item.Candidate.Slot, item.Candidate.Receiver)));
+    }
+
     private static MethodInstanceModel Map(CliTypeIdentity result) => new(
         new(new(new("Test"), 0x06000001), new EntityKey(new("Test"), 0x02000001), "Map", false, null!, 1)
         {

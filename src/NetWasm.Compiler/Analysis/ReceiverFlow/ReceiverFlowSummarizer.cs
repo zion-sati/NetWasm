@@ -27,7 +27,8 @@ internal sealed class ReceiverFlowSummarizer(
     IDispatchSiteKeyBuilder siteKeys,
     Func<string, bool> isDispatchSite,
     IReachingLocalStores reachingStores,
-    IRuntimeWrittenFields runtimeFields) : IReceiverFlowSummarizer
+    IRuntimeWrittenFields runtimeFields,
+    IReflectionObjectBounds reflectionObjects) : IReceiverFlowSummarizer
 {
     // A string literal is a System.String, whether or not the closure has allocated one yet.
     private static readonly CliTypeIdentity String =
@@ -42,6 +43,8 @@ internal sealed class ReceiverFlowSummarizer(
     private readonly IReachingLocalStores _reachingStores =
         reachingStores ?? throw new ArgumentNullException(nameof(reachingStores));
     private readonly IRuntimeWrittenFields _runtimeFields = runtimeFields ?? throw new ArgumentNullException(nameof(runtimeFields));
+    private readonly IReflectionObjectBounds _reflectionObjects =
+        reflectionObjects ?? throw new ArgumentNullException(nameof(reflectionObjects));
 
     public ReceiverFlowSummary Summarize(ManagedMethodBody body)
     {
@@ -64,6 +67,12 @@ internal sealed class ReceiverFlowSummarizer(
 
         // The method a direct call this value is the result of called, for an await of it.
         public MethodInstanceModel? DirectCallee { get; init; }
+
+        // What the instruction that pushed the value declares it to be, where that bounds a load from it: an array of
+        // references (a local's, an argument's, a field's, a call's result, a cast, a new array) bounds its elements,
+        // an address of a reference (also an element's address) what a load through it reads. The graph takes a
+        // node's declared type as its bound the same way.
+        public CliTypeIdentity? Declared { get; init; }
 
         public static Slot Of(FlowSource source) => new([source]);
 
@@ -248,7 +257,10 @@ internal sealed class ReceiverFlowSummarizer(
                     if (_followed.Contains(local) && _reaching!.TryGetValue(instruction.Offset, out var stores))
                     {
                         Push(new Slot([.. stores.Select(store => (FlowSource)new FlowSource.Node(
-                            new FlowNodeKey(FlowNodeKind.LocalStore, _caller, store), []))]));
+                            new FlowNodeKey(FlowNodeKind.LocalStore, _caller, store), []))])
+                        {
+                            Declared = Declaring(LocalType(local)),
+                        });
                         return;
                     }
                     Push(Load(Local(local), LocalType(local)));
@@ -297,9 +309,24 @@ internal sealed class ReceiverFlowSummarizer(
                     var type = TypeOf(instruction);
                     Push(type is not null && !IsReference(type) ? Slot.Empty
                         : address.Address is { } node ? Slot.Of(new FlowSource.Node(node, []))
-                        : Slot.Top(type, "load through an address of unknown origin"));
+                        : Bounded(type, PointeeOf(address), "load through an address of unknown origin"));
                     return;
                 }
+                // Array elements have no nodes: an element, or a load through an element's address, is what the
+                // array's declared type holds.
+                case CilOperation.LoadArrayElementReference:
+                {
+                    Escape(Pop());
+                    var array = Pop();
+                    Escape(array);
+                    Push(Bounded(null, ElementOf(array), "array element"));
+                    return;
+                }
+                case CilOperation.LoadArrayElementAddress when TypeOf(instruction) is { } element:
+                    Escape(Pop());
+                    Escape(Pop());
+                    Push(Slot.Empty with { Declared = Declaring(CliTypeIdentity.ManagedByReference(element)) });
+                    return;
                 case CilOperation.StoreObject:
                 {
                     var value = Pop();
@@ -362,7 +389,7 @@ internal sealed class ReceiverFlowSummarizer(
                     Push(Slot.Empty);
                     return;
                 case CilOperation.CastClass or CilOperation.IsInstance when TypeOf(instruction) is { } castType:
-                    Push(Cast(Pop(), castType));
+                    Push(WithDeclared(Cast(Pop(), castType), castType));
                     return;
                 case CilOperation.UnboxAny when TypeOf(instruction) is { } unboxed:
                 {
@@ -388,9 +415,12 @@ internal sealed class ReceiverFlowSummarizer(
                     return;
                 }
                 case CilOperation.NewArray when TypeOf(instruction) is { } element:
+                {
                     Pop();
-                    Push(Slot.Of(new FlowSource.Object(new FlowObject.Exact(CliTypeIdentity.SzArray(element)))));
+                    var array = CliTypeIdentity.SzArray(element);
+                    Push(Slot.Of(new FlowSource.Object(new FlowObject.Exact(array))) with { Declared = Declaring(array) });
                     return;
+                }
                 case CilOperation.Return:
                     // A runtime-async method returning a task without a value has nothing on the stack at its ret.
                     if (body.Method.Signature.ReturnType != CliValueKind.Void && _stack.Count > 0)
@@ -419,10 +449,13 @@ internal sealed class ReceiverFlowSummarizer(
             }
             var (pops, pushes) = effect;
             for (var index = 0; index < pops && _stack.Count > 0; index++) Escape(Pop());
-            // Only an element load pushes a value of its operand's type; a token or type materialization pushes a
-            // handle or a type object, which its operand does not bound.
+            // An element load pushes a value of its operand's type. A token pushes a handle; a type or member
+            // materialization pushes one of the runtime's reflection objects, which its operand does not bound but its
+            // kind does: a call on a Type object takes Type's overrides, not every type's.
             var bound = instruction.Operation is CilOperation.LoadArrayElement or CilOperation.LoadRectangularArrayElement &&
-                instruction.Operand is CilOperand.TypeIdentity { Value: var type } && IsReference(type) ? type : null;
+                instruction.Operand is CilOperand.TypeIdentity { Value: var type } && IsReference(type)
+                    ? type
+                    : owner._reflectionObjects.Of(instruction.Operation);
             for (var index = 0; index < pushes; index++) Push(Slot.Top(bound, $"unmodeled {instruction.Operation}"));
         }
 
@@ -476,14 +509,14 @@ internal sealed class ReceiverFlowSummarizer(
             if (owner._isDispatchSite(key) && receiver is not null)
             {
                 Site(FlowSiteKind.Dispatch, key, callee, receiver, arguments, returnsReference ? result : null);
-                PushResult(returnsReference, result);
+                PushResult(returnsReference, result, returned);
                 return;
             }
             if (hasThis && receiver is not null && callee.Definition.Name == "Invoke" &&
                 owner._delegates.Recognize(callee.DeclaringType))
             {
                 Site(FlowSiteKind.DelegateInvoke, key, callee, receiver, arguments, returnsReference ? result : null);
-                PushResult(returnsReference, result);
+                PushResult(returnsReference, result, returned);
                 return;
             }
             // A call whose result the analysis models still runs its callee's body where the program has one
@@ -509,12 +542,15 @@ internal sealed class ReceiverFlowSummarizer(
                 Push(value);
                 return;
             }
-            Push(returnsReference
+            var pushed = returnsReference
                 ? Slot.Of(new FlowSource.Node(new FlowNodeKey(FlowNodeKind.Return, callee.CanonicalName), [])) with
                 {
                     DirectCallee = callee,
                 }
-                : callee.Definition.IsRuntimeAsync ? Slot.Empty with { DirectCallee = callee } : Slot.Empty);
+                : callee.Definition.IsRuntimeAsync ? Slot.Empty with { DirectCallee = callee } : Slot.Empty;
+            // Unsafe's results are what the caller claims (Unsafe.As, AsRef), not what was stored: no declared type.
+            Push(callee.DeclaringType.FullName == "System.Runtime.CompilerServices.Unsafe" ? pushed
+                : WithDeclared(pushed, returned));
         }
 
         // Calls whose flow the analysis models instead of their bodies: the object's type does not change through
@@ -626,8 +662,30 @@ internal sealed class ReceiverFlowSummarizer(
             Push(Slot.Of(created));
         }
 
-        private void PushResult(bool returnsReference, FlowNodeKey result) =>
-            Push(returnsReference ? Slot.Of(new FlowSource.Node(result, [])) : Slot.Empty);
+        private void PushResult(bool returnsReference, FlowNodeKey result, CliTypeIdentity returned) =>
+            Push(WithDeclared(returnsReference ? Slot.Of(new FlowSource.Node(result, [])) : Slot.Empty, returned));
+
+        // A top bounded by what was loaded and by what the array or address it came from declares.
+        private static Slot Bounded(CliTypeIdentity? loaded, CliTypeIdentity? declared, string cause)
+        {
+            var bound = FlowBound.Of(loaded, cause);
+            return Slot.Of(new FlowSource.Top(declared is null ? bound : bound.And(declared)));
+        }
+
+        private static CliTypeIdentity? ElementOf(Slot array) =>
+            array.Declared is { Shape: CliTypeShape.SzArray, ElementType: { } element } ? element : null;
+
+        private static CliTypeIdentity? PointeeOf(Slot address) =>
+            address.Declared is { Shape: CliTypeShape.ManagedByReference, ElementType: { } pointee } ? pointee : null;
+
+        private static Slot WithDeclared(Slot slot, CliTypeIdentity? type) =>
+            Declaring(type) is { } declared ? slot with { Declared = declared } : slot;
+
+        // The declared types a load is bounded by: an array of references or an address of one, with no generic
+        // parameters left. Others are not kept, so a value of any other type costs nothing.
+        private static CliTypeIdentity? Declaring(CliTypeIdentity? type) =>
+            type is { Shape: CliTypeShape.SzArray or CliTypeShape.ManagedByReference, ElementType: { } element } &&
+            IsReference(element) && !type.ContainsGenericParameters ? type : null;
 
         // A constrained call's receiver is an address: a reference type's call reads the reference there.
         private static Slot ThroughAddress(Slot receiver, CliTypeIdentity constrained)
@@ -673,7 +731,7 @@ internal sealed class ReceiverFlowSummarizer(
             if (Field(operand) is not { } field || !IsReference(field.Type)) return Slot.Empty;
             if (field.Overlaps) Seed(field.Key, field.Type, "explicit-layout field");
             else if (field.RuntimeWritten) Seed(field.Key, field.Type, "field the runtime writes");
-            return Slot.Of(new FlowSource.Node(field.Key, []));
+            return WithDeclared(Slot.Of(new FlowSource.Node(field.Key, [])), field.Type);
         }
 
         private void StoreField(CilOperand operand, Slot value)
@@ -737,7 +795,7 @@ internal sealed class ReceiverFlowSummarizer(
         }
 
         private static Slot Load(FlowNodeKey key, CliTypeIdentity? type) =>
-            type is not null && IsReference(type) ? Slot.Of(new FlowSource.Node(key, [])) : Slot.Empty;
+            WithDeclared(type is not null && IsReference(type) ? Slot.Of(new FlowSource.Node(key, [])) : Slot.Empty, type);
 
         private static Slot AddressOf(FlowNodeKey key, CliTypeIdentity? type) =>
             Slot.Empty with { Address = key, ReferenceAddress = type is not null && IsReference(type) };
