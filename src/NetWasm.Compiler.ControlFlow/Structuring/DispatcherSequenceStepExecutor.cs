@@ -44,7 +44,12 @@ internal sealed class DispatcherSequenceStepExecutor(
             var retainedActiveBlocks = withinAllowed
                 ? _activeBlockRetention.Select(state, loop)
                 : ImmutableHashSet<int>.Empty;
-            var loopAllowed = loop.BodyComponent.Within(allowed);
+            // The body may also enter the loop's exit extension (the condition exit's code before the loop's exit): a
+            // break that shares the condition exit's block, as a `leave` the loop's natural exit and a break both
+            // branch to does, builds that code where it leaves, as a copy ending at the loop's exit. The extension is
+            // the region's own (LoopRegionEligibilityClassifier admits such incoming edges); without it the break's
+            // arm would build nothing and fall into the loop's continue.
+            var loopAllowed = loop.Component.Within(allowed);
             // Natural-loop analysis reports a continue target in the
             // structured domain; retain it in the clipped body set.
             var effectiveContinue = loop.Continue;

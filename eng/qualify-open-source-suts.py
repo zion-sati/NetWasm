@@ -10,7 +10,10 @@ usage: qualify-open-source-suts.py <package directory> <version> [system ...]
 Each system is a Program.cs over stock packages from nuget.org, pinned in its
 packages.txt to the versions it was tested with ("Id Version" per line, exact
 versions only); packages.desktop.txt and packages.netwasm.txt, where present, add
-the packages only one side takes, such as a NetWasm port of a desktop package. It runs once on desktop .NET (net11.0), then as a net10.0-netwasm
+the packages only one side takes, such as a NetWasm port of a desktop package, and
+properties.netwasm.txt sets MSBuild properties of the NetWasm build ("Name=Value" per
+line), such as NetWasmMissingApiAsError for a system whose libraries must reach no
+member NetWasm lacks. It runs once on desktop .NET (net11.0), then as a net10.0-netwasm
 program: wasm32 (a component) and wasm64 (raw Wasm), each in Debug and Release.
 Every run's exit code and standard output must equal desktop's, as desktop prints it with its hardware
 intrinsics or with them off. A library can take an instruction set's own paths whose output differs from
@@ -30,11 +33,13 @@ import subprocess
 import sys
 import tempfile
 from typing import NamedTuple
+from xml.sax.saxutils import escape as xml_escape
 
 SYSTEMS = Path(__file__).resolve().parent / "open-source-suts"
 TARGETS = ("wasm32", "wasm64")
 CONFIGURATIONS = ("Debug", "Release")
 PIN = re.compile(r"^([A-Za-z0-9_.-]+) (\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)$")
+PROPERTY = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)=(.*)$")
 TIMEOUT_SECONDS = 1200
 
 
@@ -57,12 +62,28 @@ def pins(text: str) -> list[tuple[str, str]]:
     return result
 
 
-def project(name: str, packages: list[tuple[str, str]], netwasm: bool) -> str:
+def properties(text: str) -> list[tuple[str, str]]:
+    """The properties.netwasm.txt assignments: one "Name=Value" per line; blank lines are skipped."""
+    result = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        match = PROPERTY.match(line.strip())
+        if match is None:
+            raise ValueError(f"not an MSBuild property assignment: {line!r}")
+        result.append((match[1], match[2]))
+    return result
+
+
+def project(name: str, packages: list[tuple[str, str]], netwasm: bool,
+            build_properties: list[tuple[str, str]] | None = None) -> str:
     """A project over the system's sources: the NetWasm SDK's net10.0-netwasm, or desktop's net11.0."""
     sdk = "NetWasm.Sdk" if netwasm else "Microsoft.NET.Sdk"
     framework = "net10.0-netwasm" if netwasm else "net11.0"
     references = "".join(f'    <PackageReference Include="{package}" Version="{version}" />\n'
                          for package, version in packages)
+    assignments = "".join(f"    <{property_name}>{xml_escape(value)}</{property_name}>\n"
+                          for property_name, value in build_properties or [])
     return (f'<Project Sdk="{sdk}">\n'
             "  <PropertyGroup>\n"
             "    <OutputType>Exe</OutputType>\n"
@@ -76,7 +97,8 @@ def project(name: str, packages: list[tuple[str, str]], netwasm: bool) -> str:
             "    <InvariantGlobalization>true</InvariantGlobalization>\n"
             # The pins are the versions tested; an advisory about one is not the program's output.
             "    <NuGetAudit>false</NuGetAudit>\n"
-            "  </PropertyGroup>\n"
+            + assignments
+            + "  </PropertyGroup>\n"
             + (f"  <ItemGroup>\n{references}  </ItemGroup>\n" if references else "")
             + "</Project>\n")
 
@@ -109,6 +131,12 @@ def system_pins(system: Path, netwasm: bool) -> list[tuple[str, str]]:
     return pins((system / "packages.txt").read_text()) + (pins(side.read_text()) if side.is_file() else [])
 
 
+def system_properties(system: Path, netwasm: bool) -> list[tuple[str, str]]:
+    """The NetWasm build's properties; the desktop build takes none."""
+    path = system / "properties.netwasm.txt"
+    return properties(path.read_text()) if netwasm and path.is_file() else []
+
+
 def stage(system: Path, directory: Path, netwasm: bool) -> Path:
     """Copies the system's sources into a fresh project directory and writes its project."""
     shutil.rmtree(directory, ignore_errors=True)
@@ -116,7 +144,7 @@ def stage(system: Path, directory: Path, netwasm: bool) -> Path:
     for source in system.glob("*.cs"):
         shutil.copy2(source, directory / source.name)
     path = directory / f"{system.name}.csproj"
-    path.write_text(project(system.name, system_pins(system, netwasm), netwasm))
+    path.write_text(project(system.name, system_pins(system, netwasm), netwasm, system_properties(system, netwasm)))
     return path
 
 
