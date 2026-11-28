@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using NetWasm.Compiler.Analysis.Attributes;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
 
@@ -542,6 +543,11 @@ internal sealed class ReceiverFlowSummarizer(
                 Push(value);
                 return;
             }
+            if (returnsReference && AttributeQueryApis.IsQuery(callee))
+            {
+                Push(WithDeclared(Slot.Of(new FlowSource.Top(AnsweredLater(returned))), returned));
+                return;
+            }
             var pushed = returnsReference
                 ? Slot.Of(new FlowSource.Node(new FlowNodeKey(FlowNodeKind.Return, callee.CanonicalName), [])) with
                 {
@@ -661,6 +667,14 @@ internal sealed class ReceiverFlowSummarizer(
             _edges.Add(new(created, new FlowNodeKey(FlowNodeKind.Parameter, constructor.CanonicalName, 0), type));
             Push(Slot.Of(created));
         }
+
+        // An attribute query on a Type known only at run time is answered after the flow, by a switch over the program's
+        // run-time types that builds the attributes and their array (RuntimeTypeAttributeQueryReducer); the flow reads
+        // only the query's fallback body, which throws. What the call returns is a top bounded by its return type, so a
+        // call on it (a foreach over GetCustomAttributes<T> dispatching GetEnumerator) takes every target the bound
+        // admits once the answer constructs the array, instead of none.
+        private static FlowBound AnsweredLater(CliTypeIdentity returned) =>
+            FlowBound.Of(returned, "attribute query answered after the flow");
 
         private void PushResult(bool returnsReference, FlowNodeKey result, CliTypeIdentity returned) =>
             Push(WithDeclared(returnsReference ? Slot.Of(new FlowSource.Node(result, [])) : Slot.Empty, returned));

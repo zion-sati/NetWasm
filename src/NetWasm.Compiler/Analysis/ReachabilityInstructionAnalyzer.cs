@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Immutable;
+using NetWasm.Compiler.Analysis.Attributes;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.Core.NativeInterop;
@@ -86,6 +87,23 @@ internal sealed class ReachabilityInstructionAnalyzer(
                     calledMethod,
                     typeOperands)
                     );
+            }
+            // A retrieval of attributes on a Type known only at run time is answered after the closure, by a switch
+            // that builds an array of its filter (RuntimeTypeAttributeQueryReducer): the array type is constructed
+            // now, so what the calls on the query's result reach (a foreach's GetEnumerator, the enumerator's
+            // MoveNext and Current) is in the closure the receiver flow settles, not only in a later round's.
+            if (calledMethod is { Definition.Name: "GetCustomAttributes" } && AttributeQueryApis.IsQuery(calledMethod) &&
+                RetrievalFilter(calledMethod, instructions, instructionIndex) is { } filter)
+            {
+                // An open generic filter's matches are of different constructed types: Attribute[].
+                var element = filter.Shape == CliTypeShape.Named && filter.TypeArguments.IsDefaultOrEmpty &&
+                    (filter.FullName ?? "").Contains('`', StringComparison.Ordinal)
+                        ? typeIdentities.GetTypeIdentity(typeFinder.FindType("System.Attribute").Key)
+                        : filter;
+                var answer = CliTypeIdentity.SzArray(element);
+                runtimeTypes.Add(element);
+                allocatedTypes.Add(answer);
+                constructedTypes.Add(answer);
             }
             if (instruction.Operation == CilOperation.NewObject && calledMethod is not null)
             {
@@ -352,5 +370,38 @@ internal sealed class ReachabilityInstructionAnalyzer(
             NativeCallbacks = reachedNativeCallbacks.ToImmutable(),
         };
 
+    }
+
+    // The filter a retrieval names: its type argument (GetCustomAttributes<T>), or the typeof(X) its Type argument is
+    // pushed by, where the arguments after it are plain pushes. Null where the IL does not say.
+    private static CliTypeIdentity? RetrievalFilter(MethodInstanceModel query, ImmutableArray<CilInstruction> instructions,
+        int call)
+    {
+        if (query.MethodArguments is [var generic]) return generic;
+        var parameters = query.Signature.ParameterSignatureTypes;
+        var filterParameter = -1;
+        for (var index = 0; index < parameters.Length; index++)
+        {
+            if (parameters[index].FullName == "System.Type")
+            {
+                filterParameter = index;
+                break;
+            }
+        }
+        if (filterParameter < 0) return null;
+        var after = parameters.Length - filterParameter - 1;
+        var producer = call - 1;
+        for (; after > 0 && producer >= 0; producer--, after--)
+        {
+            if (instructions[producer].Operation is not (CilOperation.LoadInt32 or CilOperation.LoadLocal or
+                CilOperation.LoadArgument or CilOperation.LoadNull))
+            {
+                return null;
+            }
+        }
+        return after == 0 && producer >= 0 && instructions[producer] is
+        { Operation: CilOperation.MaterializeType, Operand: CilOperand.TypeIdentity { Value: var named } }
+                ? named
+                : null;
     }
 }
