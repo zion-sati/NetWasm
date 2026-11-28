@@ -163,15 +163,28 @@ public sealed class ConstructedReceiverPlannerTests
         Assert.DoesNotContain(5, Plan(flow, thisIsNonNull: false));
     }
 
+    // In a method with protected blocks the slot's one store proves the reads its block dominates, inside the try too,
+    // but not in the try's handler, which control enters from wherever the try throws, before the store as well: the
+    // handler's first block is a root of the dominance even when a loop in the handler branches back to it.
     [Fact]
-    public void AMethodWithExceptionHandlersIsLeftAlone()
+    public void AMethodWithExceptionHandlersProvesWhatTheStoreDominatesButNotInAHandler()
     {
-        var flow = Flow([(CilOperation.NewObject, new CilOperand.MethodInstance(Constructor)), (CilOperation.LoadField, Field),
-            (CilOperation.Pop, None), (CilOperation.Leave, new CilOperand.BranchTarget(5)), (CilOperation.EndFinally, None),
-            (CilOperation.Return, None)], [[], [Reference], [Integer], [], [], []],
-            regions: [new CilExceptionRegion(CilExceptionRegionKind.Finally, 0, 4, 4, 1, null, null)]);
+        // try { 0 newobj; 1 stloc.0; 2 ldarg.1; 3 brfalse 7; 4 ldloc.0; 5 ldfld; 6 pop; 7 leave 14 }
+        // finally { 8 ldloc.0; 9 ldfld; 10 pop; 11 ldarg.1; 12 brtrue 8; 13 endfinally } 14 ret
+        var flow = Flow([(CilOperation.NewObject, new CilOperand.MethodInstance(Constructor)), (CilOperation.StoreLocal, new CilOperand.Index(0)),
+            (CilOperation.LoadArgument, new CilOperand.Index(1)), (CilOperation.BranchIfFalse, new CilOperand.BranchTarget(7)),
+            (CilOperation.LoadLocal, new CilOperand.Index(0)), (CilOperation.LoadField, Field), (CilOperation.Pop, None),
+            (CilOperation.Leave, new CilOperand.BranchTarget(14)),
+            (CilOperation.LoadLocal, new CilOperand.Index(0)), (CilOperation.LoadField, Field), (CilOperation.Pop, None),
+            (CilOperation.LoadArgument, new CilOperand.Index(1)), (CilOperation.BranchIfTrue, new CilOperand.BranchTarget(8)),
+            (CilOperation.EndFinally, None), (CilOperation.Return, None)],
+            [[], [Reference], [], [Integer], [], [Reference], [Integer], [], [], [Reference], [Integer], [], [Integer], [], []],
+            regions: [new CilExceptionRegion(CilExceptionRegionKind.Finally, 0, 8, 8, 6, null, null)]);
 
-        Assert.Empty(Plan(flow, thisIsNonNull: false));
+        var plan = Plan(flow, thisIsNonNull: false);
+
+        Assert.Contains(5, plan);
+        Assert.DoesNotContain(9, plan);
     }
 
     [Fact]
@@ -179,9 +192,9 @@ public sealed class ConstructedReceiverPlannerTests
     {
         var calls = new Calls();
         Assert.Throws<ArgumentNullException>(() => new ConstructedReceiverPlanner(null!, new StackEffectResolver(calls), calls));
-        Assert.Throws<ArgumentNullException>(() => new ConstructedReceiverPlanner(new ControlFlowDominanceAnalyzer(), null!, calls));
+        Assert.Throws<ArgumentNullException>(() => new ConstructedReceiverPlanner(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()), null!, calls));
         Assert.Throws<ArgumentNullException>(() =>
-            new ConstructedReceiverPlanner(new ControlFlowDominanceAnalyzer(), new StackEffectResolver(calls), null!));
+            new ConstructedReceiverPlanner(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()), new StackEffectResolver(calls), null!));
         Assert.Throws<ArgumentNullException>(() => Planner().Plan(null!, thisIsNonNull: false));
     }
 
@@ -199,7 +212,7 @@ public sealed class ConstructedReceiverPlannerTests
     private static ConstructedReceiverPlanner Planner()
     {
         var calls = new Calls();
-        return new(new ControlFlowDominanceAnalyzer(), new StackEffectResolver(calls), calls);
+        return new(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()), new StackEffectResolver(calls), calls);
     }
 
     private static ValidatedControlFlowGraph Flow(

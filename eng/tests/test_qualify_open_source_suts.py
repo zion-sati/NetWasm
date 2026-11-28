@@ -36,6 +36,23 @@ class PinTests(unittest.TestCase):
             self.assertEqual([("Shared", "1.0.0"), ("NetWasm.Port", "0.15.0")], MODULE.system_pins(system, netwasm=True))
             self.assertEqual([("Shared", "1.0.0")], MODULE.system_pins(system, netwasm=False))
 
+    def test_reads_one_property_assignment_per_line(self) -> None:
+        self.assertEqual([("NetWasmMissingApiAsError", "true"), ("Empty", ""), ("With-Hyphen", "a=b")],
+                         MODULE.properties("NetWasmMissingApiAsError=true\n\nEmpty=\nWith-Hyphen=a=b\n"))
+
+    def test_rejects_lines_that_assign_no_property(self) -> None:
+        for line in ("NetWasmMissingApiAsError", "=true", "1Name=true", "Name true"):
+            with self.subTest(line=line), self.assertRaisesRegex(ValueError, "not an MSBuild property assignment"):
+                MODULE.properties(line)
+
+    def test_only_the_netwasm_build_takes_the_system_properties(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            system = Path(directory)
+            self.assertEqual([], MODULE.system_properties(system, netwasm=True))
+            (system / "properties.netwasm.txt").write_text("NetWasmMissingApiAsError=true\n")
+            self.assertEqual([("NetWasmMissingApiAsError", "true")], MODULE.system_properties(system, netwasm=True))
+            self.assertEqual([], MODULE.system_properties(system, netwasm=False))
+
     def test_every_system_has_a_program_and_exact_pins(self) -> None:
         systems = sorted(path for path in MODULE.SYSTEMS.iterdir() if path.is_dir())
         self.assertTrue(systems)
@@ -60,6 +77,12 @@ class ProjectTests(unittest.TestCase):
             self.assertIn("<AssemblyName>OpenSourceSut.sep</AssemblyName>", text)
             self.assertIn("<InvariantGlobalization>true</InvariantGlobalization>", text)
             self.assertIn("<NuGetAudit>false</NuGetAudit>", text)
+
+    def test_the_system_properties_join_the_property_group_escaped(self) -> None:
+        text = MODULE.project("sep", [], netwasm=True, build_properties=[("NetWasmMissingApiAsError", "true"), ("Note", "a<b&c")])
+        self.assertIn("    <NetWasmMissingApiAsError>true</NetWasmMissingApiAsError>\n", text)
+        self.assertIn("    <Note>a&lt;b&amp;c</Note>\n", text)
+        self.assertLess(text.index("<NetWasmMissingApiAsError>"), text.index("</PropertyGroup>"))
 
     def test_a_system_without_packages_has_no_item_group(self) -> None:
         self.assertNotIn("<ItemGroup>", MODULE.project("stack", [], netwasm=True))
@@ -87,12 +110,16 @@ class ConfigureTests(unittest.TestCase):
             system.mkdir()
             (system / "Program.cs").write_text("System.Console.WriteLine(1);\n")
             (system / "packages.txt").write_text("Sep 0.18.0\n")
+            (system / "properties.netwasm.txt").write_text("NetWasmMissingApiAsError=true\n")
             target = Path(directory, "work", "demo", "wasm32")
             target.mkdir(parents=True)
             (target / "stale.cs").write_text("")
             project = MODULE.stage(system, target, netwasm=True)
             self.assertEqual(["Program.cs", "demo.csproj"], sorted(path.name for path in target.iterdir()))
             self.assertIn("net10.0-netwasm", project.read_text())
+            self.assertIn("<NetWasmMissingApiAsError>true</NetWasmMissingApiAsError>", project.read_text())
+            desktop = MODULE.stage(system, Path(directory, "work", "demo", "desktop"), netwasm=False)
+            self.assertNotIn("NetWasmMissingApiAsError", desktop.read_text())
 
 
 class DifferenceTests(unittest.TestCase):

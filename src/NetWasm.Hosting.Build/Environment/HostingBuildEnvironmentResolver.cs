@@ -136,9 +136,7 @@ public sealed class HostingBuildEnvironmentResolver(
         var node = Tool("node", HostToolIds.Node, package.NodeVersion);
         var linker = Tool("wasm-ld", HostToolIds.WasmLd, package.WasmLdVersion);
         var opt = Tool("wasm-opt", HostToolIds.BinaryenWasmOpt, package.BinaryenVersion);
-        var wasmTools = package.Roles.ContainsKey("wasm-tools")
-            ? Tool("wasm-tools", HostToolIds.WasmTools, package.WasmToolsVersion!)
-            : null;
+        var wasmTools = Tool("wasm-tools", HostToolIds.WasmTools, package.WasmToolsVersion!);
         var toolchain = _packagePaths.Resolve(
             Path.GetFullPath(request.ToolchainPackageRoot),
             node.Executable,
@@ -151,8 +149,8 @@ public sealed class HostingBuildEnvironmentResolver(
             new(new NativeBinaryenTool(opt.Executable, opt.Compatibility)),
             toolchain)
         {
-            CompilerPath = package.Roles.GetValueOrDefault("nwc"),
-            NativeWasmTools = wasmTools is null ? null : Matching(wasmTools, toolchain),
+            CompilerPath = package.Roles["nwc"],
+            NativeWasmTools = Matching(wasmTools, toolchain),
         };
     }
 

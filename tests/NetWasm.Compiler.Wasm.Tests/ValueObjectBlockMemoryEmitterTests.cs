@@ -11,6 +11,10 @@ using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 using NetWasm.Compiler.Wasm.Encoding;
 
+using NetWasm.Compiler.Wasm.Emission.Planning;
+
+using NetWasm.Compiler.Wasm.Emission.Support;
+
 namespace NetWasm.Compiler.Wasm.Tests;
 
 using static EmitterTestSupport;
@@ -245,34 +249,28 @@ public sealed class ValueObjectBlockMemoryEmitterTests
         Assert.Equal(widens ? 2 : 0, code.Count(value => value == WasmOpcodes.I64ExtendI32Unsigned));
     }
 
-    [Fact]
-    public void ScalarDefaultUsesZeroOfRequestedKind()
+    // A scalar default is the zero of its own Wasm type: i64 for a long, and for a native integer on wasm64; f32 and
+    // f64 for float and double. An i32 zero there failed validation.
+    [Theory]
+    [InlineData(CliValueKind.I4, false, WasmOpcodes.I32Constant)]
+    [InlineData(CliValueKind.I8, false, WasmOpcodes.I64Constant)]
+    [InlineData(CliValueKind.I8, true, WasmOpcodes.I64Constant)]
+    [InlineData(CliValueKind.NativeInt, false, WasmOpcodes.I32Constant)]
+    [InlineData(CliValueKind.NativeInt, true, WasmOpcodes.I64Constant)]
+    [InlineData(CliValueKind.F4, false, WasmOpcodes.F32Constant)]
+    [InlineData(CliValueKind.F8, true, WasmOpcodes.F64Constant)]
+    public void ScalarDefaultUsesTheZeroOfItsWasmType(CliValueKind kind, bool memory64, byte opcode)
     {
         var request = CreateRequest(
             CilOperation.DefaultValue,
             [],
-            new CilOperand.TypeIdentity(
-                CliTypeIdentity.FromStackKind(CliValueKind.I8)));
+            new CilOperand.TypeIdentity(CliTypeIdentity.FromStackKind(kind)));
 
-        Emit((IInstructionCommandProvider)CreateEmitter(), request);
+        Emit((IInstructionCommandProvider)CreateEmitter(memory64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32),
+            request);
 
-        Assert.Equal([CliValueKind.I8], request.Stack);
-        Assert.Equal(WasmOpcodes.I32Constant, GetCodeBytes(request)[0]);
-    }
-
-    [Fact]
-    public void Memory64ScalarDefaultStillUsesAnI32Constant()
-    {
-        var request = CreateRequest(
-            CilOperation.DefaultValue,
-            [],
-            new CilOperand.TypeIdentity(
-                CliTypeIdentity.FromStackKind(CliValueKind.I8)));
-
-        Emit((IInstructionCommandProvider)CreateEmitter(WasmTargetLayout.Wasm64), request);
-
-        Assert.Equal([CliValueKind.I8], request.Stack);
-        Assert.Equal(WasmOpcodes.I32Constant, GetCodeBytes(request)[0]);
+        Assert.Equal([kind], request.Stack);
+        Assert.Equal(opcode, GetCodeBytes(request)[0]);
     }
 
     [Fact]
@@ -496,12 +494,15 @@ public sealed class ValueObjectBlockMemoryEmitterTests
             new CilOperand.TypeIdentity(ValueType()),
             context);
 
-        Emit((IInstructionCommandProvider)CreateEmitter(WasmTargetLayout.Wasm64), request);
+        var exceptions = new RecordingExceptions();
+        Emit((IInstructionCommandProvider)CreateEmitter(WasmTargetLayout.Wasm64, exceptions: exceptions), request);
 
+        // Nothing proved the address non-null, so it is checked, and then passed on.
         Assert.Equal([CliValueKind.ValueType], request.Stack);
+        Assert.Equal([ManagedExceptionKind.NullReference], exceptions.Kinds);
         Assert.Equal(
             [WasmOpcodes.LocalGet, WasmOpcodes.LocalSet],
-            ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions().Select(instruction => instruction.Opcode));
+            ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions().TakeLast(2).Select(instruction => instruction.Opcode));
     }
 
     [Fact]
@@ -569,14 +570,16 @@ public sealed class ValueObjectBlockMemoryEmitterTests
         WasmTargetLayout? target = null,
         IAddressTakenAggregateProjectionEmitter? projections = null,
         int valueSize = 4,
-        bool valuesHoldReferences = false)
+        bool valuesHoldReferences = false,
+        RecordingExceptions? exceptions = null)
     {
         var program = new FakeProgram();
         var layouts = new RecordingLayoutProvider(target, valueSize, valuesHoldReferences);
         return new ValueObjectBlockMemoryEmitter(layouts, layouts, CreateTypeOperands(program),
             WasmRuntimeImports.CreateCatalog(),
             projections ?? new AddressTakenAggregateProjectionEmitter(layouts),
-            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(layouts)));
+            new ReferenceWriteBarrierEmitter(WasmRuntimeImports.CreateCatalog(), new ReferenceWriteRecordPolicy(layouts)),
+            new NullDereferenceCheckEmitter(exceptions ?? new RecordingExceptions(), new AddressInstructionEmitter(layouts)));
     }
 
     private static InstructionEmissionRequest CreateRequest(
@@ -591,5 +594,13 @@ public sealed class ValueObjectBlockMemoryEmitterTests
             operand,
             context,
             maxStack: 4);
+    }
+
+    private sealed class RecordingExceptions : IImplicitExceptionEmitter
+    {
+        public List<ManagedExceptionKind> Kinds { get; } = [];
+
+        public void Emit(IWasmInstructionWriter code, ManagedExceptionKind kind, OptionalFunctionIndex throwFunctionIndex) =>
+            Kinds.Add(kind);
     }
 }

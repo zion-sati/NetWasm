@@ -18,6 +18,7 @@ internal sealed record StackSlotProducers(
 {
     private readonly HashSet<int> _entries = InstructionEntries.Of(Body);
     private Dictionary<int, int>? _soleBranches;
+    private Dictionary<int, int>? _indices;
 
     // Instructions that push nothing.
     private static readonly FrozenSet<CilOperation> PushNothing = new[]
@@ -68,9 +69,13 @@ internal sealed record StackSlotProducers(
     // counts as the producer of the lower copy it leaves as well as the top one.
     // With `acrossBranches`, the walk continues from an instruction that only
     // one earlier branch reaches, with nothing falling into it, at that branch,
-    // as past a bounds check's branch around its throw. With `acrossThrowPaths`,
-    // only where the branch's other path throws without reading or replacing any
-    // value already on the stack, so the value the walk finds has no other use.
+    // as past a bounds check's branch around its throw, and past a conditional
+    // branch the consumer follows, whose targets see the value too. With
+    // `acrossThrowPaths`, only where the branch's other path throws without
+    // reading or replacing any value already on the stack, so the value the walk
+    // finds has no other use. A conditional branch ends its block: a value under
+    // its operands reaches its target as well as the instruction after it (the
+    // XAML compiler's setters keep their receiver there across a type test).
     public int? Find(
         int consumer, int slot, bool duplicates = false, bool acrossBranches = false, bool acrossThrowPaths = false)
     {
@@ -86,6 +91,11 @@ internal sealed record StackSlotProducers(
                     return null;
                 }
                 index = branch;
+            }
+            else if (IsConditionalBranch(Body.Instructions[index]) &&
+                !acrossBranches && !(acrossThrowPaths && TargetThrows(index)))
+            {
+                return null;
             }
             if (!Stacks.TryGetValue(Body.Instructions[index].Offset, out var stack))
             {
@@ -138,6 +148,58 @@ internal sealed record StackSlotProducers(
         return true;
     }
 
+    // A branch that may also fall through to the next instruction.
+    private static bool IsConditionalBranch(CilInstruction instruction) =>
+        instruction.Operand is CilOperand.SwitchTargets ||
+        instruction.Operand is CilOperand.BranchTarget &&
+        instruction.Operation is not (CilOperation.Branch or CilOperation.Leave);
+
+    // Whether a conditional branch's target, which only that branch reaches, runs
+    // into a throw that works only on values it pushes itself, as ThrowsAbove asks
+    // of the instructions a branch skips: nothing else enters on the way, nothing
+    // branches, and nothing consumes below the depth the branch leaves.
+    private bool TargetThrows(int branch)
+    {
+        if (Body.Instructions[branch].Operand is not CilOperand.BranchTarget { Offset: var offset } ||
+            Indices().GetValueOrDefault(offset, -1) is var target && target < 0 ||
+            !SoleBranches().TryGetValue(target, out var source) || source != branch ||
+            !Stacks.TryGetValue(offset, out var start))
+        {
+            return false;
+        }
+        for (var index = target; index < Body.Instructions.Length; index++)
+        {
+            var instruction = Body.Instructions[index];
+            if (index > target && _entries.Contains(instruction.Offset))
+            {
+                return false;
+            }
+            if (instruction.Operation == CilOperation.Throw)
+            {
+                return Stacks.TryGetValue(instruction.Offset, out var thrown) && thrown.Length > start.Length;
+            }
+            if (instruction.Operand is CilOperand.BranchTarget or CilOperand.SwitchTargets ||
+                Pushed(instruction) is not { } pushed || index + 1 >= Body.Instructions.Length ||
+                !Stacks.TryGetValue(Body.Instructions[index + 1].Offset, out var next) ||
+                next.Length - pushed < start.Length)
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private Dictionary<int, int> Indices()
+    {
+        if (_indices is not null) return _indices;
+        _indices = [];
+        for (var index = 0; index < Body.Instructions.Length; index++)
+        {
+            _indices[Body.Instructions[index].Offset] = index;
+        }
+        return _indices;
+    }
+
     // Instructions that only one earlier branch reaches, by the branch's index:
     // the instruction before them cannot fall into them and nothing else
     // targets them.
@@ -145,11 +207,7 @@ internal sealed record StackSlotProducers(
     {
         if (_soleBranches is not null) return _soleBranches;
         var sources = new Dictionary<int, List<int>>();
-        var indices = new Dictionary<int, int>();
-        for (var index = 0; index < Body.Instructions.Length; index++)
-        {
-            indices[Body.Instructions[index].Offset] = index;
-        }
+        var indices = Indices();
         var excluded = new HashSet<int>();
         for (var index = 0; index < Body.Instructions.Length; index++)
         {

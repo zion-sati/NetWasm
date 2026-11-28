@@ -14,16 +14,18 @@ internal sealed class StructuredInstructionContractValidator :
     public void Validate(StructuredMethod method)
     {
         ArgumentNullException.ThrowIfNull(method);
-        var instructions = Index(method.Header.Instructions);
+        var source = method.Header.Instructions;
+        var instructions = Index(source);
+        // Index checked the offsets ascend, so a block's source range is found by search, not by a scan of the
+        // method per block.
+        var offsets = source.Select(instruction => instruction.Offset).ToArray();
         foreach (var block in method.Blocks.Values)
         {
             foreach (var instruction in block.Instructions)
                 Match(instruction, instructions);
             var exitInstruction = ValidateExit(block.Exit, method, instructions);
-            var sourceBlock = method.Header.Instructions
-                .Where(instruction => instruction.Offset >= block.StartOffset &&
-                    instruction.Offset < block.EndOffset)
-                .ToArray();
+            var first = FirstAtOrAfter(offsets, block.StartOffset);
+            var sourceBlock = source.AsSpan(first, Math.Max(0, FirstAtOrAfter(offsets, block.EndOffset) - first));
             CilInstruction[] represented = exitInstruction is null
                 ? block.Instructions.ToArray()
                 : [.. block.Instructions, exitInstruction];
@@ -36,6 +38,13 @@ internal sealed class StructuredInstructionContractValidator :
         }
     }
 
+
+    // The index of the first offset at or after the given one.
+    private static int FirstAtOrAfter(int[] offsets, int offset)
+    {
+        var index = Array.BinarySearch(offsets, offset);
+        return index >= 0 ? index : ~index;
+    }
 
     private static Dictionary<int, CilInstruction> Index(
         IEnumerable<CilInstruction> source)

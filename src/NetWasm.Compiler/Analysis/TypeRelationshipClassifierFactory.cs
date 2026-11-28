@@ -22,3 +22,22 @@ internal sealed class TypeRelationshipClassifierFactory :
             interfaces,
             baseTypes);
 }
+
+// The classifier for a caller that classifies each pair once (assignability metadata): it remembers only the pairs it
+// classifies on the way.
+internal sealed class UnrememberedTypeRelationshipClassifierFactory : IUnrememberedTypeRelationshipClassifierFactory
+{
+    public ITypeRelationshipClassifier Create(
+        ITypeFinder types,
+        ITypeDefinitionResolver typeDefinitions,
+        ITypeIdentityResolver identities,
+        IImplementedInterfaceResolver interfaces,
+        IBaseTypeResolver baseTypes) =>
+        new TypeRelationshipClassifier(
+            types,
+            typeDefinitions,
+            identities,
+            interfaces,
+            baseTypes,
+            remembersClassifiedPairs: false);
+}

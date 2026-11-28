@@ -15,8 +15,11 @@ namespace NetWasm.Compiler.Analysis.Constants;
 // do. The call's fall-through is then dead, yet the control-flow graph joins it to the code after
 // the call, so values that code reads stay live (and rooted) across the call and the cold path
 // merges back into the hot one. A throw after the call ends the block the way an inline throw
-// does; it never runs. UnreachableInstructionRewriter, which runs later, removes what only the
-// fall-through reached.
+// does; it never runs, so it lowers to Wasm's unreachable (CilOperand.NeverRuns) rather than to a
+// throw of null: each cold path then ends in the call and unreachable alone, which Binaryen folds
+// into one tail outside the loop that branches to it, where a shared null-reference throw would
+// leave the call inside the loop. UnreachableInstructionRewriter, which runs later, removes what
+// only the fall-through reached.
 internal sealed class NonReturningCallRewriter(
     ICalledMethodResolver calledMethods,
     ICalleeMethodBodyReader methodBodies,
@@ -46,7 +49,7 @@ internal sealed class NonReturningCallRewriter(
                 replacements[index].Add(Synthetic(CilOperation.Pop));
             }
             replacements[index].Add(Synthetic(CilOperation.LoadNull));
-            replacements[index].Add(Synthetic(CilOperation.Throw));
+            replacements[index].Add(new(0, 1, CilOperation.Throw, new CilOperand.NeverRuns()));
         }
 
         return replacements is null ? body : RenumberedInstructions.Splice(body, replacements);
@@ -55,7 +58,10 @@ internal sealed class NonReturningCallRewriter(
     private bool Returns(MethodInstanceModel target)
     {
         var definition = target.Definition;
-        if (!definition.HasBody || definition.UnsafeAccessor is not null ||
+        // An attribute query the lowering may yet replace with its answer (after this rewrite runs) returns, whatever
+        // its fallback body does: dropping the code after it would leave the answer nowhere to go.
+        if (Attributes.AttributeQueryApis.IsQuery(target) ||
+            !definition.HasBody || definition.UnsafeAccessor is not null ||
             intrinsics.TryGetIntrinsic(definition.Key, out _) ||
             target.DeclaringType.ContainsGenericParameters ||
             target.MethodArguments.Any(static type => type.ContainsGenericParameters))

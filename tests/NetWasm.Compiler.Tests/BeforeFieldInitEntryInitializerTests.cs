@@ -76,7 +76,7 @@ public sealed class BeforeFieldInitEntryInitializerTests
     private static BeforeFieldInitEntryInitializer Initializer(bool beforeFieldInit = true)
     {
         var program = new Program(beforeFieldInit);
-        return new(new ControlFlowGraphBuilderFactory().Create(), new ControlFlowDominanceAnalyzer(),
+        return new(new ControlFlowGraphBuilderFactory().Create(), new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()),
             program, program, program, enabled: true);
     }
 

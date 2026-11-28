@@ -84,6 +84,9 @@ public sealed class NetWasmCompileTask : ToolTask
     // NetWasmMissingApiAsError: a reached method naming a member its declaring type lacks fails the compile, rather
     // than compiling to a body that throws MissingMethodException or MissingFieldException.
     public bool MissingApiAsError { get; set; }
+    // NetWasmReceiverFlowAudit: a qualification build whose precise dispatch sites fail fast on a receiver outside
+    // the receiver flow analysis's set.
+    public bool ReceiverFlowAudit { get; set; }
     // The project's RuntimeHostConfigurationOption items; those marked Trim="true" with a Boolean value are folded,
     // as ILLink folds them.
     public ITaskItem[] RuntimeHostConfigurationOptions { get; set; } = [];
@@ -142,6 +145,8 @@ public sealed class NetWasmCompileTask : ToolTask
     public string ManagedUnwrittenStaticFieldFolding { get; set; } = "Auto";
 
     public string ManagedConditionalSelects { get; set; } = "Auto";
+
+    public string ManagedByRefNullCheckElimination { get; set; } = "Auto";
 
     protected override string ToolName => "nwc";
 
@@ -294,6 +299,10 @@ public sealed class NetWasmCompileTask : ToolTask
         {
             builder.AppendSwitch("-missingapierror+");
         }
+        if (ReceiverFlowAudit)
+        {
+            builder.AppendSwitch("-receiverflowaudit+");
+        }
         if (LinkedNativeOnly)
         {
             builder.AppendSwitch("-linkednativeonly+");
@@ -368,6 +377,7 @@ public sealed class NetWasmCompileTask : ToolTask
                      ("rangebranchfolding", ManagedRangeBranchFolding),
                      ("unwrittenstaticfieldfolding", ManagedUnwrittenStaticFieldFolding),
                      ("conditionalselects", ManagedConditionalSelects),
+                     ("byrefnullcheckelimination", ManagedByRefNullCheckElimination),
                  })
         {
             if (value is not ("" or "Auto"))

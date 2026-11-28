@@ -7,6 +7,7 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Emission.StructResults;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 
@@ -15,7 +16,9 @@ internal sealed class DirectCallEmitter(
     IValueLayoutProvider values,
     IImplicitExceptionEmitter exceptions,
     IStaticInitializationEmitter initialization,
-    IMethodInitializationTriggerClassifier initializationTriggers) : ICallEmitter
+    IMethodInitializationTriggerClassifier initializationTriggers,
+    IValueTypeArgumentConventionFactory argumentConventions,
+    IValueTypeResultConventionFactory resultConventions) : ICallEmitter
 {
     public void Emit(
         CallEmissionRequest request, IWasmInstructionWriter code,
@@ -52,64 +55,78 @@ internal sealed class DirectCallEmitter(
                         instruction.Stack[request.ArgumentBase]), request.Instruction.Context.ManagedThrowFunction);
         }
         var returnsValue = signature.ReturnSignatureType.StackKind == CliValueKind.ValueType;
-        var returnOffset = returnsValue
+        var lanes = instruction.Context.CallResultLanes.Calls.ContainsKey(instruction.Instruction.Offset);
+        var returnOffset = returnsValue && !lanes
             ? instruction.Context.ValueLayout.TemporaryOffsets[
                 instruction.Instruction.Offset]
             : 0;
-        if (returnsValue)
-        {
-            EmitValueFrameAddress(code, instruction.Context, returnOffset);
-        }
         var scalarValueReceiver = !target.IsStatic &&
             request.Method.DeclaringType.IsValueType &&
             request.Method.DeclaringType.StackKind != CliValueKind.ValueType &&
             instruction.Stack[request.ArgumentBase] is not (
                 CliValueKind.ManagedAddress or CliValueKind.NativeInt);
-        if (scalarValueReceiver)
+        void EmitCall(IWasmInstructionWriter code)
         {
-            var receiverOffset = instruction.Context.ValueLayout.CallReceiverOffsets[
-                instruction.Instruction.Offset];
-            EmitValueFrameAddress(code, instruction.Context, receiverOffset);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-                instruction.Context,
-                request.ArgumentBase,
-                instruction.Stack[request.ArgumentBase])))));
-            ManagedMemoryEmitter.EmitStoreByType(
-                code,
-                layouts.Target,
-                0,
-                request.Method.DeclaringType,
-                values.GetValueLayout(request.Method.DeclaringType).Size, scratch: instruction.Context.VectorScratch);
-        }
-        for (var index = 0; index < request.Consumed; index++)
-        {
-            if (index == 0 && scalarValueReceiver)
+            if (scalarValueReceiver)
             {
-                EmitValueFrameAddress(
-                    code,
+                var receiverOffset = instruction.Context.ValueLayout.CallReceiverOffsets[
+                    instruction.Instruction.Offset];
+                EmitValueFrameAddress(code, instruction.Context, receiverOffset);
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
                     instruction.Context,
-                    instruction.Context.ValueLayout.CallReceiverOffsets[
-                        instruction.Instruction.Offset]);
+                    request.ArgumentBase,
+                    instruction.Stack[request.ArgumentBase])))));
+                ManagedMemoryEmitter.EmitStoreByType(
+                    code,
+                    layouts.Target,
+                    0,
+                    request.Method.DeclaringType,
+                    values.GetValueLayout(request.Method.DeclaringType).Size, scratch: instruction.Context.VectorScratch);
             }
-            else
+            for (var index = 0; index < request.Consumed; index++)
             {
-                if (index == 0 && constrainedReferenceReceiver)
+                if (index == 0 && scalarValueReceiver)
+                {
+                    EmitValueFrameAddress(
+                        code,
+                        instruction.Context,
+                        instruction.Context.ValueLayout.CallReceiverOffsets[
+                            instruction.Instruction.Offset]);
+                }
+                else if (index == 0 && constrainedReferenceReceiver)
                 {
                     code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(instruction.Context.ObjectTemporary))));
                 }
                 else
                 {
-                    code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-                        instruction.Context,
-                        request.ArgumentBase + index,
-                        instruction.Stack[request.ArgumentBase + index])))));
+                    var local = GetStackLocal(instruction.Context, request.ArgumentBase + index, instruction.Stack[request.ArgumentBase + index]);
+                    argumentConventions.Create(StructParameters.Parameter(request.Method.Signature, target.IsStatic, index)).Emit(code,
+                        writer => writer.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local))), new(instruction.Context, instruction.Instruction.Offset, index, instruction.Context.VectorScratch));
                 }
             }
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(functionIndices.Resolve(request.Method)))));
         }
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(functionIndices.Resolve(request.Method)))));
+        // The return type's convention puts the value's temporary before the arguments (a buffer) or stores the
+        // returned fields into it, or into the call's lanes, after the call.
+        if (returnsValue)
+        {
+            resultConventions.Create(signature.ReturnSignatureType).Emit(code,
+                writer => EmitValueFrameAddress(writer, instruction.Context, returnOffset), new(instruction.Context.StructResultLocals,
+                    instruction.Context.VectorScratch, lanes),
+                EmitCall);
+        }
+        else
+        {
+            EmitCall(code);
+        }
         instruction.Stack.RemoveRange(request.ArgumentBase, request.Consumed);
         if (returnsValue)
         {
+            if (lanes)
+            {
+                instruction.Stack.Add(CliValueKind.ValueType);
+                return;
+            }
             EmitValueFrameAddress(code, instruction.Context, returnOffset);
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
                 instruction.Context,

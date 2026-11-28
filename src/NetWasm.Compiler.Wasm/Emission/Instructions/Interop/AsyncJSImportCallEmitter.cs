@@ -70,7 +70,6 @@ internal sealed class AsyncJSImportCallEmitter(
                 code,
                 request.Method.Signature.ParameterSignatureTypes[index],
                 local,
-                context,
                 instruction.Target.InteropImports);
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropResult))));
@@ -81,7 +80,7 @@ internal sealed class AsyncJSImportCallEmitter(
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.HandleRelease)))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropDescriptor))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameLeave)))));
-        exceptions.Emit(code, ManagedExceptionKind.JSException, request.Instruction.Context.ManagedThrowFunction);
+        exceptions.Emit(code, ManagedExceptionKind.JSImportFailure, request.Instruction.Context.ManagedThrowFunction);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropDescriptor))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameLeave)))));

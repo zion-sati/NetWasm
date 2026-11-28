@@ -53,7 +53,7 @@ public sealed class ArrayLoopInductionAnalyzerTests
             assembly, [assets.CoreLib], "EntryPoint", "Run", [],
             Optimization: NetWasm.Compiler.ComponentModel.FinalWasmOptimization.O3));
         var method = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == "Run");
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
 
         var proof = Assert.Single(new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance)
             .Analyze(method.ControlFlow));
@@ -65,7 +65,8 @@ public sealed class ArrayLoopInductionAnalyzerTests
     public void EmptyNaturalLoopSetHasNoInductionProofs()
     {
         var fixture = Create(0, 1);
-        var analyzer = new ArrayLoopInductionAnalyzer(new FrozenLoops([]), new FrozenDominance([]));
+        var analyzer = new ArrayLoopInductionAnalyzer(new FrozenLoops([]), new FrozenDominance(
+            DominatorTree.FromImmediateDominators([], new Dictionary<int, int?>())));
         Assert.Empty(analyzer.Analyze(fixture.Flow));
     }
 
@@ -164,7 +165,7 @@ public sealed class ArrayLoopInductionAnalyzerTests
             })],
         };
         var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
         return (new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance),
             new ValidatedControlFlowGraph(graph,
                 graph.Blocks.ToImmutableDictionary(block => block.Index, _ => ImmutableArray<CliValueKind>.Empty), []));
@@ -173,7 +174,7 @@ public sealed class ArrayLoopInductionAnalyzerTests
     [Fact]
     public void RejectsMissingAnalysisDependencies()
     {
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
         Assert.Throws<ArgumentNullException>(() => new ArrayLoopInductionAnalyzer(null!, dominance));
         Assert.Throws<ArgumentNullException>(() => new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), null!));
     }
@@ -264,7 +265,7 @@ public sealed class ArrayLoopInductionAnalyzerTests
                 CliTypeIdentity.SzArray(CliTypeIdentity.FromStackKind(CliValueKind.I4))],
         };
         var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
         var loops = new ControlFlowNaturalLoopAnalyzer(dominance)
             .Analyze(graph, graph.Entry.Index, graph.ReachableBlocks);
         var facts = dominance.Analyze(graph, graph.Entry.Index, graph.ReachableBlocks);
@@ -291,9 +292,9 @@ public sealed class ArrayLoopInductionAnalyzerTests
             ImmutableHashSet<int> blocks) => facts;
     }
 
-    private sealed class FrozenDominance(Dictionary<int, ImmutableHashSet<int>> facts) : IControlFlowDominanceAnalyzer
+    private sealed class FrozenDominance(DominatorTree facts) : IControlFlowDominanceAnalyzer
     {
-        public Dictionary<int, ImmutableHashSet<int>> Analyze(ControlFlowGraph graph, int entry,
+        public DominatorTree Analyze(ControlFlowGraph graph, int entry,
             ImmutableHashSet<int> blocks) => facts;
     }
 }

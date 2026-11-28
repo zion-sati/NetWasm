@@ -7,17 +7,21 @@ using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed class AsyncJSImportResolveEmitter(
     ITargetLayout layouts,
     IValueLayoutProvider valueLayouts,
     IRuntimeImportResolver runtimeImports,
+    IAsyncImportTaskHandleEmitter taskHandles,
     IGeneratedFunctionWriterFactory writers,
     IHostCallbackStringArgumentMarshaller stringResults,
     IStagedValueArrayEmitter valueArrayResults,
     IHostCallbackHostObjectArgumentMarshaller hostObjectResults,
-    IJavaScriptNullableEmitter nullables) : IAsyncJSImportResolveEmitter
+    IJavaScriptNullableEmitter nullables,
+    IValueTypeArgumentConventionFactory argumentConventions) : IAsyncJSImportResolveEmitter
 {
     public byte[] Emit(
         JavaScriptAsyncMethodBinding binding,
@@ -30,8 +34,7 @@ internal sealed class AsyncJSImportResolveEmitter(
         // second parameter and becomes the managed value passed to SetResult.
         var referenceResult = result is not null && InteropTypeClassifier.IsJavaScriptReference(result);
         // A date result arrives as Unix milliseconds and a nullable one as its presence
-        // and value. Either becomes its struct in a value frame, whose address SetResult
-        // receives.
+        // and value. Either becomes its struct in a value frame, which SetResult receives.
         var convertedResult = result is not null && InteropTypeClassifier.IsConvertedValue(result);
         var taskLocal = result is null ? 1
             : InteropTypeClassifier.IsNullable(result) || InteropTypeClassifier.IsValueArray(result) ? 3 : 2;
@@ -47,16 +50,7 @@ internal sealed class AsyncJSImportResolveEmitter(
                     : convertedResult ? [CliValueKind.ManagedAddress] : Array.Empty<CliValueKind>()),
             ],
             layouts.Target);
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned(0)));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
-                RuntimeImportSymbol.HandleGet))));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalSet,
-            WasmInstructionOperand.Unsigned((uint)taskLocal)));
+        taskHandles.Emit(code.Instructions, 0, taskLocal, functionIndices.ManagedThrowFunction);
         if (referenceResult)
         {
             var target = new InteropMarshallingTarget(interopImports);
@@ -106,9 +100,12 @@ internal sealed class AsyncJSImportResolveEmitter(
             WasmInstructionOperand.Unsigned((uint)taskLocal)));
         if (result is not null)
         {
-            code.Instructions.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)(referenceResult || convertedResult ? valueLocal : 1))));
+            // A converted result (a date, a nullable) is a struct in the value frame, passed as SetResult's parameter
+            // takes it: its address or its fields.
+            var value = referenceResult || convertedResult ? valueLocal : 1;
+            argumentConventions.Create(binding.SetResult.Signature.ParameterSignatureTypes[0]).Emit(code.Instructions,
+                writer => writer.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)value))),
+                new());
         }
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,

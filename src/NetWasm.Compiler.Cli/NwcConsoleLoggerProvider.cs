@@ -10,7 +10,7 @@ namespace NetWasm.Compiler.Cli;
 // lines, and diagnostics as "error NW1234: message", which MSBuild reads as an
 // error or a warning with its code. Only nwc's own entries, the compiler's
 // progress, wasm-opt's start and end, and the warnings and errors the
-// compilation pipeline reports to the build (NW1016, NW1017, NW1018) reach it;
+// compilation pipeline reports to the build (NW1016 to NW1019) reach it;
 // the rest of the compiler's logging stays in its diagnostic log.
 internal sealed class NwcConsoleLoggerProvider(IConsole console) : ILoggerProvider
 {

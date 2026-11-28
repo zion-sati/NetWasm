@@ -10,6 +10,8 @@ using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed record DelegateInvokeTarget(
@@ -28,7 +30,8 @@ internal sealed class DelegateInvokeFunctionEmitter(
     IManagedMethodFunctionTypeResolver functionTypes,
     IDelegateInvocationTargetSelector targets,
     IGeneratedFunctionWriterFactory writers,
-    IDelegateDispatchEmitter dispatch) : IDelegateInvokeFunctionEmitter
+    IDelegateDispatchEmitter dispatch,
+    IStructResultClassifier? structResults = null) : IDelegateInvokeFunctionEmitter
 {
     public byte[] Emit(
         MethodInstanceModel invoke,
@@ -36,17 +39,19 @@ internal sealed class DelegateInvokeFunctionEmitter(
         IFunctionIndexResolver functionIndices,
         WasmFunctionIndex multicastFunction)
     {
-        var signature = DelegateInvokeSignature.Of(invoke);
+        var signature = DelegateInvokeSignature.Of(invoke, structResults);
         var parameterCount = functionTypes.Resolve(invoke).Parameters.Length;
         var resultLocal = parameterCount;
-        var initializationFrameLocal = resultLocal + 1;
+        var initializationFrameLocal = resultLocal + signature.ResultLocals.Length;
         var methodIdLocal = initializationFrameLocal + 1;
 
         var output = writers.Create();
         var code = output.Instructions;
         // A list rather than an ImmutableArray spread: NativeAOT-LLVM, which compiles this
         // compiler for the browser, crashes on that (https://github.com/dotnet/runtimelab/issues/3329).
-        List<CliValueKind> locals = [signature.ResultType, CliValueKind.ManagedAddress];
+        List<CliValueKind> locals = [];
+        locals.AddRange(signature.ResultLocals);
+        locals.Add(CliValueKind.ManagedAddress);
         if (targets.Select(invoke, targetProgram.Bindings).Length > DelegateDispatch.SequentialTargets)
         {
             locals.Add(CliValueKind.I4);
@@ -65,10 +70,7 @@ internal sealed class DelegateInvokeFunctionEmitter(
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         dispatch.Emit(code, new(invoke, targetProgram, signature.Receiver, resultLocal, initializationFrameLocal, methodIdLocal),
             functionIndices);
-        if (signature.ReturnsScalar)
-        {
-            WriteLocalGet(code, resultLocal);
-        }
+        signature.EmitReturned(code, resultLocal);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Return));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         for (var parameter = 0; parameter < parameterCount; parameter++)

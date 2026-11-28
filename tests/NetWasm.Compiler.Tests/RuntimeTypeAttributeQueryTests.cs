@@ -74,14 +74,15 @@ public sealed class RuntimeTypeAttributeQueryTests
         CliTypeIdentity[] types = [Plain, Holder, generic, primitive, CliTypeIdentity.SzArray(Holder),
             CliTypeIdentity.GenericParameter(method: false, 0), Holder];
 
-        var cases = selector.Select(Query(AttributeQueryOperation.GetMany, null), types);
+        var selection = selector.Select(Query(AttributeQueryOperation.GetMany, null), types);
 
-        Assert.NotNull(cases);
+        Assert.Null(selection.Failure);
         Assert.Equal([.. new[] { Holder, generic, primitive }.OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
-            cases.Value.Select(found => found.Type));
+            selection.Cases.Select(found => found.Type));
         Assert.Equal(4, planner.Planned.Count);
         Assert.All(planner.Planned, query => Assert.Equal(Marker, query.Filter));
-        Assert.Equal(cases.Value.Select(found => found.Type), selector.Select(Query(AttributeQueryOperation.GetMany, null), types)!.Value.Select(found => found.Type));
+        Assert.Equal(selection.Cases.Select(found => found.Type),
+            selector.Select(Query(AttributeQueryOperation.GetMany, null), types).Cases.Select(found => found.Type));
         Assert.Equal(4, planner.Planned.Count);
     }
 
@@ -99,9 +100,9 @@ public sealed class RuntimeTypeAttributeQueryTests
         var selector = new RuntimeTypeAttributeCandidateSelector(new Planner(_ =>
             new(Holder, Marker, Result(operation, direct), Result(operation, inherited))));
 
-        var cases = selector.Select(Query(operation, inherit), [Holder]);
+        var selection = selector.Select(Query(operation, inherit), [Holder]);
 
-        Assert.Equal(expected ? 1 : 0, cases!.Value.Length);
+        Assert.Equal(expected ? 1 : 0, selection.Cases.Length);
     }
 
     [Fact]
@@ -110,7 +111,9 @@ public sealed class RuntimeTypeAttributeQueryTests
         var selector = new RuntimeTypeAttributeCandidateSelector(new Planner(_ =>
             throw new CompilerException(new(DiagnosticCode.UnsupportedMetadata, "unplannable"))));
 
-        Assert.Null(selector.Select(Query(AttributeQueryOperation.GetMany, true), [Holder]));
+        var selection = selector.Select(Query(AttributeQueryOperation.GetMany, true), [Holder]);
+        Assert.Empty(selection.Cases);
+        Assert.Equal("unplannable", selection.Failure);
         Assert.Throws<ArgumentException>(() => selector.Select(Query(AttributeQueryOperation.GetMany, true) with { Target = Holder }, [Holder]));
         Assert.Throws<ArgumentException>(() => selector.Select(Query(AttributeQueryOperation.GetMany, true) with { TargetAssembly = Assembly }, [Holder]));
         Assert.Throws<ArgumentNullException>(() => selector.Select(null!, [Holder]));
@@ -129,8 +132,9 @@ public sealed class RuntimeTypeAttributeQueryTests
 
         var fragment = builder.Build(request);
 
-        Assert.Equal([TypeType, Marker, Bool, Plain, Plain, Plain], fragment.LocalTypes);
-        Assert.Equal([7, 8, 9], fragments.Requests.Select(item => item.FirstLocal));
+        // The three fragments' unused Plain local is one local: a query runs one case.
+        Assert.Equal([TypeType, Marker, Bool, Plain], fragment.LocalTypes);
+        Assert.Equal([7, 8, 8], fragments.Requests.Select(item => item.FirstLocal));
         Assert.All(fragments.Requests, item =>
         {
             Assert.Equal(AttributeQueryOperation.GetMany, item.Operation);
@@ -159,6 +163,30 @@ public sealed class RuntimeTypeAttributeQueryTests
             instruction.Operand is CilOperand.BranchTarget { Offset: var target } &&
             fragment.Instructions[target].Operation == CilOperation.Return).ToArray();
         Assert.Equal(3, spliced.Length);
+    }
+
+    // Cases share a local of a type when each writes it before reading it: its first use a store, no branch landing
+    // between that store and its last use. A local read first, crossed by a branch target, or whose address is taken
+    // keeps a local of its own in every case.
+    [Fact]
+    public void CasesShareTheLocalsTheyWriteBeforeReading()
+    {
+        var fragments = new LocalFragments();
+        var request = Request([new(Holder, Found(AttributeQueryOperation.GetMany)), new(Plain, Found(AttributeQueryOperation.GetMany))],
+            Method(".ctor", 10, isStatic: false), nullArgumentName: null);
+
+        var fragment = new RuntimeTypeAttributeDispatchBuilder(fragments).Build(request);
+
+        // Arguments (3), then the first case's four locals; the later cases add the three that cannot be shared.
+        Assert.Equal([TypeType, Marker, Bool, Plain, Plain, Plain, Plain, Plain, Plain, Plain, Plain, Plain, Plain],
+            fragment.LocalTypes);
+        var stored = fragment.Instructions.Where(instruction => instruction.Operation == CilOperation.StoreLocal)
+            .Select(instruction => ((CilOperand.Index)instruction.Operand).Value).ToArray();
+        // The three argument stores, then each case's first store: local 7, shared by every case.
+        Assert.Equal([6, 5, 4, 7, 7, 7], stored[..3].Concat(stored.Where(local => local == 7)).ToArray());
+        var addressed = fragment.Instructions.Where(instruction => instruction.Operation == CilOperation.LoadLocalAddress)
+            .Select(instruction => ((CilOperand.Index)instruction.Operand).Value).ToArray();
+        Assert.Equal(3, addressed.Distinct().Count());
     }
 
     [Fact]
@@ -218,6 +246,21 @@ public sealed class RuntimeTypeAttributeQueryTests
         Assert.Same(fixture.Output, reduced[fixture.Name]);
         Assert.All(fixture.Lowered, body => Assert.Same(fixture.Body, body));
         Assert.Equal(3, fixture.Lowered.Count);
+    }
+
+    // A later closure build of the same program (a second analysis) starts from the body as read: the reducer lowers it
+    // again rather than take the earlier build's rewrite as done.
+    [Fact]
+    public void ALaterBuildLowersTheBodyAsReadAgain()
+    {
+        var fixture = new ReducerFixture();
+        Assert.Same(fixture.Output, fixture.Reduce()[fixture.Name]);
+        fixture.Current = fixture.Output;
+        Assert.Empty(fixture.Reduce());
+
+        fixture.Current = fixture.Body;
+
+        Assert.Same(fixture.Output, fixture.Reduce()[fixture.Name]);
     }
 
     [Theory]
@@ -324,9 +367,40 @@ public sealed class RuntimeTypeAttributeQueryTests
         }
     }
 
+    // Four locals: 0 stored then read (shareable), 1 read before it is written, 2 stored then read across a branch
+    // target, 3 address-taken. The fragment starts at request.FirstLocal.
+    private sealed class LocalFragments : IAttributeQueryCilBuilder
+    {
+        public AttributeCilFragment Build(AttributeQueryCilRequest request)
+        {
+            var first = request.FirstLocal;
+            CilInstruction I(int offset, CilOperation operation, CilOperand operand) => new(offset, offset + 1, operation, operand);
+            return new([
+                I(0, CilOperation.Pop, new CilOperand.None()),
+                I(1, CilOperation.Pop, new CilOperand.None()),
+                I(2, CilOperation.Pop, new CilOperand.None()),
+                I(3, CilOperation.LoadNull, new CilOperand.None()),
+                I(4, CilOperation.StoreLocal, new CilOperand.Index(first)),
+                I(5, CilOperation.LoadLocal, new CilOperand.Index(first)),
+                I(6, CilOperation.Pop, new CilOperand.None()),
+                I(7, CilOperation.LoadLocal, new CilOperand.Index(first + 1)),
+                I(8, CilOperation.StoreLocal, new CilOperand.Index(first + 1)),
+                I(9, CilOperation.LoadNull, new CilOperand.None()),
+                I(10, CilOperation.StoreLocal, new CilOperand.Index(first + 2)),
+                I(11, CilOperation.LoadLocal, new CilOperand.Index(first + 1)),
+                I(12, CilOperation.BranchIfFalse, new CilOperand.BranchTarget(13)),
+                I(13, CilOperation.LoadLocal, new CilOperand.Index(first + 2)),
+                I(14, CilOperation.Pop, new CilOperand.None()),
+                I(15, CilOperation.LoadLocalAddress, new CilOperand.Index(first + 3)),
+                I(16, CilOperation.Pop, new CilOperand.None()),
+                I(17, CilOperation.Return, new CilOperand.None())], [Plain, Plain, Plain, Plain], 2);
+        }
+    }
+
     private sealed class ReducerFixture : ICalledMethodResolver, IAttributeQueryClassifier, IControlFlowGraphBuilder,
         ITypedStackValidator, IAttributeProvenanceAnalyzer, IRuntimeTypeAttributeQueryResolver,
-        IRuntimeTypeAttributeCandidateSelector, IRuntimeTypeAttributeDispatchBuilder, IAttributeQueryBodyRewriter
+        IRuntimeTypeAttributeCandidateSelector, IRuntimeTypeAttributeDispatchBuilder, IAttributeQueryBodyRewriter,
+        IAttributeQueryCompileTimeAnswerer
     {
         private readonly MethodInstanceModel _caller = Method("Caller", 1, isStatic: true);
         private readonly MethodInstanceModel _staticQuery = Method("GetCustomAttributes", 2, isStatic: true, TypeType);
@@ -343,7 +417,14 @@ public sealed class RuntimeTypeAttributeQueryTests
                  new(3, 4, CilOperation.CallVirtual, new CilOperand.None()),
                  new(4, 5, CilOperation.Return, new CilOperand.None())])
             { MethodInstance = _caller };
-            Output = Body with { MaxStack = 6 };
+            // The rewrite replaces the two queries; the ordinary call stays.
+            Output = Body with
+            {
+                MaxStack = 6,
+                Instructions = [.. Body.Instructions.Select(instruction => instruction.Offset is 1 or 3
+                    ? instruction with { Operation = CilOperation.Nop }
+                    : instruction)],
+            };
             Current = Body;
         }
 
@@ -363,8 +444,13 @@ public sealed class RuntimeTypeAttributeQueryTests
         internal ImmutableDictionary<int, AttributeCilFragment>? Replacements { get; private set; }
         private RuntimeTypeAttributeQueryReducer? _reducer;
 
-        internal RuntimeTypeAttributeQueryReducer Create() => _reducer ??= new(this, this, this, this, this, this, this, this,
+        internal RuntimeTypeAttributeQueryReducer Create() => _reducer ??= new(this, this, this, this, this,
+            new RuntimeTypeAttributeQueryAcceptor(this, this), this, this,
             this, Ambiguity, NullReference, ArgumentNull);
+
+        // The fixture's queries take run-time Types, which the compile-time answer never sees.
+        public AttributeQueryAnswer Answer(AttributeQueryCall call, ImmutableArray<AttributeValueProof> stack, int firstLocal) =>
+            new AttributeQueryAnswer.Unresolved();
 
         internal ImmutableDictionary<string, CilMethodBody> Reduce() =>
             ((NetWasm.Compiler.Analysis.Constants.IReachableProgramReducer)Create()).Reduce(Program(), ReachabilityRoots.Empty);
@@ -417,10 +503,10 @@ public sealed class RuntimeTypeAttributeQueryTests
         public ResolvedAttributeQuery? ResolveRuntimeType(AttributeQueryCall call, ImmutableArray<AttributeValueProof> stack) =>
             Missing == "resolve" ? null : new(call, null, Marker, true);
 
-        public ImmutableArray<RuntimeTypeAttributeCase>? Select(ResolvedAttributeQuery query, IEnumerable<CliTypeIdentity> runtimeTypes)
+        public RuntimeTypeAttributeSelection Select(ResolvedAttributeQuery query, IEnumerable<CliTypeIdentity> runtimeTypes)
         {
             RuntimeTypes = [.. runtimeTypes];
-            return Missing == "select" ? null : Cases;
+            return Missing == "select" ? RuntimeTypeAttributeSelection.Unplannable("unplannable") : new(Cases, null);
         }
 
         public AttributeCilFragment Build(RuntimeTypeAttributeDispatchRequest request)

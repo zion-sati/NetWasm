@@ -28,6 +28,15 @@ internal sealed class BranchComparisonEmitter(
                 throw new InvalidOperationException(
                     "A branch comparison cannot mix managed address and reference operands.");
             }
+            // An address orders as unsigned: desktop's are never negative, where a wasm32 one may have its top bit set.
+            operation = operation switch
+            {
+                CilOperation.BranchIfGreaterThanSigned => CilOperation.BranchIfGreaterThanUnsigned,
+                CilOperation.BranchIfLessThanSigned => CilOperation.BranchIfLessThanUnsigned,
+                CilOperation.BranchIfGreaterThanOrEqualSigned => CilOperation.BranchIfGreaterThanOrEqualUnsigned,
+                CilOperation.BranchIfLessThanOrEqualSigned => CilOperation.BranchIfLessThanOrEqualUnsigned,
+                _ => operation,
+            };
             switch (operation)
             {
                 case CilOperation.BranchIfEqual:

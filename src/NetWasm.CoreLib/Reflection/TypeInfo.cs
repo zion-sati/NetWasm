@@ -17,6 +17,7 @@ public abstract class TypeInfo : Type, IReflectableType
     private const BindingFlags DeclaredOnlyLookup = DefaultLookup | BindingFlags.DeclaredOnly;
 
     protected TypeInfo() { }
+    private protected TypeInfo(int semanticTypeId) : base(semanticTypeId) { }
     TypeInfo IReflectableType.GetTypeInfo() => this;
     public virtual Type AsType() => this;
     public virtual Type[] GenericTypeParameters => IsGenericTypeDefinition ? GetGenericArguments() : EmptyTypes;

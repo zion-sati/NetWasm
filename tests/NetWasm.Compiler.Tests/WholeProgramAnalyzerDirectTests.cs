@@ -989,10 +989,11 @@ public sealed class WholeProgramAnalyzerDirectTests
                 typeDefinitions,
                 typeFinder,
                 typeIdentities,
-                typeRepository);
+                typeRepository,
+                new EffectFreeTypeInitializerClassifier(new NoCalleeBodies(), fieldRepository));
             var queues = Make<ReachabilityQueueDrainer>(
-                Make<ReachableMethodApplier>(typeIdentities),
-                Make<ReachabilityImportApplier>(typeIdentities),
+                Make<ReachableMethodApplier>(typeIdentities, new NoExportFailureRoots()),
+                Make<ReachabilityImportApplier>(typeIdentities, new NoExportFailureRoots()),
                 _dispatchTargets,
                 new ManagedCallSiteLedgerWriter(),
                 new CompilerDiagnosticProvenanceBinder(),
@@ -1001,13 +1002,16 @@ public sealed class WholeProgramAnalyzerDirectTests
             var derivedRoots = Make<ReachabilityDerivedRootExpander>(
                 Make<RuntimeReachabilityExpander>(new NoSharedObjectDispatch(),
                     new ObjectDispatchSharing(NetWasm.Compiler.ComponentModel.Optimization.ObjectDispatchPolicy.Shared),
-                    delegateTypes, intrinsicRoots,
-                    typeDefinitions, typeIdentities, new EmptyObjectArrayDelegateAdapterPlanner()),
+                    delegateTypes, intrinsicRoots, new NoSharedArrayTypeOf(),
+                    typeDefinitions, typeIdentities, new EmptyObjectArrayDelegateAdapterPlanner(),
+                    UnrecordedAnalysisSteps.Instance),
                 Make<MemberReachabilityExpander>(new MemberDescriptorPlanner(propertyAccessors),
                     new FixedMemberExecutionPlanner(MemberExecution), _dispatchTargets,
                     new DispatchTargetBodyClassifier(new NoRuntimeIntrinsics())),
                 Make<TypeFactsReachabilityExpander>(
-                    new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions, typeIdentities), typeIdentities));
+                    new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions, typeIdentities,
+                        new NoImplementedInterfaces()), typeIdentities),
+                UnrecordedAnalysisSteps.Instance);
             return Make<ReachabilityClosureBuilder>(
                 sessions,
                 Make<ReachabilityRootSeeder>(methods, typeDefinitions, typeIdentities, typeFinder),
@@ -1016,7 +1020,13 @@ public sealed class WholeProgramAnalyzerDirectTests
                 ProgramBuilder,
                 delegateTypes,
                 typeTests,
-                new ModuleInitializerOrderer(new Dictionary<AssemblyIdentity, IReadOnlyList<AssemblyIdentity>>()));
+                new ModuleInitializerOrderer(new Dictionary<AssemblyIdentity, IReadOnlyList<AssemblyIdentity>>()),
+                UnrecordedAnalysisSteps.Instance,
+                new NetWasm.Compiler.Diagnostics.CollectingCompilerMemoryReleaser(hasProcess: false,
+                    new NetWasm.Compiler.Diagnostics.ProcessCompilerMemoryReader(hasProcess: false), floor: 0,
+                    growth: 0,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<NetWasm.Compiler.Diagnostics.CollectingCompilerMemoryReleaser>.Instance),
+                new TypeDispatchReceiverFlows());
 
             MethodInstanceModel Descriptor(
                 int token,
@@ -1368,7 +1378,10 @@ public sealed class WholeProgramAnalyzerDirectTests
                 body,
                 [request.Method.Definition.DeclaringType],
                 [new(ManagedExceptionKind.Argument, "System.ArgumentException")],
-                instructions);
+                instructions)
+            {
+                ReachableRegions = body.Body.ExceptionRegions,
+            };
         }
     }
 
@@ -1377,6 +1390,11 @@ public sealed class WholeProgramAnalyzerDirectTests
         public ImmutableDictionary<string, TypeTestSiteModel> Build(
             IEnumerable<ManagedMethodBody> methods,
             IEnumerable<CliTypeIdentity> allocatedTypes) => [];
+    }
+
+    private sealed class NoImplementedInterfaces : IImplementedInterfaceResolver
+    {
+        public ImmutableArray<CliTypeIdentity> GetInterfaces(CliTypeIdentity type) => [];
     }
 
     private sealed class FixedRuntimeIntrinsicTypeRootPlanner(RuntimeIntrinsicTypeRootPlan plan) :
@@ -1388,12 +1406,11 @@ public sealed class WholeProgramAnalyzerDirectTests
         public RuntimeIntrinsicTypeRootPlan Plan(
             IEnumerable<MethodInstanceModel> reachableMethods,
             IEnumerable<CliTypeIdentity> reachableTypes,
-        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> arrayElementSeeds = default,
         System.Collections.Immutable.ImmutableArray<CliTypeIdentity> typeHandleSeeds = default,
         System.Collections.Immutable.ImmutableArray<CliTypeIdentity> programAllocatedTypes = default)
         {
             ObservedTypes.UnionWith(reachableTypes);
-            ObservedSeeds.UnionWith(arrayElementSeeds);
+            ObservedSeeds.UnionWith(typeHandleSeeds.IsDefault ? [] : typeHandleSeeds);
             return plan;
         }
     }
@@ -1408,6 +1425,12 @@ public sealed class WholeProgramAnalyzerDirectTests
     private sealed class NoSharedObjectDispatch : ISharedObjectDispatchResolver
     {
         public MethodInstanceModel? Resolve(MethodInstanceModel declaration) => null;
+    }
+
+    // These fixtures allocate no shared array, so nothing asks for their GetType.
+    private sealed class NoSharedArrayTypeOf : ISharedArrayTypeOfResolver
+    {
+        public MethodInstanceModel Resolve() => throw new InvalidOperationException("No shared array is allocated.");
     }
 
     private sealed class NoRuntimeIntrinsics : IRuntimeIntrinsicRegistry
@@ -1439,7 +1462,6 @@ public sealed class WholeProgramAnalyzerDirectTests
         public RuntimeIntrinsicTypeRootPlan Plan(
             IEnumerable<MethodInstanceModel> reachableMethods,
             IEnumerable<CliTypeIdentity> reachableTypes,
-        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> arrayElementSeeds = default,
         System.Collections.Immutable.ImmutableArray<CliTypeIdentity> typeHandleSeeds = default,
         System.Collections.Immutable.ImmutableArray<CliTypeIdentity> programAllocatedTypes = default)
         {
@@ -1535,3 +1557,28 @@ file sealed class NoCalleeBodies : ICalleeMethodBodyReader
     }
 }
 
+// The closure's receiver flow for these tests, which exercise the closure itself: a flow that admitted nothing
+// passes every slot use it never saw, so every dispatched call takes its targets by type.
+internal sealed class TypeDispatchReceiverFlows : NetWasm.Compiler.Analysis.ReceiverFlow.IClosureReceiverFlowFactory
+{
+    public NetWasm.Compiler.Analysis.ReceiverFlow.ClosureReceiverFlow Create(ReachabilityLedger ledger,
+        MethodDefinitionModel? entryPoint, IEnumerable<ProgramExport> exports, ReachabilityRoots roots) =>
+        NetWasm.Compiler.Analysis.ReceiverFlow.ClosureReceiverFlow.Replay(
+            new(new Dictionary<DispatchSlot, (HashSet<CliTypeIdentity> Receivers, List<NetWasm.Compiler.Analysis.ReceiverFlow.FlowBound> Bounds)>(),
+                new Dictionary<string, NetWasm.Compiler.Analysis.ReceiverFlow.ClosureReceiverFlow.MethodCalls>()),
+            static (_, _) => false, ledger,
+            NetWasm.Compiler.ComponentModel.Optimization.ReceiverFlowDispatchPolicy.EveryVirtualCall);
+
+}
+
+// These analyses have no JavaScript boundary to give an error back through.
+file sealed class NoExportFailureRoots : IJavaScriptExportBoundaryRecorder, IJavaScriptErrorConstructorRecorder
+{
+    public void Record(ReachabilitySession session)
+    {
+    }
+
+    public void Record(ReachabilitySession session, MethodInstanceModel method)
+    {
+    }
+}

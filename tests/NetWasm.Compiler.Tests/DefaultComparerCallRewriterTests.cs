@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using System.Diagnostics.CodeAnalysis;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
@@ -70,7 +71,8 @@ public sealed class DefaultComparerCallRewriterTests
     }
 
     private sealed class Fixture : ITypeDefinitionResolver, IMethodRepository, IMethodInstanceResolver,
-        ITypeFinder, ICalledMethodResolver, ISymbolFormatter, ITypeRelationshipClassifier, IConstrainedCallTargetResolver
+        ITypeFinder, ICalledMethodResolver, ISymbolFormatter, ITypeRelationshipClassifier, IConstrainedCallTargetResolver,
+        ICalleeMethodBodyReader
     {
         private static readonly AssemblyIdentity Assembly = new("comparer-tests");
         private static readonly EntityKey Owner = new(Assembly, 0x02000001);
@@ -107,7 +109,18 @@ public sealed class DefaultComparerCallRewriterTests
 
         public DefaultComparerCallRewriter Rewriter() => new(
             this, this, this, this, this, this, this, this, new StackValueConsumerFinder(new StackEffectResolver(this)),
-            devirtualize: true);
+            this, devirtualize: true);
+        // No callee body is known, so a devirtualized call keeps its receiver.
+        public bool TryReadMethodBody(MethodDefinitionModel method, [NotNullWhen(true)] out CilMethodBody? body)
+        {
+            body = null;
+            return false;
+        }
+        public bool TryReadMethodBody(MethodInstanceModel method, [NotNullWhen(true)] out CilMethodBody? body)
+        {
+            body = null;
+            return false;
+        }
         public static CilMethodBody Body(CilOperation operation = CilOperation.Call) => new(
             new(new(Assembly, 0x06000002), Owner, "Caller", true, MethodSignatureModel.Create(CliValueKind.Void), 1),
             1, [], [new(12, 17, operation, new CilOperand.None())]);

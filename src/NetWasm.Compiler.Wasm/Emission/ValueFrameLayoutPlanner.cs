@@ -12,6 +12,7 @@ using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 using NetWasm.Compiler.Wasm.Emission.CallLifetimes;
+using NetWasm.Compiler.Wasm.Emission.Methods;
 
 namespace NetWasm.Compiler.Wasm.Emission;
 
@@ -39,6 +40,9 @@ internal sealed record ValueFrameLayout(
     { get; init; } = ManagedByRefAggregatePromotionPlan.Empty;
 
     public ImmutableHashSet<int> DirectValueLoadOffsets { get; init; } = [];
+
+    // A value-type local kept in the caller's return buffer instead of the frame (ReturnBufferLocals).
+    public ReturnBufferLocal? ReturnBufferLocal { get; init; }
 
     public ImmutableDictionary<(int InstructionOffset, int ParameterIndex), int>
         NativeArgumentOffsets
@@ -96,9 +100,16 @@ internal sealed class ValueFrameLayoutPlanner(
         ManagedByRefMethodEffects? byRefEffects = null,
         AddressTakenScalarPromotionPlan? addressTakenScalarPromotions = null,
         AddressTakenAggregatePromotionPlan? addressTakenAggregatePromotions = null,
-        ScalarCallLifetimePlan? scalarCallLifetimes = null)
+        ScalarCallLifetimePlan? scalarCallLifetimes = null,
+        ReturnBufferLocal? returnBufferLocal = null,
+        StructConventionStorage? structConventions = null)
     {
         ArgumentNullException.ThrowIfNull(method);
+        var laneLocals = structConventions?.LaneLocals;
+        var laneCalls = structConventions?.LaneCalls;
+        var laneLoads = structConventions?.LaneLoads;
+        var fieldArguments = structConventions?.CopiedArguments;
+        var inPlaceArguments = structConventions?.InPlaceArguments;
 
         var header = method.Header;
         var scalarCalls = scalarCallLifetimes ?? ScalarCallLifetimePlan.Empty;
@@ -153,7 +164,12 @@ internal sealed class ValueFrameLayoutPlanner(
                 byRefEffects.RequiresOwnedStorage(CilOperandReader.GetIndex(instruction)))
             .Select(CilOperandReader.GetIndex)
             .Distinct()
-            .Where(index => _argumentTypes.Resolve(header, index) == CliValueKind.ValueType);
+            .Where(index => _argumentTypes.Resolve(header, index) == CliValueKind.ValueType)
+            // A struct argument passed by its fields keeps its copy in the frame.
+            .Union(fieldArguments ?? (IEnumerable<int>)[])
+            // One read in place from its parameters has no copy.
+            .Where(index => inPlaceArguments?.Contains(index) != true)
+            .Distinct();
         foreach (var index in mutableValueArguments)
         {
             var type = _argumentSignatureTypes.Resolve(header, index);
@@ -182,7 +198,8 @@ internal sealed class ValueFrameLayoutPlanner(
             {
                 continue;
             }
-            if (aggregatePromotions.PromotedLocalIndices.Contains(index))
+            if (aggregatePromotions.PromotedLocalIndices.Contains(index) || returnBufferLocal?.Local == index ||
+                laneLocals?.Contains(index) == true)
             {
                 continue;
             }
@@ -244,6 +261,8 @@ internal sealed class ValueFrameLayoutPlanner(
             }
             if (instruction.Operation == CilOperation.LoadArgument)
             {
+                // A whole load a call takes from parameters needs no temporary.
+                if (laneLoads?.Contains(instruction.Offset) == true) continue;
                 var index = CilOperandReader.GetIndex(instruction);
                 var argumentType = _argumentSignatureTypes.Resolve(header, index);
                 if (_argumentTypes.Resolve(header, index) == CliValueKind.ValueType)
@@ -261,7 +280,9 @@ internal sealed class ValueFrameLayoutPlanner(
             }
             if (instruction.Operation == CilOperation.LoadLocal)
             {
-                if (aggregatePromotions.LocalTransferOffsets.Contains(instruction.Offset))
+                // A whole load whose value a call takes from lanes needs no temporary.
+                if (aggregatePromotions.LocalTransferOffsets.Contains(instruction.Offset) ||
+                    laneLoads?.Contains(instruction.Offset) == true)
                 {
                     continue;
                 }
@@ -269,7 +290,7 @@ internal sealed class ValueFrameLayoutPlanner(
                         CilOperandReader.GetIndex(instruction)];
                 if (localType.StackKind == CliValueKind.ValueType)
                 {
-                    if (directValueCandidates.Contains(instruction.Offset))
+                    if (directValueCandidates.Contains(instruction.Offset) || returnBufferLocal?.Load == instruction.Offset)
                     {
                         directValueLoads.Add(instruction.Offset);
                     }
@@ -484,6 +505,7 @@ internal sealed class ValueFrameLayoutPlanner(
             AddressTakenScalarPromotions = scalarPromotions,
             AddressTakenAggregatePromotions = addressTakenAggregates,
             DirectValueLoadOffsets = directValueLoads.ToImmutable(),
+            ReturnBufferLocal = returnBufferLocal,
             NativeArgumentOffsets = nativeArguments.ToImmutable(),
             MemberResultOffsets = memberResults.ToImmutable(),
             CallReceiverOffsets = callReceivers.ToImmutable(),
@@ -582,7 +604,7 @@ internal sealed class ValueFrameLayoutPlanner(
                     receiverLayout.Size,
                     _slotAlignments.Resolve(receiverType, receiverLayout.Alignment));
             }
-            if (callSignature.ReturnSignatureType.StackKind == CliValueKind.ValueType)
+            if (callSignature.ReturnSignatureType.StackKind == CliValueKind.ValueType && laneCalls?.Contains(instruction.Offset) != true)
             {
                 // The managed ABI receives the return buffer together with pointers to
                 // aggregate arguments. The result therefore cannot reuse the first

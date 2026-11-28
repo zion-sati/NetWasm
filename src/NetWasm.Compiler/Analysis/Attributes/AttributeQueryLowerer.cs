@@ -5,6 +5,7 @@ using System;
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Attributes;
 
 namespace NetWasm.Compiler.Analysis.Attributes;
 
@@ -16,12 +17,9 @@ internal sealed class AttributeQueryLowerer(
     IControlFlowGraphBuilder graphs,
     ITypedStackValidator stacks,
     IAttributeProvenanceAnalyzer provenance,
-    IAttributeQueryResolver resolver,
-    IAttributeQueryPlanner planner,
-    IAttributeQueryCilBuilder fragments,
+    IAttributeQueryCompileTimeAnswerer answers,
     IAttributeQueryBodyRewriter bodies,
-    ISymbolFormatter symbols,
-    MethodInstanceModel ambiguityConstructor) : IAttributeQueryLowerer
+    ISymbolFormatter symbols) : IAttributeQueryLowerer
 {
     public CilMethodBody Lower(CilMethodBody body)
     {
@@ -73,16 +71,18 @@ internal sealed class AttributeQueryLowerer(
                 {
                     continue;
                 }
-                var query = resolver.Resolve(call, stack);
-                if (query is null)
+                switch (answers.Answer(call, stack, nextLocal))
                 {
-                    continue;
+                    case AttributeQueryAnswer.Answered { Fragment: var fragment }:
+                        replacements.Add(instruction.Offset, fragment);
+                        nextLocal += fragment.LocalTypes.Length;
+                        break;
+                    case AttributeQueryAnswer.Unbuildable { Broad: false, Exception: var unbuildable }:
+                        throw unbuildable;
+                        // An attribute the program did not name that cannot be built here, or a target or filter the body
+                        // does not name: the query keeps its fallback, and the settled program reports it
+                        // (UnplannedAttributeQueryFinder, NW1019) unless the reducer answers it there.
                 }
-                var fragment = fragments.Build(new(call.Operation, planner.Plan(query), call.ArgumentCount,
-                    call.InheritArgument, query.InheritConstant, query.ResultArrayType,
-                    ambiguityConstructor, nextLocal));
-                replacements.Add(instruction.Offset, fragment);
-                nextLocal += fragment.LocalTypes.Length;
             }
             catch (CompilerException exception)
             {

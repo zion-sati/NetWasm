@@ -536,7 +536,7 @@ public sealed class ExceptionRegionSequenceStepExecutorBranchTests
             new ReachableSetOverlapClassifier(),
             new DispatcherBoundaryClipper(),
             new CommonReachableBlockFinder(
-                new ControlFlowPostDominatorFinder(new ControlFlowPostDominanceAnalyzer()),
+                new ControlFlowPostDominatorFinder(new ControlFlowPostDominanceAnalyzer(new DominatorTreeBuilder())),
                 distances),
             new ReachableBlockFinder(distances),
             new DispatcherFallthroughExitClassifier());

@@ -3,6 +3,7 @@
 
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace NetWasm.Compiler.Diagnostics;
@@ -87,6 +88,7 @@ internal static class DiagnosticsServiceCollectionExtensions
             CompilerEntryDiagnosticArtifactWriter>();
         services.AddSingleton<ICompilerProgramDiagnosticArtifactWriter,
             CompilerProgramDiagnosticArtifactWriter>();
+        services.AddSingleton<ICompilerReceiverFlowReportWriter, CompilerReceiverFlowReportWriter>();
         services.AddSingleton<ICompilerLayoutDiagnosticArtifactWriter,
             CompilerLayoutDiagnosticArtifactWriter>();
         services.AddSingleton<ICompilerRootMapDiagnosticArtifactWriter,
@@ -101,11 +103,26 @@ internal static class DiagnosticsServiceCollectionExtensions
             CompilerFailureDiagnosticArtifactWriter>();
         services.AddSingleton<ICompilerMemoryReader>(static _ =>
             new ProcessCompilerMemoryReader(hasProcess: !(OperatingSystem.IsBrowser() | OperatingSystem.IsWasi())));
-        services.AddSingleton<ICompilerProgressReporter>(static provider => new MemoryReportingProgressReporter(
-            ActivatorUtilities.CreateInstance<CompilerDiagnosticProgressReporter>(provider),
+        // Within a stage: every 2 GiB of growth. Between stages: whenever 2 GiB are committed.
+        services.AddSingleton<ICompilerMemoryReleaser>(static provider => new CollectingCompilerMemoryReleaser(
+            hasProcess: !(OperatingSystem.IsBrowser() | OperatingSystem.IsWasi()),
             provider.GetRequiredService<ICompilerMemoryReader>(),
-            provider.GetRequiredService<ILogger<MemoryReportingProgressReporter>>(),
-            provider.GetRequiredService<TimeProvider>()));
+            floor: 0,
+            growth: CollectingCompilerMemoryReleaser.ClosureGrowth,
+            provider.GetRequiredService<ILogger<CollectingCompilerMemoryReleaser>>()));
+        services.TryAddSingleton<ICompilerMemoryWatch, UnwatchedCompilerMemory>();
+        services.AddSingleton<ICompilerProgressReporter>(static provider => new MemoryReleasingProgressReporter(
+            new MemoryReportingProgressReporter(
+                ActivatorUtilities.CreateInstance<CompilerDiagnosticProgressReporter>(provider),
+                provider.GetRequiredService<ICompilerMemoryReader>(),
+                provider.GetRequiredService<ILogger<MemoryReportingProgressReporter>>(),
+                provider.GetRequiredService<TimeProvider>()),
+            new CollectingCompilerMemoryReleaser(
+                hasProcess: !(OperatingSystem.IsBrowser() | OperatingSystem.IsWasi()),
+                provider.GetRequiredService<ICompilerMemoryReader>(),
+                floor: CollectingCompilerMemoryReleaser.StageFloor,
+                growth: 0,
+                provider.GetRequiredService<ILogger<CollectingCompilerMemoryReleaser>>())));
         return services;
     }
 }

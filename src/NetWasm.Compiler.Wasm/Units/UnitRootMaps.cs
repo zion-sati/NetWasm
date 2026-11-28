@@ -38,6 +38,7 @@ internal static class UnitRootMapFormat
             Word(writer, safepoint.IlOffset);
             Roots(writer, safepoint.Roots);
             Roots(writer, safepoint.ConstructorCallRoots);
+            Roots(writer, safepoint.Deferrable);
         }
         Word(writer, map.AnchorPlan.Anchors.Length);
         foreach (var anchor in map.AnchorPlan.Anchors)
@@ -101,7 +102,8 @@ internal static class UnitRootMapFormat
             var offset = reader.Word();
             var ilOffset = reader.Word();
             var roots = reader.Roots();
-            safepoints.Add(offset, new(ilOffset, roots, reader.Roots()));
+            var constructorRoots = reader.Roots();
+            safepoints.Add(offset, new(ilOffset, roots, constructorRoots) { Deferrable = reader.Roots() });
         }
         var anchorCount = reader.Count();
         var anchors = ImmutableArray.CreateBuilder<StackStorageAnchor>(anchorCount);

@@ -77,6 +77,10 @@ internal sealed record ReachableMethodAnalysis(
     // (ReachableMethodAnalyzer, which makes every analysis).
     public NetWasm.Compiler.Metadata.Inputs.InputFingerprint Contribution { get; init; }
 
+    // The exception regions whose handlers can run: those whose try holds reachable code. Only their catch types are
+    // tested, so only theirs are reached.
+    public required ImmutableArray<CilExceptionRegion> ReachableRegions { get; init; }
+
     // Types the method constructs before managed optimization that its optimized body no longer does (an unused
     // allocation removed, say). They are not reached, but their required dependencies are validated, so a build
     // rejects at every optimization level what it rejects without optimization.
@@ -101,4 +105,7 @@ internal sealed record ReachabilityImportAnalysis(
     // CoreLib's conversions, by name, of the values a JavaScript boundary converts.
     public ImmutableDictionary<string, MethodInstanceModel> Conversions { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
+    // The method is a [JSExport] the program exports, whose exception may go back to JavaScript.
+    public bool JavaScriptExportBoundary { get; init; }
 }

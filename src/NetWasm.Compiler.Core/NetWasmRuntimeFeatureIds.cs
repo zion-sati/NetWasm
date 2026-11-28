@@ -16,6 +16,8 @@ public static class NetWasmRuntimeFeatureIds
     public const string YoungCollection = "young-collection";
     public const string RandomSeed = "random-seed";
     public const string ReferenceWriteBarrier = "reference-write-barrier";
+    // The program allocates shared arrays (SharedArrayShapes): their casts, copies and stores.
+    public const string SharedArrays = "shared-arrays";
     public const string StructuredCommandDiagnostics = "structured-command-diagnostics";
     public const string UninitializedArrays = "uninitialized-arrays";
     public const string WeakHandles = "weak-handles";
@@ -32,6 +34,7 @@ public static class NetWasmRuntimeFeatureIds
         ObjectGeneration,
         RandomSeed,
         ReferenceWriteBarrier,
+        SharedArrays,
         StructuredCommandDiagnostics,
         UninitializedArrays,
         WeakHandles,

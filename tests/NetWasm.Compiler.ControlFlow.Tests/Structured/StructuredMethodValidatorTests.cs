@@ -325,6 +325,12 @@ public sealed class StructuredMethodValidatorTests
         {
             Body = new([new New.StructuredExceptionRegion(new(9), null)]),
         }));
+        // A switch's every target is a label around it.
+        Assert.Throws<InvalidOperationException>(() => ValidateTargets(method with
+        {
+            Blocks = method.Blocks.SetItem(method.EntryBlock, conditionalBlock),
+            Body = new([new New.StructuredSwitch(occurrence, [], [method.EntryBlock], method.EntryBlock)]),
+        }));
         // An unconditional loop leaves only through a break, so it has no continuation
         // or exit body.
         var code = new New.StructuredSequence([new New.StructuredCode(occurrence)]);
@@ -586,6 +592,36 @@ public sealed class StructuredMethodValidatorTests
                 Body = new([new New.StructuredExceptionRegion(group.Id, null)]),
             }));
         }
+    }
+
+    // int x; try { } finally { x = 1; } return x. Emission writes no branch for endfinally, so a handler whose
+    // endfinally another region follows, or a loop wraps, would run on past it.
+    [Fact]
+    public void TargetContractRequiresAnEndfinallyToEndItsHandler()
+    {
+        var method = Structurize(Body(CliValueKind.I4, 1, [CliValueKind.I4],
+            I(0, CilOperation.Leave, new CilOperand.BranchTarget(4)),
+            I(1, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            I(2, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(3, CilOperation.EndFinally),
+            I(4, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(5, CilOperation.Return)) with
+        {
+            ExceptionRegions = [new(CilExceptionRegionKind.Finally, 0, 1, 1, 3, null, null)],
+        });
+        ValidateTargets(method);
+        var group = Assert.Single(method.ExceptionGroups.Values);
+        var clause = Assert.Single(group.Clauses);
+        var end = clause.HandlerBody.Regions[^1];
+        New.StructuredMethod WithHandler(New.StructuredSequence handler) => method with
+        {
+            ExceptionGroups = method.ExceptionGroups.SetItem(group.Id, group with { Clauses = [clause with { HandlerBody = handler }] }),
+        };
+
+        Assert.Throws<InvalidOperationException>(() => ValidateTargets(WithHandler(new([.. clause.HandlerBody.Regions, end]))));
+        Assert.Throws<InvalidOperationException>(() => ValidateTargets(WithHandler(new(
+            [.. clause.HandlerBody.Regions[..^1], new New.StructuredLoop(null, true, new([end]), New.StructuredSequence.Empty,
+                New.StructuredSequence.Empty)]))));
     }
 
     [Fact]

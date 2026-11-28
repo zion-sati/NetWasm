@@ -32,9 +32,9 @@ public sealed class MetadataBaseTypeIdentityResolverFactory(
         var signatures = new MetadataSignatureTypeResolver(
             metadataTypes,
             _identities.Create(snapshot));
-        return new MetadataBaseTypeIdentityResolver(
+        return new CachingBaseTypeIdentityResolver(new MetadataBaseTypeIdentityResolver(
             definitions,
             assemblies,
-            signatures);
+            signatures));
     }
 }

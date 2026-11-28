@@ -13,8 +13,12 @@ namespace NetWasm.Compiler.ControlFlow.Structuring;
 internal interface IReducibleControlFlowStructurer
 {
     // The method's control flow as labeled blocks, loops and branches, or null
-    // when the method has exception regions or irreducible control flow.
-    StructuredSequenceDraft? Structure(ValidatedControlFlowGraph validated);
+    // when the method has exception regions or irreducible control flow. With a
+    // range, the range's blocks alone (a protected block's or a handler's),
+    // whose edges out of the range end their blocks; null too when its entry
+    // does not reach every reachable block of it, or when it ends a finally,
+    // fault or filter handler.
+    StructuredSequenceDraft? Structure(ValidatedControlFlowGraph validated, StructuringRange? range = null);
 }
 
 // Places every block once, without a dispatcher, by walking the dominator
@@ -26,23 +30,88 @@ internal interface IReducibleControlFlowStructurer
 // leaves, so code after a loop does not nest inside it. A loop whose header
 // tests whether to enter its body is a pre-test loop instead, which emission
 // rotates, and a diamond of single blocks stays an if/else that Binaryen can
-// turn into a select.
-internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassifier conditionalBranches) :
+// turn into a select. An else-if chain the policy flattens keeps its
+// conditions in one sequence, whichever arm of each continues it.
+internal sealed class ReducibleControlFlowStructurer(
+    ICilConditionalBranchClassifier conditionalBranches,
+    IElseIfChainPolicy elseIfChains) :
     IReducibleControlFlowStructurer
 {
     private readonly ICilConditionalBranchClassifier _conditionalBranches =
         conditionalBranches ?? throw new ArgumentNullException(nameof(conditionalBranches));
+    private readonly IElseIfChainPolicy _elseIfChains =
+        elseIfChains ?? throw new ArgumentNullException(nameof(elseIfChains));
 
-    public StructuredSequenceDraft? Structure(ValidatedControlFlowGraph validated) =>
-        validated.Graph.MethodBody.ExceptionRegions.IsEmpty &&
-        Analysis.Create(validated, _conditionalBranches) is { } analysis
-            ? new StructuredSequenceDraft(analysis.Tree(validated.Graph.Entry.Index))
+    public StructuredSequenceDraft? Structure(ValidatedControlFlowGraph validated, StructuringRange? range = null)
+    {
+        ArgumentNullException.ThrowIfNull(validated);
+        if (range is null && !validated.Graph.MethodBody.ExceptionRegions.IsEmpty)
+        {
+            return null;
+        }
+        var view = new View(validated.Graph, range);
+        if (view.EndsAHandler())
+        {
+            return null;
+        }
+        return Analysis.Create(validated, view, _conditionalBranches, _elseIfChains) is { } analysis
+            ? new StructuredSequenceDraft(analysis.Tree(view.Entry))
             : null;
+    }
+
+    // The method's graph, or a range of it whose edges leaving the range are
+    // dropped: a block that ends in such an edge ends the range's control flow.
+    private sealed class View
+    {
+        private readonly ImmutableHashSet<int>? _blocks;
+        private readonly Dictionary<int, ImmutableArray<int>> _successors = [];
+
+        internal View(ControlFlowGraph graph, StructuringRange? range)
+        {
+            Graph = graph;
+            _blocks = range?.Blocks;
+            Entry = range?.Entry ?? graph.Entry.Index;
+        }
+
+        internal ControlFlowGraph Graph { get; }
+
+        internal int Entry { get; }
+
+        internal ImmutableArray<int> Successors(int block)
+        {
+            if (_blocks is null)
+            {
+                return Graph.Successors[block];
+            }
+            if (!_successors.TryGetValue(block, out var within))
+            {
+                _successors[block] = within = [.. Graph.Successors[block].Where(_blocks.Contains)];
+            }
+            return within;
+        }
+
+        internal IEnumerable<int> Predecessors(int block) =>
+            _blocks is null ? Graph.Predecessors[block] : Graph.Predecessors[block].Where(_blocks.Contains);
+
+        // Whether the entry reached every reachable block: a range's blocks may
+        // also be reached only from outside it, which this view cannot place.
+        internal bool Covers(int reached) => _blocks is null || reached == _blocks.Count(Graph.ReachableBlocks.Contains);
+
+        // Whether a block of the range ends a finally, fault or filter handler. Control leaves such a handler by
+        // falling out of its end, for which emission writes no branch, so its last block must stay last in its
+        // sequence; labels may place it inside an arm, where control would fall into the code after the arm.
+        internal bool EndsAHandler() =>
+            _blocks is not null && _blocks.Any(block => Graph.GetBlock(block).Terminator.Operation is
+                CilOperation.EndFinally or CilOperation.EndFilter);
+    }
 
     private sealed class Analysis
     {
+        private readonly View _view;
         private readonly ControlFlowGraph _graph;
         private readonly ICilConditionalBranchClassifier _conditionalBranches;
+        private readonly IElseIfChainPolicy _elseIfChains;
+        private readonly Dictionary<int, int> _chainLengths = [];
         private readonly Dictionary<int, int> _order;
         private readonly Dictionary<int, int> _dominators;
         private readonly Dictionary<int, HashSet<int>> _loops;
@@ -51,14 +120,17 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
         private readonly Dictionary<int, PreTest> _preTested = [];
 
         private Analysis(
-            ControlFlowGraph graph,
+            View view,
             ICilConditionalBranchClassifier conditionalBranches,
+            IElseIfChainPolicy elseIfChains,
             Dictionary<int, int> order,
             Dictionary<int, int> dominators,
             Dictionary<int, HashSet<int>> loops)
         {
-            _graph = graph;
+            _view = view;
+            _graph = view.Graph;
             _conditionalBranches = conditionalBranches;
+            _elseIfChains = elseIfChains;
             _order = order;
             _dominators = dominators;
             _loops = loops;
@@ -66,20 +138,25 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
 
         internal static Analysis? Create(
             ValidatedControlFlowGraph validated,
-            ICilConditionalBranchClassifier conditionalBranches)
+            View view,
+            ICilConditionalBranchClassifier conditionalBranches,
+            IElseIfChainPolicy elseIfChains)
         {
-            var graph = validated.Graph;
-            var postorder = Postorder(graph);
+            var postorder = Postorder(view);
+            if (!view.Covers(postorder.Count))
+            {
+                return null;
+            }
             var order = new Dictionary<int, int>();
             for (var index = 0; index < postorder.Count; index++)
             {
                 order[postorder[postorder.Count - 1 - index]] = index;
             }
-            var dominators = Dominators(graph, postorder, order);
+            var dominators = Dominators(view, postorder, order);
             var loops = new Dictionary<int, HashSet<int>>();
             foreach (var block in order.Keys)
             {
-                foreach (var successor in graph.Successors[block])
+                foreach (var successor in view.Successors(block))
                 {
                     if (order[successor] > order[block])
                     {
@@ -95,10 +172,10 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
                     {
                         loops[successor] = body = [successor];
                     }
-                    AddNaturalLoop(graph, order, body, block);
+                    AddNaturalLoop(view, order, body, block);
                 }
             }
-            var analysis = new Analysis(graph, conditionalBranches, order, dominators, loops);
+            var analysis = new Analysis(view, conditionalBranches, elseIfChains, order, dominators, loops);
             analysis.Place();
             analysis.SelectPreTests(validated);
             return analysis;
@@ -196,7 +273,7 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
         private int? AppendCode(int block, ImmutableArray<StructuredRegionDraft>.Builder regions)
         {
             var basicBlock = _graph.GetBlock(block);
-            var successors = _graph.Successors[block];
+            var successors = _view.Successors(block);
             if (successors.Length == 0)
             {
                 regions.Add(new StructuredBlockDraft(basicBlock));
@@ -232,13 +309,52 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
                     new StructuredSequenceDraft(branch.ToImmutable())));
                 return whenTrue;
             }
+            // The arm that goes in the if is the true one, unless that arm starts the next condition of an else-if
+            // chain the policy flattens: then the false arm goes in and the chain continues in this sequence, as it
+            // does when its false arms continue it, instead of nesting a level per condition.
+            var inside = ChainNext(block) == whenTrue && _elseIfChains.Flattens(ChainLength(block))
+                ? whenFalse
+                : whenTrue;
             var arm = ImmutableArray.CreateBuilder<StructuredRegionDraft>();
-            Expand(Branch(block, whenTrue, arm), arm);
-            regions.Add(new StructuredIfDraft(
-                basicBlock,
-                new StructuredSequenceDraft(arm.ToImmutable()),
-                StructuredSequenceDraft.Empty));
-            return Branch(block, whenFalse, regions);
+            Expand(Branch(block, inside, arm), arm);
+            var armSequence = new StructuredSequenceDraft(arm.ToImmutable());
+            regions.Add(inside == whenTrue
+                ? new StructuredIfDraft(basicBlock, armSequence, StructuredSequenceDraft.Empty)
+                : new StructuredIfDraft(basicBlock, StructuredSequenceDraft.Empty, armSequence));
+            return Branch(block, inside == whenTrue ? whenFalse : whenTrue, regions);
+        }
+
+        // The arm of a two-way branch that starts the next condition of an else-if chain: a two-way branch that
+        // follows it inline, as its only forward predecessor's, with no loop or labeled target of its own. Null when
+        // neither arm or both do. Either arm may go in the if, so this only picks which one does.
+        private int? ChainNext(int block)
+        {
+            var successors = _view.Successors(block);
+            var first = Continues(successors[0]);
+            return first == Continues(successors[1]) ? null : first ? successors[0] : successors[1];
+
+            bool Continues(int arm) =>
+                !IsLabelBranch(block, arm) && !_loops.ContainsKey(arm) && !_placed.ContainsKey(arm) &&
+                _view.Successors(arm).Length == 2;
+        }
+
+        // The conditions in the chain the block is in that start the next one, counted once from its first.
+        private int ChainLength(int block)
+        {
+            if (_chainLengths.TryGetValue(block, out var length))
+            {
+                return length;
+            }
+            var links = new List<int>();
+            for (int? link = block; link is int current && ChainNext(current) is int next; link = next)
+            {
+                links.Add(current);
+            }
+            foreach (var link in links)
+            {
+                _chainLengths[link] = links.Count;
+            }
+            return links.Count;
         }
 
         // The branch target is successors[0]; the condition value is true when
@@ -257,7 +373,7 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
             {
                 return arm;
             }
-            var successors = _graph.Successors[arm];
+            var successors = _view.Successors(arm);
             return !_loops.ContainsKey(arm) && !_placed.ContainsKey(arm) &&
                 successors.Length == 1 && IsLabelBranch(arm, successors[0])
                 ? successors[0]
@@ -302,7 +418,7 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
         {
             foreach (var (header, body) in _loops)
             {
-                var successors = _graph.Successors[header];
+                var successors = _view.Successors(header);
                 var inside = successors.Where(body.Contains).ToArray();
                 if (successors.Length != 2 || inside.Length != 1 ||
                     !validated.EntryStacks[header].IsEmpty)
@@ -310,7 +426,7 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
                     continue;
                 }
                 var exit = successors[0] == inside[0] ? successors[1] : successors[0];
-                var latches = _graph.Predecessors[header]
+                var latches = _view.Predecessors(header)
                     .Where(block => _order.TryGetValue(block, out var order) && order >= _order[header]);
                 if (!IsLabelBranch(header, exit) || latches.Any(latch => _loops.Any(inner =>
                         inner.Key != header && body.Contains(inner.Key) && inner.Value.Contains(latch))))
@@ -335,7 +451,7 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
             var forwardPredecessors = new Dictionary<int, int>();
             foreach (var block in _order.Keys)
             {
-                foreach (var successor in _graph.Successors[block])
+                foreach (var successor in _view.Successors(block))
                 {
                     if (_order[successor] > _order[block])
                     {
@@ -345,7 +461,7 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
             }
             foreach (var block in _order.Keys.OrderBy(block => _order[block]))
             {
-                if (block == _graph.Entry.Index)
+                if (block == _view.Entry)
                 {
                     continue;
                 }
@@ -375,15 +491,15 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
 
         private sealed record PreTest(int Body, int Exit, bool ContinueWhenConditionTrue);
 
-        private static List<int> Postorder(ControlFlowGraph graph)
+        private static List<int> Postorder(View view)
         {
             var postorder = new List<int>();
-            var visited = new HashSet<int> { graph.Entry.Index };
+            var visited = new HashSet<int> { view.Entry };
             var stack = new Stack<(int Block, int Next)>();
-            stack.Push((graph.Entry.Index, 0));
+            stack.Push((view.Entry, 0));
             while (stack.TryPop(out var frame))
             {
-                var successors = graph.Successors[frame.Block];
+                var successors = view.Successors(frame.Block);
                 if (frame.Next < successors.Length)
                 {
                     stack.Push((frame.Block, frame.Next + 1));
@@ -401,11 +517,11 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
         // Immediate dominators (K. Cooper, T. Harvey and K. Kennedy, "A Simple,
         // Fast Dominance Algorithm"); the entry is its own.
         private static Dictionary<int, int> Dominators(
-            ControlFlowGraph graph,
+            View view,
             List<int> postorder,
             Dictionary<int, int> order)
         {
-            var entry = graph.Entry.Index;
+            var entry = view.Entry;
             var dominators = new Dictionary<int, int> { [entry] = entry };
             var changed = true;
             while (changed)
@@ -419,7 +535,7 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
                         continue;
                     }
                     int? dominator = null;
-                    foreach (var predecessor in graph.Predecessors[block])
+                    foreach (var predecessor in view.Predecessors(block))
                     {
                         if (!dominators.ContainsKey(predecessor))
                         {
@@ -476,7 +592,7 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
         // The blocks that reach the back edge's source without passing the
         // header, which the body already holds.
         private static void AddNaturalLoop(
-            ControlFlowGraph graph,
+            View view,
             Dictionary<int, int> order,
             HashSet<int> body,
             int source)
@@ -488,7 +604,7 @@ internal sealed class ReducibleControlFlowStructurer(ICilConditionalBranchClassi
             }
             while (pending.TryPop(out var block))
             {
-                foreach (var predecessor in graph.Predecessors[block])
+                foreach (var predecessor in view.Predecessors(block))
                 {
                     if (order.ContainsKey(predecessor) && body.Add(predecessor))
                     {

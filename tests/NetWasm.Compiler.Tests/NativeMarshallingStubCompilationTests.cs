@@ -178,9 +178,17 @@ public sealed class NativeMarshallingStubCompilationTests
             .Select(instruction => ((CilOperand.MethodInstance)instruction.Operand).Value)
             .Select(method => $"{method.DeclaringType.FullName}.{method.Definition.Name}")];
 
+        // The finally that frees the copy runs on the call's normal exit as a copy of it (a finally's normal exits run
+        // copies) and, as a fault, only when an exception leaves the call: one free on each way out.
         Assert.Equal(["System.Runtime.InteropServices.Marshal.StringToCoTaskMemUTF8",
+            "System.Runtime.InteropServices.Marshal.FreeCoTaskMem",
             "System.Runtime.InteropServices.Marshal.FreeCoTaskMem"],
             Calls("Text").Where(call => call.StartsWith("System.", StringComparison.Ordinal)));
+        Assert.Contains(result.Program.Methods.Values
+                .Single(body => body.Method.DeclaringType.FullName == "NativeMarshallingFixture.Native" &&
+                    body.Method.Definition.Name == "Text")
+                .Body.ExceptionRegions,
+            region => region.Kind == CilExceptionRegionKind.Fault);
         // GetPinnableReference is the string's data address, which the compiler lowers in place.
         Assert.Equal(["System.GC.KeepAlive"],
             Calls("WideText").Where(call => call.StartsWith("System.", StringComparison.Ordinal)));

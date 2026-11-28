@@ -20,12 +20,19 @@ internal sealed class ManagedBodyBatchEmitter(
     ManagedLayoutForks forks,
     ManagedBodyWorker[] workers) : IManagedBodyBatchEmitter
 {
-    public ManagedBodyEmission[] Emit(
+    // Bodies are emitted a window at a time and each window is consumed before the next starts, so what a body
+    // carries only until it is consumed (with compiled units on, the queries its emission made, their keys and
+    // answers) is held for one window rather than the whole set. On the three-app repro (Debug) the whole set's
+    // queries were about 4 GB of emission's 12 GB heap peak; with windows nwc peaked at 14.1 GiB, not 17.0.
+    internal const int Window = 4096;
+
+    public void Emit(
         ImmutableArray<ManagedDefinitionEmission> ordered,
         IReadOnlyDictionary<EntityKey, StructuredMethod> methods,
         IReadOnlyDictionary<EntityKey, MethodRootMap> rootMaps,
         InstructionModuleTarget target,
-        IFunctionIndexResolver indices) => Run(ordered.Length, (worker, index) =>
+        IFunctionIndexResolver indices,
+        Action<int, ManagedBodyEmission> consume) => Run(ordered.Length, consume, (worker, index) =>
     {
         var method = ordered[index];
         var restored = worker.Restorer?.Restore(method.Identity.CanonicalName,
@@ -47,13 +54,14 @@ internal sealed class ManagedBodyBatchEmitter(
         return Verified(method.Identity.CanonicalName, restored, emitted);
     });
 
-    public ManagedBodyEmission[] Emit(
+    public void Emit(
         ImmutableArray<ManagedMethodIdentity> ordered,
         IReadOnlyDictionary<string, MethodInstanceModel> instances,
         IReadOnlyDictionary<string, StructuredMethod> methods,
         IReadOnlyDictionary<string, MethodRootMap> rootMaps,
         InstructionModuleTarget target,
-        IFunctionIndexResolver indices) => Run(ordered.Length, (worker, index) =>
+        IFunctionIndexResolver indices,
+        Action<int, ManagedBodyEmission> consume) => Run(ordered.Length, consume, (worker, index) =>
     {
         var identity = ordered[index];
         var key = identity.CanonicalName;
@@ -125,7 +133,7 @@ internal sealed class ManagedBodyBatchEmitter(
             return emitted;
         var difference =
             restored.Function.Name != emitted.Function.Name ? "name" :
-            !restored.Function.Type.Parameters.SequenceEqual(emitted.Function.Type.Parameters) ||
+            !restored.Function.Type.SameAs(emitted.Function.Type) ||
                 restored.Function.Type.Result != emitted.Function.Type.Result ? "type" :
             !restored.Function.Body.AsSpan().SequenceEqual(emitted.Function.Body) ? "body" :
             restored.Function.IsAggressiveInlining != emitted.Function.IsAggressiveInlining ||
@@ -166,7 +174,22 @@ internal sealed class ManagedBodyBatchEmitter(
     private static ManagedBodyEmission End(UnitDependencyLog? log, ManagedBodyEmission emission) =>
         log is null ? emission : emission with { Dependencies = log.End() };
 
-    private ManagedBodyEmission[] Run(int count,
+    internal void Run(int count, Action<int, ManagedBodyEmission> consume,
+        Func<ManagedBodyWorker, int, ManagedBodyEmission> emit)
+    {
+        ArgumentNullException.ThrowIfNull(consume);
+        for (var start = 0; start < count; start += Window)
+        {
+            var length = Math.Min(Window, count - start);
+            var results = Run(start, length, emit);
+            for (var offset = 0; offset < length; offset++)
+                consume(start + offset, results[offset]);
+        }
+    }
+
+    // One window: the bodies from start, emitted in parallel, their logs replayed in order and the layouts the
+    // workers added published.
+    private ManagedBodyEmission[] Run(int start, int count,
         Func<ManagedBodyWorker, int, ManagedBodyEmission> emit)
     {
         var results = new ManagedBodyEmission[count];
@@ -182,8 +205,8 @@ internal sealed class ManagedBodyBatchEmitter(
                 owners[index] = worker;
                 try
                 {
-                    worker.Logger.BeginMethod(index);
-                    try { results[index] = emit(worker, index); }
+                    worker.Logger.BeginMethod(start + index);
+                    try { results[index] = emit(worker, start + index); }
                     finally { worker.Logger.EndMethod(); }
                 }
                 catch (Exception exception)
@@ -207,7 +230,7 @@ internal sealed class ManagedBodyBatchEmitter(
             failure => failure is not null);
         var logLimit = failedIndex < 0 ? count : failedIndex + 1;
         for (var index = 0; index < logLimit; index++)
-            owners[index]!.Logger.Replay(index);
+            owners[index]!.Logger.Replay(start + index);
         if (failedIndex >= 0)
             failures[failedIndex]!.Throw();
         forks.Publisher.Publish();

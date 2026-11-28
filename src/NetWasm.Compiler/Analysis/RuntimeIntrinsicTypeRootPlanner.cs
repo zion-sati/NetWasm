@@ -14,8 +14,11 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
     INullableTypeResolver nullableTypes,
     ITypeDefinitionResolver typeDefinitions,
     IArrayCreationRootPlanner arrayCreation,
-    IStructureMarshallingClosure structureClosure) : IRuntimeIntrinsicTypeRootPlanner
+    IStructureMarshallingClosure structureClosure,
+    ISharedArrayShapeResolver sharedArrays) : IRuntimeIntrinsicTypeRootPlanner
 {
+    private readonly ISharedArrayShapeResolver _sharedArrays = sharedArrays ??
+        throw new ArgumentNullException(nameof(sharedArrays));
     private readonly IStructureMarshallingClosure _structureClosure = structureClosure ??
         throw new ArgumentNullException(nameof(structureClosure));
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
@@ -29,11 +32,12 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
         throw new ArgumentNullException(nameof(arrayCreation));
 
     private static readonly System.Collections.Immutable.ImmutableArray<int> RectangularCreationRanks = [2, 3];
+    // With lower bounds, a rank-one array is T[*]; MakeArrayType(rank) makes the same ranks.
+    private static readonly System.Collections.Immutable.ImmutableArray<int> BoundedCreationRanks = [1, 2, 3];
 
     public RuntimeIntrinsicTypeRootPlan Plan(
         IEnumerable<MethodInstanceModel> reachableMethods,
         IEnumerable<CliTypeIdentity> reachableTypes,
-        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> arrayElementSeeds = default,
         System.Collections.Immutable.ImmutableArray<CliTypeIdentity> typeHandleSeeds = default,
         System.Collections.Immutable.ImmutableArray<CliTypeIdentity> programAllocatedTypes = default)
     {
@@ -49,6 +53,14 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
         var createArrays = demands.Any(demand => demand.Intrinsic == RuntimeIntrinsic.ArrayCreateInstance);
         var createRectangularArrays = demands.Any(demand =>
             demand.Intrinsic == RuntimeIntrinsic.ArrayCreateRectangularInstance);
+        var createBoundedArrays = demands.Any(demand =>
+            demand.Intrinsic == RuntimeIntrinsic.ArrayCreateBoundedInstance);
+        var createSharedArrays = demands.Any(demand =>
+            demand.Intrinsic == RuntimeIntrinsic.ArrayCreateSharedInstance);
+        var makeVectorTypes = demands.Any(demand => ReachabilityMarkers.MakesArrayTypes(demand.Method) &&
+            demand.Method.Definition.Signature.ParameterTypes.IsEmpty);
+        var makeRankedTypes = demands.Any(demand => ReachabilityMarkers.MakesArrayTypes(demand.Method) &&
+            !demand.Method.Definition.Signature.ParameterTypes.IsEmpty);
         var runClassConstructors = demands.Any(demand =>
             demand.Intrinsic == RuntimeIntrinsic.RunClassConstructor);
         var allocateUninitialized = demands.Any(demand =>
@@ -61,7 +73,9 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
             demand.Intrinsic == RuntimeIntrinsic.ArrayGetValue);
         var enumValues = demands.Where(demand => demand.Intrinsic == RuntimeIntrinsic.EnumGetValues)
             .Select(demand => demand.Method).ToArray();
-        if (!createArrays && !createRectangularArrays && !runClassConstructors && !allocateUninitialized &&
+        if (!createArrays && !createRectangularArrays && !createBoundedArrays && !createSharedArrays && !makeVectorTypes &&
+            !makeRankedTypes &&
+            !runClassConstructors && !allocateUninitialized &&
             !marshalStructures && !inspectNullable && !enumNames && !boxEnums && !boxArrayElements &&
             enumValues.Length == 0)
         {
@@ -71,20 +85,54 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
         var runtimeTypes = new HashSet<CliTypeIdentity>();
         var allocatedTypes = new HashSet<CliTypeIdentity>();
         var types = reachableTypes.Distinct().ToArray();
-        var elementSeeds = arrayElementSeeds.IsDefault ? [] : arrayElementSeeds;
+        // An array of a reference element the program has no array type of is a shared array (SharedArrayShapes): one
+        // type per shape, whatever elements the program passes. An array of a value element needs its own type, so
+        // CreateInstance gets one for the value types the program names by token (typeof) and no others, as Native AOT
+        // creates only the arrays it compiled; any other value element throws NotSupportedException.
+        // CreateInstance allocates the arrays of value elements it creates, so the program's own value arrays of the
+        // shape, whose types it compiles anyway, are allocated with them. A value type is named by a token for it or
+        // as a type argument of one (typeof(Point?), typeof(IEnumerable<Point>)).
+        var handles = typeHandleSeeds.IsDefault ? [] : typeHandleSeeds;
+        var namedValues = handles.Concat(handles.SelectMany(type => type.TypeArguments)).Where(IsValueElement)
+            .Distinct().ToArray();
+        System.Collections.Immutable.ImmutableArray<CliTypeIdentity> ValueSeeds(CliTypeShape shape) =>
+        [
+            .. namedValues,
+            .. types.Where(type => type.Shape == shape).Select(type => type.ElementType!).Where(IsValueElement),
+        ];
         if (createArrays)
         {
-            var creation = _arrayCreation.Plan(elementSeeds);
+            var creation = _arrayCreation.Plan(ValueSeeds(CliTypeShape.SzArray));
             runtimeTypes.UnionWith(creation.RuntimeTypes);
             allocatedTypes.UnionWith(creation.AllocatedTypes);
         }
-        if (createRectangularArrays)
+        if (createRectangularArrays || createBoundedArrays)
         {
             // The fixed-rank Array.CreateInstance overloads create rank 2 and 3; other ranks
             // use rectangular array types the program constructs itself.
-            var creation = _arrayCreation.Plan(elementSeeds, RectangularCreationRanks);
+            var creation = _arrayCreation.Plan(ValueSeeds(CliTypeShape.Array),
+                createBoundedArrays ? BoundedCreationRanks : RectangularCreationRanks);
             runtimeTypes.UnionWith(creation.RuntimeTypes);
             allocatedTypes.UnionWith(creation.AllocatedTypes);
+        }
+        if (createSharedArrays)
+        {
+            AddShared(createArrays, allocated: true, ranks: []);
+            AddShared(false, allocated: true,
+                ranks: createBoundedArrays ? BoundedCreationRanks : createRectangularArrays ? RectangularCreationRanks : []);
+        }
+        // MakeArrayType returns a type and allocates nothing: a type of its own for an element the program has the
+        // array type of, else the shared shape's for the element (CoreLib's SharedArrays).
+        AddShared(makeVectorTypes, allocated: false, ranks: makeRankedTypes ? BoundedCreationRanks : []);
+
+        void AddShared(bool vector, bool allocated, System.Collections.Immutable.ImmutableArray<int> ranks)
+        {
+            foreach (var shape in (vector ? [_sharedArrays.Resolve(0)] : System.Linq.Enumerable.Empty<CliTypeIdentity>())
+                .Concat(ranks.Select(_sharedArrays.Resolve)))
+            {
+                runtimeTypes.Add(shape);
+                if (allocated) allocatedTypes.Add(shape);
+            }
         }
         if (boxArrayElements)
         {
@@ -258,6 +306,8 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
 
     // Upstream rejects generic types before reading interop data, so only non-generic named types
     // and the primitive value types can carry a descriptor.
+    private static bool IsValueElement(CliTypeIdentity type) => type.StackKind != CliValueKind.ManagedReference;
+
     private static bool IsStructMarshallingCandidate(CliTypeIdentity type) =>
         type.Shape == CliTypeShape.Named && !type.ContainsGenericParameters ||
         type.Shape == CliTypeShape.Primitive && type.IsValueType &&

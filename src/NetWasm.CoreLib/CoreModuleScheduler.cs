@@ -37,6 +37,18 @@ namespace System.Runtime.InteropServices
             return work;
         }
 
+        public IPlatformSchedule Post(Action continuation)
+        {
+            if (continuation == null)
+            {
+                throw new ArgumentNullException();
+            }
+
+            var work = new CoreModuleWork(continuation);
+            Ready(work);
+            return work;
+        }
+
         private void Ready(CoreModuleWork work)
         {
             _ready.Enqueue(work);
@@ -75,7 +87,7 @@ namespace System.Runtime.InteropServices
             }
         }
 
-        public void Dispose()
+        public void Cancel()
         {
             _active = false;
             Timer?.Dispose();

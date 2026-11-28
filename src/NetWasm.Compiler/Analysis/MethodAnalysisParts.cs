@@ -76,6 +76,8 @@ internal sealed class MethodAnalysisParts
     public ICalledMethodResolver Calls { get; private init; } = null!;
     // Answers attribute queries on a Type known only at run time, from the closure's run-time types.
     public IReachableProgramReducer RuntimeTypeAttributeQueries { get; private init; } = null!;
+    // Finds the attribute queries the settled program leaves to their run-time paths (NW1019).
+    public Attributes.IUnplannedAttributeQueryFinder UnplannedAttributeQueries { get; private init; } = null!;
     public ITypeOperandResolver Types { get; private init; } = null!;
     public IReachabilityInstructionAnalyzer InstructionAnalyzer { get; private init; } = null!;
     public IMethodSpecializer Specializer { get; private init; } = null!;
@@ -148,7 +150,9 @@ internal sealed class MethodAnalysisParts
             optimizationSettings,
             intrinsics,
             world,
-            typeIdentities);
+            typeIdentities,
+            new CompositeFormats.ToStringOnlyTypeClassifier(
+                metadata.Types, typeDefinitions, typeIdentities, baseTypes, implementedInterfaces));
         var attributeQueries = factories.AttributeQueries.Create(specializer, metadata, typeRepository,
             fieldRepository, methodRepository, typeFinder, typeDefinitions, typeIdentities, methodInstances,
             relationships, baseTypes, calls, types, symbols);
@@ -156,6 +160,7 @@ internal sealed class MethodAnalysisParts
         var parts = new MethodAnalysisParts
         {
             RuntimeTypeAttributeQueries = attributeQueries.RuntimeTypeQueries,
+            UnplannedAttributeQueries = attributeQueries.UnplannedQueries,
             _factories = factories,
             _methodBodies = methodBodies,
             _typeRepository = typeRepository,
@@ -230,6 +235,7 @@ internal sealed class MethodAnalysisParts
         Specializer,
         Optimizer,
         Calls,
+        _intrinsics,
         _settings,
         _factories.ExceptionDiscoveries.Create(_methodRepository, _symbols, _intrinsics),
         InstructionAnalyzer);
@@ -314,6 +320,7 @@ internal sealed class StandaloneMethodAnalyzerFactory(
             intrinsics, optimizationSettings, world, inliningExcludedCallers);
         return new(parts.CreateAnalyzer(), new AnalyzedSitePlanner(
             new DispatchCandidateIndexFactory(parts.Relationships, parts.RelationshipKeys), parts.DispatchTargets,
+            new DispatchSiteTargetSelector(parts.Relationships, parts.RelationshipKeys),
             typeTestPlanners.Create(parts.Types, parts.Relationships, parts.RelationshipKeys)));
     }
 }

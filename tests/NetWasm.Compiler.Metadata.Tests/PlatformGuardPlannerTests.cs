@@ -144,6 +144,29 @@ public sealed class PlatformGuardPlannerTests
         Assert.Null(Planner().Plan(source, bytes, [Region(ExceptionRegionKind.Catch, 7, 2, 8, 2)]));
     }
 
+    // Nested tries: the live code inside the inner try brings both handlers, the outer one's through the inner try's
+    // parent; a try beside them that the live code never enters brings nothing.
+    [Fact]
+    public void LiveCodeInANestedTryBringsEveryEnclosingHandler()
+    {
+        using var image = new PEReader(new MemoryStream(Image("NetWasm.CoreLib")));
+        var source = Snapshot(image.GetMetadataReader());
+        // call; brtrue.s 10; ldc.i4.s 42; ret; ldc.i4.0; ret, then a dead ret at 12.
+        byte[] bytes = [0x28, 1, 0, 0, 0x0a, 0x2d, 3, 0x1f, 42, 0x2a, 0x16, 0x2a, 0x2a];
+
+        var plan = Planner().Plan(source, bytes,
+        [
+            Region(ExceptionRegionKind.Catch, 7, 2, 9, 1),
+            Region(ExceptionRegionKind.Catch, 5, 5, 10, 2),
+            Region(ExceptionRegionKind.Catch, 12, 1, 12, 1),
+        ]);
+
+        Assert.NotNull(plan);
+        Assert.Contains(9, plan.LiveOffsets);
+        Assert.Contains(10, plan.LiveOffsets);
+        Assert.DoesNotContain(12, plan.LiveOffsets);
+    }
+
     public static TheoryData<string, int> OtherOperatingSystems => new()
     {
         { "IsWindows", 0 }, { "IsWindowsVersionAtLeast", 4 }, { "IsLinux", 0 }, { "IsFreeBSD", 0 },

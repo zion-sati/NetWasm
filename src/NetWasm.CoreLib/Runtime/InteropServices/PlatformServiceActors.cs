@@ -8,11 +8,6 @@ namespace System.Runtime.InteropServices.WebAssembly
 
     // The one-verb contracts NetWasm's WASI platform composes its facades from.
 
-    internal interface IStandardOutputWriter
-    {
-        void Write(ReadOnlySpan<byte> bytes);
-    }
-
     internal interface IStandardErrorWriter
     {
         void Write(ReadOnlySpan<byte> bytes);

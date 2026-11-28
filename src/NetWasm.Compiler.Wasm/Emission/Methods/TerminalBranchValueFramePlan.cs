@@ -19,4 +19,7 @@ internal sealed record TerminalBranchValueFramePlan(
     // The regions after the if, when neither arm carries them: the framed arm leaves the root frame
     // where it ends, and these run without one.
     public StructuredSequence? UnframedTail { get; init; }
+
+    // The regions before the if, which need no frame and run without one.
+    public StructuredSequence? UnframedPrefix { get; init; }
 }

@@ -40,16 +40,17 @@ internal sealed class ReportingComponentCoreModuleOptimizer(
         ComponentTarget target,
         FinalWasmOptimization optimization,
         bool converge = false,
-        bool lowMemoryUnused = false)
+        bool lowMemoryUnused = false,
+        bool keepNames = false)
     {
         if (optimization is FinalWasmOptimization.None or FinalWasmOptimization.O0 || !File.Exists(inputPath))
         {
-            _optimizer.Optimize(inputPath, outputPath, target, optimization, converge, lowMemoryUnused);
+            _optimizer.Optimize(inputPath, outputPath, target, optimization, converge, lowMemoryUnused, keepNames);
             return;
         }
         LogStarted(_logger, new FileInfo(inputPath).Length / 1_000_000d, optimization, null);
         var started = _time.GetTimestamp();
-        _optimizer.Optimize(inputPath, outputPath, target, optimization, converge, lowMemoryUnused);
+        _optimizer.Optimize(inputPath, outputPath, target, optimization, converge, lowMemoryUnused, keepNames);
         LogFinished(_logger, _time.GetElapsedTime(started).TotalSeconds, null);
     }
 }

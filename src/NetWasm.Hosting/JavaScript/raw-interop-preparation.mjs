@@ -6,6 +6,7 @@ import { createInteropBuiltinServiceModule } from "./interop-builtin-service-mod
 import { resolveJavaScriptImport } from "./javascript-import-resolver.mjs";
 import { createInteropStatusService } from "./interop-status-service.mjs";
 import { createInteropDirectService } from "./interop-direct-service.mjs";
+import { createJavaScriptErrorChannel } from "./javascript-error-channel.mjs";
 import {
   bindInteropExecutionInstance,
   closeInteropExecution,
@@ -109,6 +110,9 @@ export function prepareParsedNetWasmInterop({
   }
 
   const handles = createInteropHandleTable();
+  const errors = createJavaScriptErrorChannel(handles);
+  // Terminal events of exceptions an export's catch offered back to JavaScript, whose enriched report is dropped too.
+  const offeredEvents = new Set();
   const pendingAsyncOperations = new Map();
   const pendingAsyncExports = new Set();
   const enterExport = createExportDepthGuard();
@@ -133,10 +137,21 @@ export function prepareParsedNetWasmInterop({
         stringDataOffset: contract.targetLayout.stringDataOffset,
         maximumReportedMessageLength:
           managedExceptionReporting.maximumMessageLength ?? Number.POSITIVE_INFINITY,
-        reportImmediate: managedExceptionReporting.reportImmediate ?? (event =>
-          console.error(`Managed exception event ${event.eventId}: type #${event.typeId}: ${event.message ?? "<no stored message>"}${event.messageTruncated ? " (message truncated by host policy)" : ""}; resolving type name${event.stackTrace ? `\n${event.stackTrace}` : ""}`)),
-        reportEnriched: managedExceptionReporting.reportEnriched ?? (event =>
-          console.error(`Managed exception event ${event.eventId}: ${event.typeName}${event.stackTrace ? `\n${event.stackTrace}` : ""}`)),
+        // A JSException a synchronous export's catch offered goes back to JavaScript as its original error, as on
+        // .NET's browser runtime, so it is no unhandled managed exception to report.
+        reportImmediate: event => {
+          if (errors.hasExportFailure()) {
+            offeredEvents.add(event.eventId);
+            return;
+          }
+          (managedExceptionReporting.reportImmediate ?? (event =>
+            console.error(`Managed exception event ${event.eventId}: type #${event.typeId}: ${event.message ?? "<no stored message>"}${event.messageTruncated ? " (message truncated by host policy)" : ""}; resolving type name${event.stackTrace ? `\n${event.stackTrace}` : ""}`)))(event);
+        },
+        reportEnriched: event => {
+          if (offeredEvents.delete(event.eventId)) return;
+          (managedExceptionReporting.reportEnriched ?? (event =>
+            console.error(`Managed exception event ${event.eventId}: ${event.typeName}${event.stackTrace ? `\n${event.stackTrace}` : ""}`)))(event);
+        },
         loadArtifacts: loadDiagnosticArtifacts,
         stackTraceSymbols: parsedStackTraceSymbols,
       });
@@ -159,6 +174,7 @@ export function prepareParsedNetWasmInterop({
         contract,
         createStatusService: (descriptor, service) => createStatusService(
           descriptor, service, readers),
+        errors,
         exceptionReporter,
         handles,
         readMemory: readers.readMemory,
@@ -233,9 +249,11 @@ export function prepareParsedNetWasmInterop({
           },
           enterExport,
           staging,
+          takeExportFailure: errors.takeExportFailure,
           observeAsyncExport(request) {
             return observeManagedAsyncExport({
               ...request,
+              takeExportFailure: errors.takeExportFailure,
               registerAbort(abort) {
                 pendingAsyncExports.add(abort);
                 return () => { pendingAsyncExports.delete(abort); };
@@ -301,16 +319,18 @@ export function prepareParsedNetWasmInterop({
 
   function createStatusService(descriptor, service, readers) {
     if (descriptor.call === "direct") {
-      return createInteropDirectService({ descriptor, service, activity });
+      return createInteropDirectService({ descriptor, service, activity, errors });
     }
     const invoke = createInteropStatusService({
       assertAsyncDeliveryAvailable,
       callbacks: contract.callbacks ?? [],
       descriptor,
+      errors,
       exceptionReporter,
       getInstance: readers.readInstance,
       getMemory: readers.readMemory,
       handles,
+      isClosed: readers.isClosed,
       pendingAsyncOperations,
       observeAsyncFailure,
       service,

@@ -20,9 +20,9 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
 
     public ValidatedStructuredMethodBuilderFactory()
         : this(
-            new ControlFlowPostDominanceAnalyzer(),
+            new ControlFlowPostDominanceAnalyzer(new DominatorTreeBuilder()),
             new ControlFlowComponentAnalyzer(),
-            new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer()),
+            new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder())),
             new ReachableSetOverlapClassifier(),
             new LoopConditionChooser(),
             new DispatcherBoundaryClipper())
@@ -60,6 +60,7 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
         var reachableBlocks = new ReachableBlockFinder(distances);
         var errors = new IrreducibleControlFlowExceptionFactory();
         var conditionalBranches = new CilConditionalBranchClassifier();
+        var elseIfChains = ElseIfChainPolicy.For(branchPrefixDuplication);
         var wholeRegionDispatchers = new WholeRegionDispatcherBuilder(conditionalBranches);
         var exceptionAwareDispatcherBlocks = new ExceptionAwareDispatcherBlockSelector();
         var exceptionAwareDispatcherShells = new ExceptionAwareDispatcherShellBuilder(
@@ -82,17 +83,29 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
         var exitExtensions = new LoopExitExtensionCollector();
         var exitPartitions = new LoopExitPartitioner(exitExtensions, _reachableSetOverlaps);
         var activeBlockRetention = new LoopActiveBlockRetentionSelector();
-        var loops = new LoopRegionFactory(
-            _reachableSetOverlaps,
-            _loopConditions,
+        var loopEligibility = new LoopRegionEligibilityClassifier(subgraphCycles);
+        var switchChains = new SwitchChainReader();
+        var switchTables = new SwitchTablePolicy(16, 16384);
+        var entryTargets = new LoopEntryTargetFinder();
+        var loops = new SwitchLoopRegionFactory(
+            new LoopRegionFactory(
+                _reachableSetOverlaps,
+                _loopConditions,
+                joins,
+                reachableBlocks,
+                errors,
+                exitPartitions,
+                new LoopContinueTargetFinder(joins, reachableBlocks),
+                loopEligibility,
+                new TerminatingExitJoinFinder(),
+                entryTargets,
+                branchPrefixDuplication),
+            switchChains,
+            switchTables,
             joins,
-            reachableBlocks,
-            errors,
             exitPartitions,
-            new LoopContinueTargetFinder(joins, reachableBlocks),
-            new LoopRegionEligibilityClassifier(subgraphCycles),
-            new LoopEntryTargetFinder(),
-            branchPrefixDuplication);
+            loopEligibility,
+            entryTargets);
         var structuredControlFlow = new StructuredControlFlowBuilder(
             exceptionAwareDispatcherShells,
             new StructuredSequenceStepChain(
@@ -109,12 +122,14 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
                     new DispatcherSequenceStepExecutor(
                         new ActiveControlFlowBlockClipper(),
                         activeBlockRetention),
+                    new SwitchSequenceStepExecutor(postDominators, switchChains, new SwitchJoinSelector(), switchTables),
                     new BranchingSequenceStepExecutor(
                         joins,
                         reachableBlocks,
                         branchJoins,
                         branchOverlaps,
-                        new DispatcherExitSelector())]));
+                        new DispatcherExitSelector(),
+                        elseIfChains)]));
         var stateBuilder = new ControlFlowStructuringStateBuilder(
             new ExceptionContinuationGraphProjector(),
             _components,
@@ -122,14 +137,19 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
             domains,
             loops,
             cycles);
-        var ranges = new BlockRangeStructurer(structuredControlFlow);
+        var reducibleControlFlow = dispatcherElimination == DispatcherEliminationPolicy.Reducible
+            ? new ReducibleControlFlowStructurer(new CilConditionalBranchClassifier(), elseIfChains)
+            : null;
+        var ranges = new BlockRangeStructurer(structuredControlFlow, reducibleControlFlow);
         var exceptionGroups = new ExceptionGroupStructurer(
             new ExceptionScopeFinder(),
             new ContinuationDispatcherBuilder(structuredControlFlow, reachableBlocks),
             new LoopContinuationBuilder(ranges),
             new NestedFlowClassifier(),
             ranges,
-            new NormalLeaveTargetFinder());
+            new NormalLeaveTargetFinder(),
+            new TerminalContinuationFinder(),
+            new ContinuationExtentFinder(reachableBlocks));
         var finalValidator = new Final.StructuredMethodValidator(
             new Final.StructuredInstructionContractValidator(),
             new Final.StructuredBlockOwnershipValidator(),
@@ -157,8 +177,6 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
                             controlFlowProjector,
                 new Final.StructuredExceptionGroupProjector(controlFlowProjector)),
                 new Final.StructuredMethodFactory(finalValidator)),
-            dispatcherElimination == DispatcherEliminationPolicy.Reducible
-                ? new ReducibleControlFlowStructurer(new CilConditionalBranchClassifier())
-                : null);
+            reducibleControlFlow);
     }
 }

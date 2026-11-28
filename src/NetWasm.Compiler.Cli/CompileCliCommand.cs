@@ -83,7 +83,8 @@ internal sealed class CompileCliCommand(
             options.ManagedLoopStrengthReduction,
             options.ManagedRangeBranchFolding,
             options.ManagedUnwrittenStaticFieldFolding,
-            options.ManagedConditionalSelects);
+            options.ManagedConditionalSelects,
+            options.ManagedByRefNullCheckElimination);
         var entryPoint = options.Target == NwcTarget.Exe ? _entryPoints.Read(options.Input) : null;
         using var session = _sessions.Create(options.WasmTools);
         var compilation = session.Compile(new CompilerOptions(
@@ -114,6 +115,7 @@ internal sealed class CompileCliCommand(
             ImportModules = options.ImportModules,
             LinkedNativeLibraries = options.LinkedNativeOnly ? options.NativeLibraries : null,
             MissingApiAsError = options.MissingApiError,
+            ReceiverFlowAudit = options.ReceiverFlowAudit,
             DiagnosticLogLevel = options.DiagnosticLogLevel ?? LogLevel.Debug,
             NativeArchives = options.NativeArchives,
             FeatureSwitches = options.FeatureSwitches,

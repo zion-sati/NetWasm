@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using NetWasm.Compiler.ComponentModel.Debugging;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -557,12 +558,7 @@ public sealed class ComponentCompilationTests
         var layoutPath = Path.Combine(assets.Directory, "runtime-layout.json");
         var runtimePath = Path.Combine(assets.Directory, "runtime.wasm");
         File.WriteAllBytes(coreModulePath, result.ApplicationModule);
-        File.WriteAllText(layoutPath, JsonSerializer.Serialize(new
-        {
-            schemaVersion = 2,
-            target = "wasm32",
-            applicationStaticDataEnd = result.StaticDataEnd,
-        }));
+        RuntimeLayoutFiles.Write(layoutPath, result);
         var start = new ProcessStartInfo("bash")
         {
             RedirectStandardOutput = true,
@@ -613,6 +609,190 @@ public sealed class ComponentCompilationTests
         Assert.Contains("wasi:cli/environment@0.3", wit.StandardOutput);
         Assert.DoesNotContain("preview1", wit.StandardOutput, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("wasi_unstable", wit.StandardOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // NetWasmDebugInfo keeps the application's function names through the merge and the optimizer into the component,
+    // where a debugger and Wasmtime's trap backtraces read them; a product component names nothing.
+    [Fact]
+    public async Task DebugInformationKeepsManagedFunctionNamesInTheComponent()
+    {
+        using var assets = TestAssets.Create();
+        var witPath = WitPath(assets);
+        var assembly = CompileFixture(assets, "int");
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            WitPath: witPath));
+        var coreModulePath = Path.Combine(assets.Directory, "application.wasm");
+        var layoutPath = Path.Combine(assets.Directory, "runtime-layout.json");
+        var runtimePath = Path.Combine(assets.Directory, "runtime.wasm");
+        File.WriteAllBytes(coreModulePath, result.ApplicationModule);
+        RuntimeLayoutFiles.Write(layoutPath, result);
+        var start = new ProcessStartInfo("bash")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            ArgumentList =
+            {
+                Path.Combine(assets.Root, "eng", "build-netwasm-runtime.sh"),
+                "--runtime-layout", layoutPath,
+                "--output", runtimePath,
+                "--target", "wasm32",
+                "--configuration", "release",
+            },
+        };
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Runtime build did not start");
+        var buildOutput = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var buildError = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+        Assert.True(process.ExitCode == 0, await buildOutput + await buildError);
+        using var services = CreateComponentModelServices();
+        var packager = services.GetRequiredService<IComponentPackager>();
+        var wasmTools = services.GetRequiredService<IWasmTools>();
+
+        foreach (var (optimization, debugInfo) in new[]
+        {
+            (FinalWasmOptimization.O0, true),
+            (FinalWasmOptimization.Oz, true),
+            (FinalWasmOptimization.O0, false),
+            (FinalWasmOptimization.Oz, false),
+        })
+        {
+            var componentPath = Path.Combine(assets.Directory, $"application.{optimization}.{debugInfo}.component.wasm");
+            packager.Package(new ComponentPackageRequest(coreModulePath, witPath, null, componentPath,
+                ComponentTarget.Wasm32Wasi02, runtimePath, Optimization: optimization)
+            { DebugInformation = debugInfo ? new() : null });
+            var validation = wasmTools.Run("validate", componentPath, "--features", "all");
+            Assert.True(validation.ExitCode == 0, validation.StandardError + validation.StandardOutput);
+            // Optimizing inlines the trivial method, so the name section itself is what an optimized build keeps.
+            var sections = wasmTools.Run("objdump", componentPath);
+            Assert.Equal(0, sections.ExitCode);
+            Assert.True(sections.StandardOutput.Contains("custom \"name\"", StringComparison.Ordinal) == debugInfo,
+                $"{optimization} with debug information {debugInfo}:\n{sections.StandardOutput}");
+            if (optimization == FinalWasmOptimization.O0)
+            {
+                Assert.Equal(debugInfo, File.ReadAllBytes(componentPath).AsSpan().IndexOf("EntryPoint::Run"u8) >= 0);
+            }
+        }
+    }
+
+    // With method symbols a Debug link gains DWARF that names the managed methods and maps their code to C# lines,
+    // valid to LLVM's verifier, and a component's strip keeps it with the name section and drops everything else.
+    [Fact]
+    public async Task DebugInformationMapsTheLinkedCodeToItsSourceLines()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithPortablePdb(
+            "DebugLineFixture",
+            """
+            public static class EntryPoint
+            {
+                private static int Increment(int value) => value + 1;
+
+                public static int Run(int value)
+                {
+                    var doubled = value * 2;
+                    return Increment(doubled) + 1;
+                }
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Optimization: FinalWasmOptimization.O0, EmitStackTrace: true, ProjectDirectory: assets.Directory));
+        var coreModulePath = Path.Combine(assets.Directory, "application.wasm");
+        var symbolsPath = Path.Combine(assets.Directory, "application.wasm.method-symbols");
+        var layoutPath = Path.Combine(assets.Directory, "runtime-layout.json");
+        var runtimePath = Path.Combine(assets.Directory, "runtime.wasm");
+        File.WriteAllBytes(coreModulePath, result.ApplicationModule);
+        File.WriteAllBytes(symbolsPath, result.MethodSymbols!.Bytes);
+        RuntimeLayoutFiles.Write(layoutPath, result);
+        await BuildRuntimeAsync(assets, layoutPath, runtimePath);
+        using var services = CreateComponentModelServices();
+        var debug = new WasmDebugInformation(symbolsPath, assets.Directory);
+        var linkedPath = Path.Combine(assets.Directory, "linked.wasm");
+        services.GetRequiredService<NetWasm.Compiler.ComponentModel.Raw.IRawModuleLinker>().Link(
+            new(coreModulePath, runtimePath, linkedPath, ComponentTarget.Wasm32Wasi02, FinalWasmOptimization.O0)
+            {
+                DebugInformation = debug,
+            });
+
+        var dwarfdump = Path.Combine(Environment.GetEnvironmentVariable("NETWASM_EMSDK_ROOT")!, "upstream", "bin",
+            "llvm-dwarfdump");
+        var verify = Run(dwarfdump, "--verify", linkedPath);
+        Assert.True(verify.ExitCode == 0, verify.Output);
+        var lineTable = Run(dwarfdump, "--debug-line", linkedPath).Output;
+        Assert.Contains("name: \"DebugLineFixture.cs\"", lineTable, StringComparison.Ordinal);
+        var lines = lineTable.Split('\n')
+            .Select(line => System.Text.RegularExpressions.Regex.Match(line, @"^0x[0-9a-f]+\s+(\d+)\s+\d+\s+\d+\s"))
+            .Where(match => match.Success)
+            .Select(match => int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+            .ToHashSet();
+        // Line 9, the closing brace, is where the folded return epilogue returns.
+        Assert.True(new HashSet<int> { 3, 6, 7, 8, 9 }.IsSubsetOf(lines), lineTable);
+        var information = Run(dwarfdump, "--debug-info", linkedPath).Output;
+        Assert.Contains("DW_AT_name\t(\"EntryPoint.Run\")", information, StringComparison.Ordinal);
+        Assert.Contains("DW_AT_name\t(\"EntryPoint.Increment\")", information, StringComparison.Ordinal);
+        Assert.Contains($"DW_AT_comp_dir\t(\"{assets.Directory}\")", information, StringComparison.Ordinal);
+
+        var wasmTools = services.GetRequiredService<IWasmTools>();
+        // A stack-trace build keeps names out of the module (issue 225); debug information names its managed functions
+        // in the name section, which the printer reads.
+        Assert.Equal(-1, result.ApplicationModule.AsSpan().IndexOf("EntryPoint::Run"u8));
+        var printed = wasmTools.Run("print", linkedPath).StandardOutput;
+        Assert.Contains("(func $EntryPoint.Run ", printed, StringComparison.Ordinal);
+        Assert.Contains("(func $EntryPoint.Increment ", printed, StringComparison.Ordinal);
+        var tagged = Path.Combine(assets.Directory, "tagged.wasm");
+        File.WriteAllBytes(tagged, [.. File.ReadAllBytes(linkedPath), .. CustomSection("producers"), .. CustomSection(".dwarf")]);
+        var strippedPath = Path.Combine(assets.Directory, "stripped.wasm");
+        Assert.Equal(0, wasmTools.Run("strip", "--delete", ComponentPackageExecution.NonDebugSections, tagged, "--output",
+            strippedPath).ExitCode);
+        var sections = wasmTools.Run("objdump", strippedPath).StandardOutput.Split('\n')
+            .Where(line => line.TrimStart().StartsWith("custom ", StringComparison.Ordinal))
+            .Select(line => line.Trim().Split('"')[1]);
+        Assert.Equal([".debug_abbrev", ".debug_info", ".debug_line", "name"], sections.Order(StringComparer.Ordinal));
+    }
+
+    private static byte[] CustomSection(string name)
+    {
+        var bytes = Encoding.UTF8.GetBytes(name);
+        return [0, (byte)(bytes.Length + 2), (byte)bytes.Length, .. bytes, 7];
+    }
+
+    private static async Task BuildRuntimeAsync(TestAssets assets, string layoutPath, string runtimePath)
+    {
+        var start = new ProcessStartInfo("bash")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            ArgumentList =
+            {
+                Path.Combine(assets.Root, "eng", "build-netwasm-runtime.sh"),
+                "--runtime-layout", layoutPath,
+                "--output", runtimePath,
+                "--target", "wasm32",
+                "--configuration", "release",
+            },
+        };
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Runtime build did not start");
+        var buildOutput = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var buildError = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+        Assert.True(process.ExitCode == 0, await buildOutput + await buildError);
+    }
+
+    private static (int ExitCode, string Output) Run(string fileName, params string[] arguments)
+    {
+        var start = new ProcessStartInfo(fileName)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        using var process = Process.Start(start) ?? throw new InvalidOperationException($"{fileName} did not start");
+        var error = process.StandardError.ReadToEndAsync();
+        var output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        return (process.ExitCode, output + error.Result);
     }
 
     private static string CompileFixture(TestAssets assets, string importType) =>

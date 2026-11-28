@@ -319,6 +319,13 @@ internal sealed class WasmModuleEmitter(
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)];
         }
+        if (plan.RuntimeImportSelection.IncludeSharedArrays)
+        {
+            runtimeFeatures = [.. runtimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.SharedArrays)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
         if (plan.RuntimeImportSelection.IncludeUninitializedArrays)
         {
             runtimeFeatures = [.. runtimeFeatures

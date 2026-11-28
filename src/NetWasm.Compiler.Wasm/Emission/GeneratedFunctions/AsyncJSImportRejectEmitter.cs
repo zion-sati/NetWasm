@@ -10,6 +10,7 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 internal sealed class AsyncJSImportRejectEmitter(
     ITargetLayout layouts,
     IRuntimeImportResolver runtimeImports,
+    IAsyncImportTaskHandleEmitter taskHandles,
     IGeneratedFunctionWriterFactory writers) : IAsyncJSImportRejectEmitter
 {
     public byte[] Emit(
@@ -22,16 +23,7 @@ internal sealed class AsyncJSImportRejectEmitter(
             code.Bytes,
             [CliValueKind.ManagedReference],
             layouts.Target);
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned(0)));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
-                RuntimeImportSymbol.HandleGet))));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalSet,
-            WasmInstructionOperand.Unsigned((uint)taskLocal)));
+        taskHandles.Emit(code.Instructions, 0, taskLocal, functionIndices.ManagedThrowFunction);
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
             WasmInstructionOperand.Unsigned((uint)taskLocal)));

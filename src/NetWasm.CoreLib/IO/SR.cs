@@ -7,6 +7,9 @@ namespace System.IO
 {
     internal static class SR
     {
+        internal const string IO_InvalidReadLength = "The read operation returned an invalid length.";
+        internal const string InvalidOperation_AsyncIOInProgress = "The stream is currently in use by a previous operation on the stream.";
+        internal const string ObjectDisposed_ReaderClosed = "Cannot read from a closed TextReader.";
         internal const string ArgumentOutOfRange_MustBePositive = "'{0}' must be greater than zero.";
         internal const string InvalidOperation_TimeoutsNotSupported = "Timeouts are not supported on this stream.";
         internal const string NotSupported_CannotWriteToBufferedStreamIfReadBufferCannotBeFlushed = "Cannot write to a BufferedStream while the read buffer is not empty if the underlying stream is not seekable. Ensure that the stream underlying this BufferedStream can seek or avoid interleaving read and write operations on this BufferedStream.";

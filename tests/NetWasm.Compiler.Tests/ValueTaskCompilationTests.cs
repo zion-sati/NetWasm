@@ -58,23 +58,27 @@ public sealed class ValueTaskCompilationTests
 
             namespace AsyncValueTaskFixture;
 
-            public static class EntryPoint
+            // A struct's async methods keep their state machines (a class's compile as runtime async).
+            public struct Pending
             {
-                private static async ValueTask<int> AddAsync(int value)
+                public static async ValueTask<int> AddAsync(int value)
                 {
                     await Task.Yield();
                     return value + 1;
                 }
 
-                private static async ValueTask CompleteAsync()
+                public static async ValueTask CompleteAsync()
                 {
                     await Task.Yield();
                 }
+            }
 
+            public static class EntryPoint
+            {
                 public static int Run(int input)
                 {
-                    _ = AddAsync(input);
-                    _ = CompleteAsync();
+                    _ = Pending.AddAsync(input);
+                    _ = Pending.CompleteAsync();
                     return input;
                 }
             }

@@ -40,7 +40,7 @@ internal sealed class NetWasmOracleRunner(
         var modulePath = Path.Combine(
             compilation.Directory,
             $"{compilation.Fixture.Name}.{compilation.Profile}.{targetName}.wasm");
-        var methodSymbolsPath = compilation.Fixture.EmitStackTrace
+        var methodSymbolsPath = compilation.EmitsStackTrace
             ? modulePath + ".method-symbols"
             : null;
         var hostConfigurationPath = methodSymbolsPath is null &&
@@ -142,6 +142,7 @@ internal sealed class NetWasmOracleRunner(
                 "--enable-bulk-memory",
                 "--enable-nontrapping-float-to-int",
                 "--enable-simd",
+                "--enable-multivalue",
                 "-o",
                 optimizedPath,
             ],

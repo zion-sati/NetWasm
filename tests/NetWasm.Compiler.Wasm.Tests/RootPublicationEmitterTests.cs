@@ -163,10 +163,100 @@ public sealed class RootPublicationEmitterTests
         Assert.Equal(kind == CliValueKind.ValueType ? (uint)pointerSize : 0u, Assert.Single(loads).Operand.Offset);
     }
 
+    // A lazily entered frame: a safepoint with a live root enters it first; one that only clears slots clears them only
+    // in an entered frame; one with nothing to store writes nothing.
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void SafepointPublicationDoesNotClearPendingExceptionRoots(WasmTarget target)
+    public void ALazyFrameIsEnteredWhereARootIsLiveAndClearedOnlyOnceEntered(WasmTarget target)
+    {
+        var live = new RootSource(RootSourceKind.Argument, 0);
+        var other = new RootSource(RootSourceKind.Local, 0);
+        var imports = WasmRuntimeImports.CreateCatalog();
+        IReadOnlyList<WasmInstruction> Emit(ImmutableArray<RootSource> roots, bool knownZero, bool entered = false)
+        {
+            var context = CreateMethodEmissionContext() with
+            {
+                RootMap = new MethodRootMap(EntryKey,
+                    ImmutableDictionary<RootSource, int>.Empty.Add(live, 0).Add(other, 1),
+                    ImmutableDictionary<int, SafepointRootMap>.Empty.Add(0, new(0, roots, []))),
+                LazyRootFrame = new([], entered ? [0] : []),
+                RootClearElisions = knownZero
+                    ? ImmutableDictionary<(int, bool), ImmutableHashSet<int>>.Empty.Add((0, false), [0, 1])
+                    : ImmutableDictionary<(int, bool), ImmutableHashSet<int>>.Empty,
+            };
+            var code = new RecordingInstructionWriter();
+            CreateEmitter(new RecordingLayoutProvider(WasmTargetLayout.For(target))).Emit(
+                CreateInstructionRequest(CilOperation.Call, context: context), code);
+            return code.ToInstructions();
+        }
+        bool Enters(IReadOnlyList<WasmInstruction> instructions) => instructions.Any(instruction =>
+            instruction.Opcode == WasmOpcodes.Call &&
+            instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameEnter));
+
+        var published = Emit([live], knownZero: false);
+        Assert.True(Enters(published));
+        Assert.Equal(WasmOpcodes.LocalGet, published[0].Opcode);
+
+        var cleared = Emit([], knownZero: false);
+        Assert.False(Enters(cleared));
+        Assert.Equal(WasmOpcodes.If, cleared[target == WasmTarget.Wasm64 ? 3 : 1].Opcode);
+        Assert.Equal(WasmOpcodes.End, cleared[^1].Opcode);
+        Assert.Equal(2, cleared.Count(instruction => instruction.Opcode is WasmOpcodes.I32Store or WasmOpcodes.I64Store));
+
+        Assert.Empty(Emit([], knownZero: true));
+
+        // Where every path has entered the frame, the safepoint publishes as in a frame entered on entry.
+        var entered = Emit([live], knownZero: false, entered: true);
+        Assert.False(Enters(entered));
+        Assert.DoesNotContain(entered, instruction => instruction.Opcode == WasmOpcodes.If);
+        Assert.Equal(2, entered.Count(instruction => instruction.Opcode is WasmOpcodes.I32Store or WasmOpcodes.I64Store));
+    }
+
+    // A point that collects only by throwing to a handler leaves a deferrable root unpublished while its slot holds null:
+    // a lazy frame is not entered for it and an entered one gets no store; where the slot may hold something else, the
+    // root is published as usual.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void ADeferrableRootIsLeftUnpublishedOnlyWhileItsSlotHoldsNull(WasmTarget target)
+    {
+        var root = new RootSource(RootSourceKind.Local, 0);
+        var imports = WasmRuntimeImports.CreateCatalog();
+        IReadOnlyList<WasmInstruction> Emit(bool knownZero, bool entered)
+        {
+            var context = CreateMethodEmissionContext() with
+            {
+                RootMap = new MethodRootMap(EntryKey, ImmutableDictionary<RootSource, int>.Empty.Add(root, 0),
+                    ImmutableDictionary<int, SafepointRootMap>.Empty.Add(0, new(0, [root], []) { Deferrable = [root] })),
+                LazyRootFrame = new([], entered ? [0] : []),
+                RootClearElisions = knownZero
+                    ? ImmutableDictionary<(int, bool), ImmutableHashSet<int>>.Empty.Add((0, false), [0])
+                    : ImmutableDictionary<(int, bool), ImmutableHashSet<int>>.Empty,
+            };
+            var code = new RecordingInstructionWriter();
+            CreateEmitter(new RecordingLayoutProvider(WasmTargetLayout.For(target))).Emit(
+                CreateInstructionRequest(CilOperation.Call, context: context), code);
+            return code.ToInstructions();
+        }
+        bool Enters(IReadOnlyList<WasmInstruction> instructions) => instructions.Any(instruction =>
+            instruction.Opcode == WasmOpcodes.Call &&
+            instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameEnter));
+        int Stores(IReadOnlyList<WasmInstruction> instructions) =>
+            instructions.Count(instruction => instruction.Opcode is WasmOpcodes.I32Store or WasmOpcodes.I64Store);
+
+        Assert.Empty(Emit(knownZero: true, entered: false));
+        Assert.Empty(Emit(knownZero: true, entered: true));
+        var published = Emit(knownZero: false, entered: false);
+        Assert.True(Enters(published));
+        Assert.Equal(1, Stores(published.SkipWhile(instruction => instruction.Opcode != WasmOpcodes.End).ToArray()));
+        Assert.Equal(1, Stores(Emit(knownZero: false, entered: true)));
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void AFilterFuncletPublishesOnlyItsRootMapsSlots(WasmTarget target)
     {
         var source = new RootSource(RootSourceKind.Argument, 0);
         var context = CreateMethodEmissionContext() with
@@ -174,7 +264,6 @@ public sealed class RootPublicationEmitterTests
             RootMap = new MethodRootMap(EntryKey,
                 ImmutableDictionary<RootSource, int>.Empty.Add(source, 0),
                 ImmutableDictionary<int, SafepointRootMap>.Empty.Add(0, new(0, [source], []))),
-            ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(new(0), 1),
             IsFilterFunclet = true,
         };
         var request = CreateInstructionRequest(CilOperation.Call, context: context);
@@ -546,7 +635,8 @@ public sealed class RootPublicationEmitterTests
         return new[]
         {
             new RootPublicationEmitter(layouts, filterRoots, CreateValueFrameAddresses(layouts),
-                new StackStorageAnchorValueEmitter(layouts, CreateValueFrameAddresses(layouts))),
+                new StackStorageAnchorValueEmitter(layouts, CreateValueFrameAddresses(layouts)),
+                new LazyRootFrameEmitter(layouts, WasmRuntimeImports.CreateCatalog())),
         }.Cast<IRootPublicationEmitter>().Single();
     }
 

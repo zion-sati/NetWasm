@@ -30,7 +30,9 @@ internal sealed class LoopRegionEligibilityClassifier(
         {
             return false;
         }
-        if (!naturalLoop.IsSubsetOf(request.Domain.Blocks))
+        // Each loop's blocks are looked up in the domain's and the method's sets: IsSubsetOf would copy and walk
+        // those whole sets for every loop.
+        if (!naturalLoop.All(request.Domain.Blocks.Contains))
         {
             return false;
         }
@@ -53,7 +55,7 @@ internal sealed class LoopRegionEligibilityClassifier(
         {
             return false;
         }
-        if (!region.Component.IsSubsetOf(graph.ReachableBlocks))
+        if (!region.Component.All(graph.ReachableBlocks.Contains))
         {
             return false;
         }
@@ -80,15 +82,13 @@ internal sealed class LoopRegionEligibilityClassifier(
             }
         }
 
-        var outsideDomain = extension.Except(request.Domain.Blocks);
+        var outsideDomain = extension.Where(block => !request.Domain.Blocks.Contains(block)).ToImmutableHashSet();
         if (outsideDomain.IsEmpty)
         {
             return true;
         }
         if (graph.MethodBody.ExceptionRegions.IsEmpty ||
-            !outsideDomain.IsSubsetOf(request.Domains
-                .SelectMany(domain => domain.Blocks)
-                .ToImmutableHashSet()))
+            !outsideDomain.All(request.Domains.Claims))
         {
             return false;
         }

@@ -26,6 +26,7 @@
     <ProjectReference Include="../../src/NetWasm.App.Ref/NetWasm.App.Ref.csproj" ReferenceOutputAssembly="false" />
     <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestAssets.cs" />
     <Compile Include="../TestInfrastructure/DotNetHost.cs" Link="DotNetHost.cs" />
+    <Compile Include="../TestInfrastructure/ProcessExits.cs" Link="ProcessExits.cs" />
     <Compile Include="../../src/NetWasm.CoreLib/EnumMetadataView.cs"
              Link="CoreLib/EnumMetadataView.cs" />
     <Compile Include="../../src/NetWasm.CoreLib/EnumAlgorithms.cs"

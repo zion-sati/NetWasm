@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
@@ -32,6 +34,7 @@ public sealed class ConstructorDependencyGuardTests
         "NetWasm.Compiler.Analysis.DefaultComparerCallRewriter",
         "NetWasm.Compiler.Analysis.DelegateMethodRewriter",
         "NetWasm.Compiler.Analysis.Devirtualization.ExactReceiverDevirtualizer",
+        "NetWasm.Compiler.Analysis.DispatchSiteTargetSelector",
         "NetWasm.Compiler.Analysis.DynamicCasts.DynamicCastHelperResolver",
         "NetWasm.Compiler.Analysis.DynamicCasts.DynamicInterfaceCastableProgramReducer",
         "NetWasm.Compiler.Analysis.EnumEqualsCallRewriter",
@@ -55,12 +58,19 @@ public sealed class ConstructorDependencyGuardTests
         "NetWasm.Compiler.Analysis.ManagedByRefEffectAnalyzerFactory",
         "NetWasm.Compiler.Analysis.PureCallReuser",
         "NetWasm.Compiler.Analysis.QuotientReuser",
+        "NetWasm.Compiler.Analysis.Reachability.ReachabilityDerivedRootExpander",
+        "NetWasm.Compiler.Analysis.Reachability.RuntimeReachabilityExpander",
+        "NetWasm.Compiler.Analysis.ReachabilityClosureBuilder",
         "NetWasm.Compiler.Analysis.ReachableMethodAnalysisSession",
         "NetWasm.Compiler.Analysis.ReachableProgramBuilder",
+        "NetWasm.Compiler.Analysis.ReachableProgramBuilderFactory",
         "NetWasm.Compiler.Analysis.RvaSpanLocalEliminator",
+        "NetWasm.Compiler.Analysis.StackDepthFitter",
         "NetWasm.Compiler.Analysis.StackValueConsumerFinder",
         "NetWasm.Compiler.Analysis.StaticArrays.ValueConstructorPurityClassifier",
         "NetWasm.Compiler.ComponentModel.Raw.RawCoreRuntimeImportDeclarationBuilder",
+        "NetWasm.Compiler.Diagnostics.LoggingAnalysisStepRecorder",
+        "NetWasm.Compiler.Diagnostics.MemoryReleasingProgressReporter",
         "NetWasm.Compiler.EntryPoints.CompilationExportResolver",
         "NetWasm.Compiler.Layout.StructMarshallingDataBuilder",
         "NetWasm.Compiler.Layout.StructMarshallingDataCollector",
@@ -110,6 +120,12 @@ public sealed class ConstructorDependencyGuardTests
         type.IsValueType ? Activator.CreateInstance(type)
         // A sequence of collaborators holds one.
         : type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>) ? Sequence(type.GetGenericArguments()[0])
+        // A logger is a real null logger: DispatchProxy grants its proxy access to an interface's own assembly, not to a
+        // type argument's, so ILogger<an internal actor> could only be proxied after another test had opened that
+        // assembly to the proxies, which made this test depend on the order the suite runs in.
+        : type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ILogger<>)
+            ? typeof(NullLogger<>).MakeGenericType(type.GetGenericArguments()).GetField(nameof(NullLogger<object>.Instance))!
+                .GetValue(null)
         : type.IsInterface ? DispatchProxy.Create(type, typeof(UnusedDependencyProxy))
         : type == typeof(string) ? string.Empty
         : type.IsArray ? Array.CreateInstance(type.GetElementType()!, 0)

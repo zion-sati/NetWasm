@@ -50,6 +50,12 @@ change. Compiler changes should include a focused regression that demonstrates
 the input and expected behavior. CoreLib ports must retain upstream headers
 and license notices.
 
+Every test in `tests/NetWasm.Compiler.Tests` compiles a whole program, so one
+test process running all of them fragments its heap until the garbage collector
+stalls. `dotnet test` on that project therefore needs a `--filter`. Run the
+whole project, or a large selection, in isolated processes with
+`python3 eng/run-compiler-tests-sharded.py [--filter ...]`.
+
 A test that asserts how long something takes is marked
 `[Trait("Category", "Performance")]`. Its result depends on the load on the
 machine, so `eng/test.sh` and the pull request checks exclude that category.

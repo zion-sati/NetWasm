@@ -12,9 +12,10 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 
 internal sealed class ExceptionRegionEmitter(
     ITargetLayout layouts,
-    IRuntimeImportResolver runtimeImports,
     IExceptionPayloadBlockEmitter exceptions,
-    IStructuredExceptionGroupKeyFactory exceptionGroupKeys) : IExceptionRegionEmitter
+    IExceptionFrameStepEmitter frames,
+    IPassThroughCatchLocalFinder passThroughLocals,
+    IRuntimeImportResolver runtimeImports) : IExceptionRegionEmitter
 {
     public void Emit(
         IWasmInstructionWriter code,
@@ -150,7 +151,7 @@ internal sealed class ExceptionRegionEmitter(
         int? dispatcherContinueDepth,
         int? enclosingLeaveDepth)
     {
-        EnterExceptionFrame(code, method, group, context, exceptionMetadata);
+        frames.Emit(code, ExceptionFrameStep.Enter, method, group, context, exceptionMetadata);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -163,7 +164,7 @@ internal sealed class ExceptionRegionEmitter(
                 0)));
         EmitProtectedParts(code, method, group, context, exceptionMetadata, emitSequence);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        LeaveExceptionFrame(code, group, context);
+        frames.Emit(code, ExceptionFrameStep.Leave, method, group, context, exceptionMetadata);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Branch,
             WasmInstructionOperand.Unsigned(1)));
@@ -171,14 +172,9 @@ internal sealed class ExceptionRegionEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)context.ExceptionTemporary)));
-        StoreExceptionRoot(code, group, context);
-        UnwindExceptionFrame(code, group, context);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)context.ExceptionFrameLocals[group.Id])));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ExceptionFrameTargetClause))));
+        frames.Emit(code, ExceptionFrameStep.Unwind, method, group, context, exceptionMetadata);
+        EnterExceptionCell(code, group, context);
+        frames.Emit(code, ExceptionFrameStep.TargetClause, method, group, context, exceptionMetadata);
         var clauseSelector = WasmLocalLayoutPlanner.GetEvaluationStackLocal(
             context.StackLocals,
             0,
@@ -208,9 +204,7 @@ internal sealed class ExceptionRegionEmitter(
                     0,
                     CliValueKind.ManagedReference,
                     layouts.Target))));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.Call,
-                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.EndCatch))));
+            frames.Emit(code, ExceptionFrameStep.EndCatch, method, group, context, exceptionMetadata);
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Block,
                 WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -219,13 +213,16 @@ internal sealed class ExceptionRegionEmitter(
                 context with
                 {
                     ActiveExceptionGroup = group,
-                    ActiveCatchRootSlot = context.ExceptionRootSlots[group.Id],
+                    ActiveCatchCellFrame = context.ExceptionCellFrames[group.Id],
+                    ActiveCatchPassThroughToken = passThroughLocals.Find(method, group, context) is null
+                        ? null
+                        : context.ExceptionFrameLocals[group.Id],
                 },
                 null,
                 null,
                 0);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-            ClearExceptionRoot(code, group, context);
+            LeaveExceptionCell(code, group, context);
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Branch,
                 WasmInstructionOperand.Unsigned(1)));
@@ -278,7 +275,7 @@ internal sealed class ExceptionRegionEmitter(
                 enclosingLeaveDepth);
             return;
         }
-        EnterExceptionFrame(code, method, group, context, exceptionMetadata);
+        frames.Emit(code, ExceptionFrameStep.Enter, method, group, context, exceptionMetadata);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -291,7 +288,7 @@ internal sealed class ExceptionRegionEmitter(
                 0)));
         EmitProtectedParts(code, method, group, context, exceptionMetadata, emitSequence);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        LeaveExceptionFrame(code, group, context);
+        frames.Emit(code, ExceptionFrameStep.Leave, method, group, context, exceptionMetadata);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Branch,
             WasmInstructionOperand.Unsigned(1)));
@@ -299,8 +296,8 @@ internal sealed class ExceptionRegionEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)context.ExceptionTemporary)));
-        StoreExceptionRoot(code, group, context);
-        UnwindExceptionFrame(code, group, context);
+        frames.Emit(code, ExceptionFrameStep.Unwind, method, group, context, exceptionMetadata);
+        EnterExceptionCell(code, group, context);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -342,8 +339,11 @@ internal sealed class ExceptionRegionEmitter(
         int? enclosingLeaveDepth)
     {
         var clause = group.Clauses[0];
-        ClearExceptionRoot(code, group, context);
-        EnterExceptionFrame(code, method, group, context, exceptionMetadata);
+        // The normal path has no exception cell; the landing pad enters one.
+        EmitAddressConstant(code, 0);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)context.ExceptionCellFrames[group.Id])));
+        frames.Emit(code, ExceptionFrameStep.Enter, method, group, context, exceptionMetadata);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -356,7 +356,7 @@ internal sealed class ExceptionRegionEmitter(
                 0)));
         EmitProtectedParts(code, method, group, context, exceptionMetadata, emitSequence);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        LeaveExceptionFrame(code, group, context);
+        frames.Emit(code, ExceptionFrameStep.Leave, method, group, context, exceptionMetadata);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Branch,
             WasmInstructionOperand.Unsigned(1)));
@@ -364,8 +364,8 @@ internal sealed class ExceptionRegionEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)context.ExceptionTemporary)));
-        StoreExceptionRoot(code, group, context);
-        UnwindExceptionFrame(code, group, context);
+        frames.Emit(code, ExceptionFrameStep.Unwind, method, group, context, exceptionMetadata);
+        EnterExceptionCell(code, group, context);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
 
         code.Write(WasmInstruction.WithOperand(
@@ -382,7 +382,8 @@ internal sealed class ExceptionRegionEmitter(
             null);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
 
-        LoadExceptionRoot(code, group, context);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)context.ExceptionCellFrames[group.Id])));
         if (layouts.Target.UsesMemory64)
         {
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64EqualZero));
@@ -550,66 +551,6 @@ internal sealed class ExceptionRegionEmitter(
         return false;
     }
 
-    private void EnterExceptionFrame(
-        IWasmInstructionWriter code,
-        StructuredMethod method,
-        StructuredExceptionGroup group,
-        MethodEmissionContext context,
-        IEntryLookup<StructuredExceptionGroupKey, ExceptionGroupMetadata> exceptionMetadata)
-    {
-        var metadata = exceptionMetadata.Required(exceptionGroupKeys.Create(method, group.Id));
-        EmitAddressConstant(code, metadata.Address);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(metadata.ClauseCount)));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ExceptionFrameEnter))));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalSet,
-            WasmInstructionOperand.Unsigned((uint)context.ExceptionFrameLocals[group.Id])));
-        if (metadata.HasFilters)
-        {
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)context.ExceptionFrameLocals[group.Id])));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)context.ValueFrame)));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.Call,
-                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ExceptionFrameSetEnvironment))));
-        }
-    }
-
-    private void LeaveExceptionFrame(
-        IWasmInstructionWriter code,
-        StructuredExceptionGroup group,
-        MethodEmissionContext context)
-    {
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)context.ExceptionFrameLocals[group.Id])));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ExceptionFrameLeave))));
-    }
-
-    // The landing pad: the exception has left every frame entered since this
-    // region began, so the runtime rewinds the frame arenas before the handler.
-    private void UnwindExceptionFrame(
-        IWasmInstructionWriter code,
-        StructuredExceptionGroup group,
-        MethodEmissionContext context)
-    {
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)context.ExceptionFrameLocals[group.Id])));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ExceptionFrameUnwind))));
-    }
-
     private void EmitAddressConstant(IWasmInstructionWriter code, int value)
     {
         if (layouts.Target.UsesMemory64)
@@ -626,18 +567,20 @@ internal sealed class ExceptionRegionEmitter(
         }
     }
 
-    private void StoreExceptionRoot(
+    // At a landing pad, after the frame arenas were rewound: a one-slot root frame of the block's own holds the exception
+    // in flight while its handler runs. Nothing between the catch and here collects. The runtime enters it out of line,
+    // so the pad stays one call where an inlined frame entry would grow the method around its normal path.
+    private void EnterExceptionCell(
         IWasmInstructionWriter code,
         StructuredExceptionGroup group,
         MethodEmissionContext context)
     {
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)context.RootFrame)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
             WasmInstructionOperand.Unsigned((uint)context.ExceptionTemporary)));
-        ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target,
-            checked(context.ExceptionRootSlots[group.Id] * layouts.Target.ObjectReferenceSize),
-            layouts.Target.ObjectReferenceSize);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
+            RuntimeImportSymbol.ExceptionCellEnter, context.RuntimeImportSelection))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)context.ExceptionCellFrames[group.Id])));
     }
 
     private void LoadExceptionRoot(
@@ -646,23 +589,21 @@ internal sealed class ExceptionRegionEmitter(
         MethodEmissionContext context)
     {
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)context.RootFrame)));
-        ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target,
-            checked(context.ExceptionRootSlots[group.Id] * layouts.Target.ObjectReferenceSize),
-            layouts.Target.ObjectReferenceSize);
+            WasmInstructionOperand.Unsigned((uint)context.ExceptionCellFrames[group.Id])));
+        ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target, 0, layouts.Target.ObjectReferenceSize);
     }
 
-    private void ClearExceptionRoot(
+    // A catch handler that ends normally leaves its exception cell, the newest root frame: the handler's own calls
+    // left theirs.
+    private void LeaveExceptionCell(
         IWasmInstructionWriter code,
         StructuredExceptionGroup group,
         MethodEmissionContext context)
     {
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)context.RootFrame)));
-        EmitAddressConstant(code, 0);
-        ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target,
-            checked(context.ExceptionRootSlots[group.Id] * layouts.Target.ObjectReferenceSize),
-            layouts.Target.ObjectReferenceSize);
+            WasmInstructionOperand.Unsigned((uint)context.ExceptionCellFrames[group.Id])));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
+            RuntimeImportSymbol.ExceptionCellLeave, context.RuntimeImportSelection))));
     }
 
     private static CompilerException UnsupportedExceptionShape(

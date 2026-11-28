@@ -82,9 +82,13 @@ internal static class ConstantRewriteTestSupport
         public MethodDefinitionModel GetMethod(EntityKey key) => Method().Definition with { Key = key, Name = ".cctor" };
         public bool TryGetIntrinsic(EntityKey method, out RuntimeIntrinsic intrinsic)
         {
+            if (Intrinsics.TryGetValue(method, out intrinsic)) return true;
             intrinsic = default;
             return IsIntrinsic;
         }
+
+        // Methods that are particular intrinsics, whatever IsIntrinsic says of the rest.
+        internal Dictionary<EntityKey, RuntimeIntrinsic> Intrinsics { get; } = [];
 
         internal IMethodRewriteRule ReturnEpilogues { get; set; } = new UnchangedBody();
         internal IPureReferenceComparisonClassifier Classifier() => new PureReferenceComparisonClassifier(this, this, this, this, ReturnEpilogues, this);

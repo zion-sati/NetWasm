@@ -66,9 +66,12 @@ internal sealed class RootValueElisionPlanner(IStructuredBlockPredecessorReader 
                     var next = new Dictionary<int, RootSource>();
                     if (point.ConstructorCallRoots.IsEmpty)
                     {
+                        // A root left unpublished leaves its slot null, holding no value.
+                        context.RootClearElisions.TryGetValue((instruction.Offset, false), out var knownZero);
+                        var deferred = DeferredRoots.Of(context.RootMap, point, knownZero);
                         foreach (var source in point.Roots)
                         {
-                            if (!IsStable(source, context)) continue;
+                            if (!IsStable(source, context) || deferred.Contains(source)) continue;
                             var slot = context.RootMap.Slots[source];
                             if (published.TryGetValue(slot, out var previous) && previous == source)
                                 skips.Add(slot);

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
-import { createRawComponentModel } from "./raw-component-model.mjs";
+import { createHostTurn, createRawComponentModel } from "./raw-component-model.mjs";
 import { createSyncFuture, createSyncStream, readSyncDrain } from "./sync-values.mjs";
 
 const bytes = Object.freeze({ align: 1, bytes: true, lift() {}, lower() {}, size: 1 });
@@ -393,6 +393,54 @@ test("drives a callback-lifted export through its events until it exits", async 
   await driving;
   assert.deepEqual(seen, [[1, subtask, 2], [0, 0, 0], [0, 0, 0]]);
   await assert.rejects(model.drive(7, () => 0), /invalid callback code 7/);
+});
+
+// Task.Yield's continuation runs after the host's own turn: the loop reports YIELD with its waitable set, and the
+// callback comes after work the host had queued, with an event of that set if one is ready by then.
+test("a YIELD gives the host's event loop a turn, then hands over a ready event of the set it names", async () => {
+  const { model } = instance();
+  const set = model.root["[waitable-set-new]"]();
+  const subtask = model.callAsync(() => Promise.resolve(0), () => {}) >> 4;
+  model.root["[waitable-join]"](subtask, set);
+  const order = [];
+  setImmediate(() => order.push("host"));
+  const seen = [];
+  await model.drive(1 | (set << 4), (...value) => {
+    order.push("callback");
+    seen.push(value);
+    return seen.length === 1 ? 1 : 0;
+  });
+  assert.deepEqual(order, ["host", "callback", "callback"]);
+  assert.deepEqual(seen, [[1, subtask, 2], [0, 0, 0]]);
+});
+
+test("a host turn is setImmediate, else an unclamped MessageChannel message, never scheduler.yield()", async () => {
+  let yields = 0;
+  const order = [];
+  setImmediate(() => order.push("host"));
+  await createHostTurn({ scheduler: { yield: async () => { yields++; } }, setImmediate })();
+  assert.equal(yields, 0);
+  assert.deepEqual(order, ["host"]);
+  const channels = [];
+  class TrackedChannel extends MessageChannel {
+    constructor() { super(); channels.push(this); }
+  }
+  let clock = 0;
+  let timers = 0;
+  const turn = createHostTurn({
+    MessageChannel: TrackedChannel,
+    setTimeout: (action, delay) => { timers++; return setTimeout(action, delay); },
+  }, () => clock);
+  const start = performance.now();
+  for (let index = 0; index < 50; index++) await turn();
+  assert.ok(performance.now() - start < 150, `50 turns took ${performance.now() - start} ms`);
+  assert.equal(timers, 0);
+  // At least once a frame the turn is a timer, so a host that runs its messages first still runs its timers.
+  clock = 16;
+  await turn();
+  await turn();
+  assert.equal(timers, 1);
+  for (const channel of channels) channel.port1.close();
 });
 
 test("a wake gives a waiting callback a turn without an event", async () => {

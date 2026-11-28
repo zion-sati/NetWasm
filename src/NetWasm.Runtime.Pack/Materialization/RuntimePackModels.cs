@@ -90,10 +90,8 @@ internal sealed record RuntimeLayout(
     string Target,
     long ApplicationStaticDataEnd)
 {
-    // A default array identifies layouts written before runtime feature
-    // evidence was added. Those layouts retain the complete runtime for
-    // compatibility; an initialized empty array selects the base runtime.
-    public ImmutableArray<string> RuntimeFeatures { get; init; }
+    // The optional runtime capabilities the program uses; empty selects the base runtime.
+    public ImmutableArray<string> RuntimeFeatures { get; init; } = [];
     public ImmutableArray<RuntimeNativeImport> NativeImports { get; init; } = [];
     // Modules the host supplies; a linked native archive may import from them.
     public ImmutableArray<string> ImportModules { get; init; } = [];
@@ -139,7 +137,7 @@ internal sealed record RuntimeLinkRequest(
     ImmutableArray<string> SystemLibraryPaths,
     string OutputPath)
 {
-    public ImmutableArray<string> RuntimeFeatures { get; init; }
+    public ImmutableArray<string> RuntimeFeatures { get; init; } = [];
     public ImmutableArray<RuntimeNativeBinding> NativeBindings { get; init; } = [];
     // Entry points of the C library functions the program imports, which the runtime exports for it.
     public ImmutableArray<string> SystemExports { get; init; } = [];

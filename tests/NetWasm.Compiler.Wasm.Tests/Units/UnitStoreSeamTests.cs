@@ -261,14 +261,17 @@ public sealed class FileUnitStoreCommitterTests
             var files = new HoldingDeleter(new()
             {
                 ["units-1.seg"] = new IOException("in use"),
-                ["units.bin"] = new UnauthorizedAccessException("denied"),
+                ["units-x.seg"] = new UnauthorizedAccessException("denied"),
             });
 
             new FileUnitStoreCommitter(files).Commit(location, Change());
 
-            Assert.Equal(["units-1.seg", "units-x.seg", "units.bin"], files.Asked.Order(StringComparer.Ordinal));
-            Assert.Equal("summary\nkept units-1.seg: another process holds it\nkept units.bin: another process holds it\n",
-                File.ReadAllText(Path.Combine(directory, "last-compile.txt")));
+            Assert.Equal(["units-1.seg", "units-x.seg"], files.Asked.Order(StringComparer.Ordinal));
+            // Directory enumeration order is the file system's, so each kept segment is checked on its own.
+            var summary = File.ReadAllText(Path.Combine(directory, "last-compile.txt"));
+            Assert.StartsWith("summary\n", summary, StringComparison.Ordinal);
+            Assert.Contains("kept units-1.seg: another process holds it\n", summary, StringComparison.Ordinal);
+            Assert.Contains("kept units-x.seg: another process holds it\n", summary, StringComparison.Ordinal);
         }
         finally
         {
@@ -283,9 +286,11 @@ public sealed class FileUnitStoreCommitterTests
         var location = Location();
         try
         {
-            var files = new HoldingDeleter(new() { ["units.bin"] = new InvalidOperationException("broken") });
+            Directory.CreateDirectory(UnitStoreFiles.Directory(location));
+            File.WriteAllBytes(Path.Combine(UnitStoreFiles.Directory(location), "units-x.seg"), [1]);
+            var files = new HoldingDeleter(new() { ["units-x.seg"] = new InvalidOperationException("broken") });
 
-            Assert.Same(files.Failures["units.bin"],
+            Assert.Same(files.Failures["units-x.seg"],
                 Assert.Throws<InvalidOperationException>(() => new FileUnitStoreCommitter(files).Commit(location, Change())));
             Assert.False(File.Exists(Path.Combine(UnitStoreFiles.Directory(location), "last-compile.txt")));
         }

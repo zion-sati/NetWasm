@@ -114,8 +114,9 @@ public sealed class CompilationPipelineExecutorTests
         }
         else
             Assert.DoesNotContain(fixture.Calls, call => call.Capability.StartsWith("metric-", StringComparison.Ordinal));
-        Assert.Equal(Enum.GetValues<CompilerProgressStage>(), fixture.Calls.Where(call => call.Capability == "progress")
-            .Select(call => Assert.IsType<CompilerProgressStage>(call.Arguments[0])));
+        Assert.Equal(Enum.GetValues<CompilerProgressStage>().Where(stage => stage != CompilerProgressStage.Failed),
+            fixture.Calls.Where(call => call.Capability == "progress")
+                .Select(call => Assert.IsType<CompilerProgressStage>(call.Arguments[0])));
     }
 
     [Theory]
@@ -139,6 +140,10 @@ public sealed class CompilationPipelineExecutorTests
         var failure = Record.Exception(() => executor.Execute(fixture.Options(metrics, 0)));
 
         Assert.Same(writerThrows ? fixture.WriterFailure : fixture.Failure, failure);
+        var stages = fixture.Calls.Where(call => call.Capability == "progress")
+            .Select(call => Assert.IsType<CompilerProgressStage>(call.Arguments[0])).ToArray();
+        Assert.Equal(CompilerProgressStage.Failed, stages[^1]);
+        Assert.DoesNotContain(CompilerProgressStage.Complete, stages);
         Assert.Single(fixture.Calls, call => call.Capability == "lease-dispose");
         Assert.DoesNotContain(fixture.Calls, call => call.Capability is "success-artifact" or "symbol-binding");
         var writing = fixture.Arguments("failure-artifact");
@@ -305,6 +310,7 @@ public sealed class CompilationPipelineExecutorTests
                 Capability<ICompilerInitialDiagnosticArtifactWriter>("initial-artifact"),
                 Capability<ICompilerEntryDiagnosticArtifactWriter>("entry-artifact"),
                 Capability<ICompilerProgramDiagnosticArtifactWriter>("program-artifact"),
+                Capability<ICompilerReceiverFlowReportWriter>("receiver-flow-artifact"),
                 Capability<ICompilerLayoutDiagnosticArtifactWriter>("layout-artifact"),
                 Capability<ICompilerRootMapDiagnosticArtifactWriter>("root-artifact"),
                 new RecordingEmissionArtifacts((options, bytes) => Calls.Add(("emission-artifact", [options, bytes]))),
@@ -324,7 +330,8 @@ public sealed class CompilationPipelineExecutorTests
                 cutoff is null ? new NoEarlyCutoff() : new FixedEarlyCutoff(cutoff),
                 cutoff is null ? new NoKeptCompiles() : new RecordingKeptCompiles(Calls),
                 new NativeImportBinderFactory(),
-                new NativeVariadicCallPlannerFactory(new NetWasm.Compiler.Interop.NativeArchiveFunctionTypeReader()));
+                new NativeVariadicCallPlannerFactory(new NetWasm.Compiler.Interop.NativeArchiveFunctionTypeReader()),
+                new ImportParityVerifier());
         }
 
         public CompilationPipelineExecutor Executor { get; }
@@ -367,6 +374,7 @@ public sealed class CompilationPipelineExecutorTests
             yield return "entry-artifact";
             yield return "analysis";
             yield return "program-artifact";
+            yield return "receiver-flow-artifact";
             yield return "layouts";
             yield return "layout-artifact";
             yield return "units-open";

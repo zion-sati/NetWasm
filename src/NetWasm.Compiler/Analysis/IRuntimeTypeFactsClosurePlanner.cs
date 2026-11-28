@@ -10,8 +10,5 @@ internal interface IRuntimeTypeFactsClosurePlanner
 {
     ImmutableArray<CliTypeIdentity> Plan(
         ImmutableArray<CliTypeIdentity> seeds,
-        bool includeGenericArguments,
-        bool includeDeclaringTypes,
-        bool includeGenericDefinitions,
-        bool includeElementTypes);
+        RuntimeTypeFactReads reads);
 }

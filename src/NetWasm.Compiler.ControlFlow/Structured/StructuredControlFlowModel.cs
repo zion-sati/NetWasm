@@ -40,7 +40,7 @@ public sealed record StructuredMethodHeader(
             source.LocalSignatureTypes,
             source.Instructions)
         {
-            ArrayBoundsProof = source.ExceptionRegions.IsEmpty ? source.ArrayBoundsProof : null,
+            ArrayBoundsProof = source.ArrayBoundsProof,
             IntegerCheckProof = source.IntegerCheckProof,
             InitializesLocals = source.InitializesLocals,
         };
@@ -165,6 +165,15 @@ public sealed record StructuredLabeledLoop(StructuredBlockId Header, StructuredS
 // A branch to the enclosing labeled block or loop that names Target.
 public sealed record StructuredLabelBranch(StructuredBlockId Target) : StructuredRegion;
 
+// A branch through a table: Head's code leaves the value under its last case test, and the value branches to the
+// enclosing labeled block that names Cases[value], or to Default's past the last case. Chain is the decoded cases'
+// blocks, which the table replaces and emission leaves out.
+public sealed record StructuredSwitch(
+    StructuredBlockOccurrence Head,
+    ImmutableArray<StructuredBlockOccurrence> Chain,
+    ImmutableArray<StructuredBlockId> Cases,
+    StructuredBlockId Default) : StructuredRegion;
+
 public sealed record StructuredExceptionRegion(
     StructuredExceptionGroupId Group,
     StructuredContinuationId? FallthroughContinuation) : StructuredRegion
@@ -243,6 +252,9 @@ public sealed record StructuredExceptionClause(
     StructuredSequence? FilterBody)
 {
     public CliTypeIdentity? CatchTypeIdentity { get; init; }
+
+    // CilExceptionRegion.PassThroughLocal.
+    public int? PassThroughLocal { get; init; }
 
     public required StructuredBlockId HandlerBlock { get; init; }
 

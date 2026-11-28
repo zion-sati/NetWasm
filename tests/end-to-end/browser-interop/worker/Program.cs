@@ -16,6 +16,21 @@ public static class WorkerExports
     [JSImport("optionalFeature", "app.optional")]
     internal static extern string OptionalFeature();
 
+    [JSExport("objectCell")]
+    public static Task<string> ObjectCell(string cell, bool displace) => InteropCells.Run(cell, displace);
+
+    [JSExport("failedImport")]
+    public static Task<string> FailedImport(string cell) => InteropCells.Fail(cell);
+
+    [JSExport("failureExtra")]
+    public static Task<string> FailureExtra(string cell) => InteropCells.Extra(cell);
+
+    [JSExport("failingExport")]
+    public static Task<int> FailingExport(string kind) => InteropCells.FailingExport(kind);
+
+    [JSExport("failingSyncExport")]
+    public static int FailingSyncExport(string kind) => InteropCells.FailingSyncExport(kind);
+
     [JSExport("add")]
     public static int Add(int value) => _counter += value;
 

@@ -73,4 +73,5 @@ public sealed record WasmOptimizationOverrides(
         ManagedUnwrittenStaticFieldFolding.Auto,
     // Lets wasm-opt assume the first KiB of memory is unused; null keeps the preset's default.
     bool? LowMemoryUnused = null,
-    ManagedConditionalSelects ConditionalSelects = ManagedConditionalSelects.Auto);
+    ManagedConditionalSelects ConditionalSelects = ManagedConditionalSelects.Auto,
+    ManagedByRefNullCheckElimination ByRefNullCheckElimination = ManagedByRefNullCheckElimination.Auto);

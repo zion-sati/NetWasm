@@ -46,9 +46,12 @@ public sealed class CorrectnessTestRunner : IDisposable
             _services.GetRequiredService<IRegisteredCorpusRunner>().Run(manifest, cell, builder, input);
     }
 
-    internal IReadOnlyList<GeneratedCorpusCase> GeneratedCases =>
+    // Generated once: each case of the pull-request corpus theory looks its program up here.
+    internal IReadOnlyList<GeneratedCorpusCase> GeneratedCases => _generatedCases ??=
         _services.GetRequiredService<ILanguageCorpusGenerator>()
             .GeneratePullRequestCorpus();
+
+    private IReadOnlyList<GeneratedCorpusCase>? _generatedCases;
 
     internal void RunGenerated(GeneratedCorpusCase generatedCase) =>
         _services.GetRequiredService<IGeneratedCorpusRunner>().Run(generatedCase);

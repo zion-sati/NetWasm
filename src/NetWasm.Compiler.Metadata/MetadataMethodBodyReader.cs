@@ -4,7 +4,10 @@
 using System;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata.RuntimeProvidedMembers;
+using NetWasm.Compiler.Metadata.RuntimeProvidedMembers.RuntimeAsync;
 using NetWasm.Compiler.Metadata.UnsafeAccessors;
+
+using NetWasm.Compiler.Metadata.RuntimeProvidedMembers.NativeImports;
 
 namespace NetWasm.Compiler.Metadata;
 
@@ -20,21 +23,41 @@ internal sealed class MetadataMethodBodyReader(
     IUnboundNativeImportBodyBuilder unboundNativeImports,
     INativeMarshallingStubBodyBuilder nativeMarshallingStubs,
     IMissingMemberBodyBuilder missingMembers,
-    IMissingTypeFinder missingTypes) : IMethodBodyReader
+    IMissingTypeFinder missingTypes,
+    IRuntimeAsyncBodyBuilder runtimeAsync,
+    IRuntimeAsyncResumerBodyBuilder runtimeAsyncResumers,
+    IRuntimeAsyncEntryBuilder runtimeAsyncEntries,
+    IRuntimeAsyncSourceReader runtimeAsyncSources,
+    IMethodRepository methods,
+    IRuntimeAsyncBodyPlacement runtimeAsyncBodies,
+    INativeImportForwarderBodyBuilder nativeImportForwarders,
+    INativeImportAddressRedirector nativeImportAddresses) : IMethodBodyReader
 {
     private readonly Lazy<IUnsafeAccessorTargetResolver> _accessors = new(accessors.Create);
 
     // A body decodes for its method's instance, which the runtime-provided
     // bodies take too.
-    public CilMethodBody ReadMethodBody(MethodDefinitionModel method) => ReadMethodBody(methodReferences.Resolve(
-        assemblies.Resolve(method.Key.Assembly).Metadata, method.Key.MetadataToken, symbols.Format(method), 0));
+    public CilMethodBody ReadMethodBody(MethodDefinitionModel method) => ReadMethodBody(method.RuntimeAsyncBodyOf is { } of
+        ? RuntimeAsyncBodies.Over(method, Resolve(methods.GetMethod(of)))
+        : Resolve(method));
+
+    // A definition's instance over its own generic parameters; a runtime-async method's separate body has its method's,
+    // which metadata records (RuntimeAsyncBodies).
+    private MethodInstanceModel Resolve(MethodDefinitionModel method) => methodReferences.Resolve(
+        assemblies.Resolve(method.Key.Assembly).Metadata, method.Key.MetadataToken, symbols.Format(method), 0);
 
     public CilMethodBody ReadMethodBody(MethodInstanceModel method) => method.Definition switch
     {
+        { IsRuntimeAsync: true } when runtimeAsyncBodies.Separates(method.Definition) => runtimeAsyncEntries.Build(method),
+        { IsRuntimeAsync: true } => runtimeAsync.Build(method, runtimeAsyncSources.Read(method)),
+        { HasBody: false, RuntimeAsyncBodyOf: not null } =>
+            runtimeAsync.Build(method, runtimeAsyncSources.Read(RuntimeAsyncBodies.Of(methods, method))),
         { HasBody: false, UnsafeAccessor: not null } => accessorBodies.Build(method, _accessors.Value.Resolve(method)),
         { HasBody: false, IsDelegateAsynchronousCall: true } => delegateAsynchronousCalls.Build(method),
         { HasBody: false, UnboundNativeImport: not null } => unboundNativeImports.Build(method),
         { HasBody: false, NativeMarshallingStub: not null } => nativeMarshallingStubs.Build(method),
+        { HasBody: false, ForwardsNativeImport: not null } => nativeImportForwarders.Build(method),
+        { HasBody: false, RuntimeAsyncResumer: not null } => runtimeAsyncResumers.Build(method),
         _ when unsafeIntrinsics.Build(method) is { } intrinsic => intrinsic,
         _ => Decode(method),
     };
@@ -63,6 +86,6 @@ internal sealed class MetadataMethodBodyReader(
         }
         return missingTypes.Find(body, symbols.Format(method.Definition)) is { } absent
             ? missingMembers.Build(method, absent)
-            : body;
+            : nativeImportAddresses.Redirect(body);
     }
 }

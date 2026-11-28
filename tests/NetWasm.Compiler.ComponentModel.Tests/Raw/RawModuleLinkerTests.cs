@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using NetWasm.Compiler.ComponentModel.Debugging;
 using NetWasm.Compiler.ComponentModel.Raw;
 
 namespace NetWasm.Compiler.ComponentModel.Tests.Raw;
@@ -27,6 +28,23 @@ public sealed class RawModuleLinkerTests
         Assert.Same(stages.Workspace, stages.ExecutedWorkspace);
     }
 
+    // With debug information the linked module, once at its output path, gains the program's DWARF lines.
+    [Fact]
+    public void WritesDebugLinesIntoTheLinkedModuleWithDebugInformation()
+    {
+        var stages = new RecordingStages();
+        var debug = new WasmDebugInformation("program.wasm.method-symbols", "project");
+        var request = new RawModuleLinkRequest("application", "runtime", "output", ComponentTarget.Wasm32Wasi02)
+        {
+            DebugInformation = debug,
+        };
+
+        CreateLinker(stages).Link(request);
+
+        Assert.Equal(["validate", "create", "execute", "debug lines"], stages.Calls);
+        Assert.Equal([("output", debug)], stages.DebugLines);
+    }
+
     [Theory]
     [InlineData("validate", 1)]
     [InlineData("create", 2)]
@@ -45,20 +63,29 @@ public sealed class RawModuleLinkerTests
     public void RejectsMissingDependenciesAndRequestBeforeSideEffects()
     {
         var stages = new RecordingStages();
-        Assert.Throws<ArgumentNullException>(() => new RawModuleLinker(null!, stages, stages));
-        Assert.Throws<ArgumentNullException>(() => new RawModuleLinker(stages, null!, stages));
-        Assert.Throws<ArgumentNullException>(() => new RawModuleLinker(stages, stages, null!));
+        Assert.Throws<ArgumentNullException>(() => new RawModuleLinker(null!, stages, stages, stages));
+        Assert.Throws<ArgumentNullException>(() => new RawModuleLinker(stages, null!, stages, stages));
+        Assert.Throws<ArgumentNullException>(() => new RawModuleLinker(stages, stages, null!, stages));
+        Assert.Throws<ArgumentNullException>(() => new RawModuleLinker(stages, stages, stages, null!));
         var linker = CreateLinker(stages);
         Assert.Throws<ArgumentNullException>(() => linker.Link(null!));
         Assert.Empty(stages.Calls);
     }
 
     private static IRawModuleLinker CreateLinker(RecordingStages stages) =>
-        Assert.IsAssignableFrom<IRawModuleLinker>(new RawModuleLinker(stages, stages, stages));
+        Assert.IsAssignableFrom<IRawModuleLinker>(new RawModuleLinker(stages, stages, stages, stages));
 
     private sealed class RecordingStages : IRawModuleLinkInputValidator,
-        IComponentPackageWorkspaceFactory, IRawModuleLinkExecution, IDirectoryDeleter
+        IComponentPackageWorkspaceFactory, IRawModuleLinkExecution, IDirectoryDeleter, IWasmDebugInformationWriter
     {
+        public List<(string ModulePath, WasmDebugInformation DebugInformation)> DebugLines { get; } = [];
+
+        public void Write(string modulePath, WasmDebugInformation debugInformation)
+        {
+            Calls.Add("debug lines");
+            DebugLines.Add((modulePath, debugInformation));
+        }
+
         public List<string> Calls { get; } = [];
         public string? FailingStage { get; init; }
         public InvalidOperationException Failure { get; } = new();

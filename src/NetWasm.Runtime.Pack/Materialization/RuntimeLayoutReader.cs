@@ -40,30 +40,20 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             // ValidateContract already requires an object. The built-in record
             // converter cannot return null for this non-null JSON object.
             layout = root.Deserialize(Json.RuntimeLayout)!;
-            // The generated contract sets every init property, so a field an older
-            // schema leaves out arrives as a default array rather than the record's
-            // empty one. ValidateContract allows only arrays where a field is present.
-            layout = layout with
-            {
-                NativeImports = layout.NativeImports.IsDefault ? [] : layout.NativeImports,
-                ImportModules = layout.ImportModules.IsDefault ? [] : layout.ImportModules,
-            };
         }
         catch (JsonException exception)
         {
             throw new InvalidOperationException("The NetWasm runtime layout evidence is malformed.", exception);
         }
 
-        if (layout.SchemaVersion is not (2 or 3 or 4) ||
+        if (layout.SchemaVersion is not (3 or 4) ||
             layout.Target is not ("wasm32" or "wasm64") ||
             layout.ApplicationStaticDataEnd < 0 ||
-            layout.SchemaVersion == 2 && !layout.NativeImports.IsEmpty ||
-            layout.SchemaVersion < 4 && layout.NativeCallbackSupport is not null ||
+            layout.SchemaVersion == 3 && layout.NativeCallbackSupport is not null ||
             layout.SchemaVersion == 4 && layout.NativeCallbackSupport is null ||
             layout.NativeImports.Any(import =>
                 string.IsNullOrWhiteSpace(import.LibraryName) ||
                 string.IsNullOrWhiteSpace(import.EntryPoint)) ||
-            layout.ImportModules.IsDefault ||
             layout.ImportModules.Any(string.IsNullOrWhiteSpace) ||
             layout.ImportModules.Distinct(StringComparer.Ordinal).Count() != layout.ImportModules.Length ||
             !ValidRuntimeFeatures(layout.RuntimeFeatures) ||
@@ -92,24 +82,15 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             !schema.TryGetInt32(out var version) ||
             !fields.ContainsKey("target") || !fields.ContainsKey("applicationStaticDataEnd"))
             throw InvalidContract();
-        if (fields.TryGetValue("runtimeFeatures", out var features) &&
-            features.ValueKind != JsonValueKind.Array)
+        if (!fields.TryGetValue("runtimeFeatures", out var features) || features.ValueKind != JsonValueKind.Array)
+            throw InvalidContract();
+        if (!fields.TryGetValue("importModules", out var importModules) ||
+            importModules.ValueKind != JsonValueKind.Array ||
+            importModules.EnumerateArray().Any(module => module.ValueKind != JsonValueKind.String))
         {
             throw InvalidContract();
         }
-        if (fields.TryGetValue("importModules", out var importModules) &&
-            (importModules.ValueKind != JsonValueKind.Array ||
-                importModules.EnumerateArray().Any(module => module.ValueKind != JsonValueKind.String)))
-        {
-            throw InvalidContract();
-        }
-        if (!fields.TryGetValue("nativeImports", out var imports))
-        {
-            if (version != 2 || fields.ContainsKey("nativeCallbackSupport"))
-                throw InvalidContract();
-            return;
-        }
-        if (imports.ValueKind != JsonValueKind.Array)
+        if (!fields.TryGetValue("nativeImports", out var imports) || imports.ValueKind != JsonValueKind.Array)
             throw InvalidContract();
         foreach (var import in imports.EnumerateArray())
         {
@@ -136,7 +117,7 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
     {
         if (features.IsDefault)
         {
-            return true;
+            return false;
         }
         // Mirrors NetWasmRuntimeFeatureIds.All; this package takes no compiler dependency,
         // so RuntimeLayoutReaderTests reads every compiler feature to catch drift.
@@ -150,6 +131,7 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             "object-generation",
             "random-seed",
             "reference-write-barrier",
+            "shared-arrays",
             "structured-command-diagnostics",
             "uninitialized-arrays",
             "weak-handles",

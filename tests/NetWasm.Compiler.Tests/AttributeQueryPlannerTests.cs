@@ -68,7 +68,11 @@ public sealed class AttributeQueryPlannerTests
         var operation = existence ? AttributeQueryOperation.IsDefined : AttributeQueryOperation.GetMany;
         var fixture = new Fixture();
         var attributes = new AssemblyAttributes();
-        var query = new ResolvedAttributeQuery(new(operation, 2, null, Filter, 1), null, Filter, null) { TargetAssembly = new("Test") };
+        var query = new ResolvedAttributeQuery(new(operation, 2, null, Filter, 1), null, Filter, null)
+        {
+            TargetAssembly = new("Test"),
+            AttributeName = "Test.MarkerAttribute",
+        };
 
         var result = ((IAttributeQueryPlanner)new AttributeQueryPlanner(fixture, fixture, attributes)).Plan(query);
 
@@ -91,10 +95,12 @@ public sealed class AttributeQueryPlannerTests
         Assert.Throws<InvalidOperationException>(() => ((IAttributeQueryPlanner)withoutReader).Plan(query));
     }
 
-    // The reader returns a generic attribute whatever its type (its constructor belongs to a type specification), so the
-    // planner keeps only the attributes the filter matches.
-    [Fact]
-    public void AssemblyAttributesAreCheckedAgainstTheFilter()
+    // The reader returns a generic attribute whatever its type (its constructor belongs to a type specification), and a
+    // filter that takes more than one type reads them all, so the planner keeps only the attributes the filter matches.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AssemblyAttributesAreCheckedAgainstTheFilter(bool byName)
     {
         var fixture = new Fixture();
         var other = CliTypeIdentity.Named(new("Test"), "Test", "OtherAttribute", false);
@@ -102,12 +108,14 @@ public sealed class AttributeQueryPlannerTests
         var query = new ResolvedAttributeQuery(new(AttributeQueryOperation.GetMany, 2, null, Filter, 1), null, Filter, null)
         {
             TargetAssembly = new("Test"),
+            AttributeName = byName ? "Test.MarkerAttribute" : null,
         };
 
         var result = ((IAttributeQueryPlanner)new AttributeQueryPlanner(fixture, fixture, attributes, new Types())).Plan(query);
 
         Assert.Single(Assert.IsType<AttributeRetrievalResult>(result.Direct).Attributes);
         Assert.Equal([Filter, Filter], fixture.ConstructionRequests.Select(request => request.AttributeType));
+        Assert.All(attributes.Requests, request => Assert.Equal(byName ? "Test.MarkerAttribute" : "*", request.Name));
     }
 
     private sealed class Types : IAttributeTypeFilter
@@ -119,9 +127,10 @@ public sealed class AttributeQueryPlannerTests
     {
         internal List<(AssemblyIdentity Assembly, string Name)> Requests { get; } = [];
 
-        public ImmutableArray<CustomAttributeDescriptor> Read(AssemblyIdentity assembly, string attributeFullName)
+        // A request for every attribute is recorded as "*".
+        public ImmutableArray<CustomAttributeDescriptor> Read(AssemblyIdentity assembly, string? attributeFullName)
         {
-            Requests.Add((assembly, attributeFullName));
+            Requests.Add((assembly, attributeFullName ?? "*"));
             return alsoFound is null
                 ? [new(assembly, 1, 2, Filter, CliGenericContext.Empty)]
                 : [new(assembly, 1, 2, Filter, CliGenericContext.Empty), new(assembly, 3, 4, alsoFound, CliGenericContext.Empty)];

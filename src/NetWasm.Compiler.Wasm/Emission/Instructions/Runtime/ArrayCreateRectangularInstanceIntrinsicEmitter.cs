@@ -53,6 +53,9 @@ internal sealed class ArrayCreateRectangularInstanceIntrinsicEmitter(
             if (descriptor.Type.Shape != CliTypeShape.Array || descriptor.Type.ContainsGenericParameters)
                 continue;
             var element = descriptor.Type.ElementType!;
+            // An array of references is the shared array of its rank (ArrayCreateSharedInstanceIntrinsicEmitter).
+            if (element.StackKind == CliValueKind.ManagedReference)
+                continue;
             var typeId = types.GetObjectLayout(element).TypeId;
             cases.Add(((long)typeId << 32 | (uint)descriptor.Type.ArrayRank, () =>
             {

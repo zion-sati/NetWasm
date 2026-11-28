@@ -27,13 +27,9 @@ internal sealed class StaticFieldWriteCollector(IFieldRepository fields) : IStat
             var instructions = body.Body.Instructions;
             for (var index = 0; index < instructions.Length; index++)
             {
-                var instruction = instructions[index];
-                // Valid IL never ends a method on an address, so one always follows.
-                if (instruction.Operation == CilOperation.StoreStaticField ||
-                    instruction.Operation == CilOperation.LoadStaticFieldAddress &&
-                    instructions[index + 1].Operation != CilOperation.Pop)
+                if (StaticFieldWrites.Writes(instructions, index))
                 {
-                    written.Add(_fields.GetField(CilOperands.FieldKey(instruction.Operand)).Key);
+                    written.Add(_fields.GetField(CilOperands.FieldKey(instructions[index].Operand)).Key);
                 }
             }
         }

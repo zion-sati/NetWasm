@@ -29,6 +29,7 @@ internal sealed class CompilationPipelineExecutor(
     ICompilerInitialDiagnosticArtifactWriter initialArtifacts,
     ICompilerEntryDiagnosticArtifactWriter entryArtifacts,
     ICompilerProgramDiagnosticArtifactWriter programArtifacts,
+    ICompilerReceiverFlowReportWriter receiverFlowReports,
     ICompilerLayoutDiagnosticArtifactWriter layoutArtifacts,
     ICompilerRootMapDiagnosticArtifactWriter rootMapArtifacts,
     ICompilerEmissionDiagnosticArtifactWriter emissionArtifacts,
@@ -48,9 +49,12 @@ internal sealed class CompilationPipelineExecutor(
     IEarlyCutoffEmitter earlyCutoff,
     IUnitKeptCompileCommitter keptCompiles,
     INativeImportBinderFactory nativeBinders,
-    INativeVariadicCallPlannerFactory nativeVariadics) :
+    INativeVariadicCallPlannerFactory nativeVariadics,
+    IImportParityVerifier importParity) :
     ICompilationPipelineExecutor
 {
+    private readonly IImportParityVerifier _importParity = importParity ??
+        throw new ArgumentNullException(nameof(importParity));
     private readonly INativeImportBinderFactory _nativeBinders = nativeBinders ??
         throw new ArgumentNullException(nameof(nativeBinders));
     private readonly INativeVariadicCallPlannerFactory _nativeVariadics = nativeVariadics ??
@@ -81,6 +85,8 @@ internal sealed class CompilationPipelineExecutor(
         throw new ArgumentNullException(nameof(entryArtifacts));
     private readonly ICompilerProgramDiagnosticArtifactWriter _programArtifacts = programArtifacts ??
         throw new ArgumentNullException(nameof(programArtifacts));
+    private readonly ICompilerReceiverFlowReportWriter _receiverFlowReports = receiverFlowReports ??
+        throw new ArgumentNullException(nameof(receiverFlowReports));
     private readonly ICompilerLayoutDiagnosticArtifactWriter _layoutArtifacts = layoutArtifacts ??
         throw new ArgumentNullException(nameof(layoutArtifacts));
     private readonly ICompilerRootMapDiagnosticArtifactWriter _rootMapArtifacts = rootMapArtifacts ??
@@ -218,10 +224,20 @@ internal sealed class CompilationPipelineExecutor(
                 metrics?.Stages.Start(CompilerMetricStage.Analysis);
                 var analyzed = _analysis.Analyze(metadata, prepared);
                 typeDependencyPaths = analyzed.Program.TypeDependencyPaths;
+                if (options.VerifyImportParity &&
+                    options.Optimization is ComponentModel.FinalWasmOptimization.None or ComponentModel.FinalWasmOptimization.O0)
+                {
+                    stage = "import parity";
+                    var reference = _analysis.Analyze(metadata,
+                        _preparation.Prepare(metadata, options with { Optimization = ComponentModel.FinalWasmOptimization.O1 }));
+                    _importParity.Verify(analyzed.Program, reference.Program, symbolFormatter);
+                    stage = "analysis";
+                }
                 _programArtifacts.WriteProgram(
                     options,
                     symbolFormatter,
                     analyzed.Program);
+                _receiverFlowReports.Write(options, analyzed.Program.ReceiverFlow);
                 metrics?.Counters.Count("methods", analyzed.Program.Methods.Count);
                 metrics?.Counters.Count("constructedMethods", analyzed.Program.ConstructedMethods.Count);
                 metrics?.Counters.Count("types", analyzed.Program.Types.Count);
@@ -363,6 +379,7 @@ internal sealed class CompilationPipelineExecutor(
         }
         catch (Exception exception)
         {
+            _progress.Report(CompilerProgressStage.Failed);
             CompilerException? enrichedFailure = null;
             if (exception is CompilerException failure)
             {

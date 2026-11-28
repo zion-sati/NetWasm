@@ -27,11 +27,8 @@ public sealed record RuntimeLinkPlanRequest(
     ImmutableArray<RuntimeLinkPlanAsset> SystemLibraries = default,
     RuntimeWasmOptimization Optimization = RuntimeWasmOptimization.Oz)
 {
-    // A default array preserves the complete legacy runtime when an older
-    // compiler cannot report feature use. An initialized array is authoritative,
-    // including an empty array for applications that need no optional runtime
-    // capabilities.
-    public ImmutableArray<string> RuntimeFeatures { get; init; }
+    // The optional runtime capabilities the application uses; empty for one that needs none.
+    public ImmutableArray<string> RuntimeFeatures { get; init; } = [];
 
     public string? GarbageCollector { get; init; }
 

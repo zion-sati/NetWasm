@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { createInteropHandleTable } from "./interop-handle-table.mjs";
 import { createInteropStatusService } from "./interop-status-service.mjs";
+import { createJavaScriptErrorChannel } from "./javascript-error-channel.mjs";
 import { writeManagedInteropString } from "./managed-interop-memory-codec.mjs";
 import { createValueArrayStaging } from "./value-array-staging.mjs";
 
@@ -67,10 +68,12 @@ function request(overrides = {}) {
     assertAsyncDeliveryAvailable() {},
     callbacks: [],
     descriptor: descriptor(),
+    errors: { captureThrow() {}, captureRejection() {}, discardPending() {} },
     exceptionReporter: { consumeTerminalEvent: () => null },
     getInstance: () => ({ exports: {} }),
     getMemory: () => memory,
     handles: createInteropHandleTable(),
+    isClosed: () => false,
     observeAsyncFailure() {},
     pendingAsyncOperations: new Map(),
     service() {},
@@ -523,6 +526,32 @@ test("settles and cancels task-style asynchronous services", async () => {
   }
 });
 
+// An awaited import resumes inside its Promise's reaction, before control returns to the event loop: the module
+// receives the result, and its event loop runs what that queued, before a reaction JavaScript adds to the same
+// Promise afterwards. .NET's browser runtime resumes from a later timer instead.
+test("delivers a task-style result and observes it inside the Promise's own reaction", async () => {
+  const order = [];
+  let settle;
+  const promise = new Promise(resolve => { settle = resolve; });
+  const state = request({
+    descriptor: descriptor({
+      asyncReturn: "task", resolveExport: "resolve", rejectExport: "reject",
+      cancelExport: "cancel", result: "i32",
+    }),
+    getInstance: () => ({ exports: {
+      resolve: (handle, value) => order.push(`resolve ${handle} ${value}`),
+      reject: () => order.push("reject"),
+      cancel: () => order.push("cancel"),
+    } }),
+    service: () => promise,
+  });
+  createInteropStatusService(state, failure => order.push(`observed ${failure}`))(4, 0);
+  promise.then(() => order.push("later reaction"));
+  settle(8);
+  await promise;
+  assert.deepEqual(order, ["resolve 4 8", "observed undefined", "later reaction"]);
+});
+
 // As .NET's browser runtime reads them: undefined is null, and a plain array of numbers is copied into the result's
 // typed array, synchronously and when a task settles.
 test("reads undefined as null and copies plain arrays into array results", async () => {
@@ -903,5 +932,84 @@ test("settles task-style services with nullable and handle values", async () => 
     await tick();
     assert.deepEqual(calls, expected);
     assert.equal(handles.count, 0);
+  }
+});
+// A failed import's JSException carries what it threw or rejected with.
+test("hands a synchronous throw, a rejection and a result that cannot convert to the error channel", async () => {
+  const handles = createInteropHandleTable();
+  const errors = createJavaScriptErrorChannel(handles);
+  const thrown = new TypeError("bad argument");
+  const sync = createInteropStatusService(request({
+    errors, handles, descriptor: descriptor({ parameters: [], result: "void" }),
+    service() { throw thrown; },
+  }));
+  assert.equal(sync(0), statusAbi.hostFailureStatus);
+  assert.equal(errors.services.error_pending_message(), "TypeError: bad argument");
+  assert.equal(handles.get(errors.services.error_take()), thrown);
+
+  const completions = [];
+  const instance = { exports: {
+    resolve: (...values) => completions.push(["resolve", ...values]),
+    reject: handle => completions.push(["reject", handle, errors.services.error_pending_message(),
+      handles.get(errors.services.error_take())]),
+    cancel: handle => completions.push(["cancel", handle]),
+  } };
+  const asyncDescriptor = descriptor({
+    parameters: [], result: "i32", asyncReturn: "task",
+    resolveExport: "resolve", rejectExport: "reject", cancelExport: "cancel",
+  });
+  const reason = new DOMException("quota", "QuotaExceededError");
+  const rejecting = createInteropStatusService(request({
+    errors, handles, descriptor: asyncDescriptor, getInstance: () => instance,
+    service: () => Promise.reject(reason),
+  }));
+  assert.equal(rejecting(7, 0), statusAbi.successStatus);
+  const noReason = createInteropStatusService(request({
+    errors, handles, descriptor: asyncDescriptor, getInstance: () => instance,
+    service: () => Promise.reject(),
+  }));
+  assert.equal(noReason(8, 0), statusAbi.successStatus);
+  const unconvertible = createInteropStatusService(request({
+    errors, handles, descriptor: { ...asyncDescriptor, result: "string" }, getInstance: () => instance,
+    service: () => Promise.resolve(42),
+  }));
+  assert.equal(unconvertible(9, 0), statusAbi.successStatus);
+  await tick();
+  await tick();
+  assert.deepEqual(completions.map(([kind, handle, message]) => [kind, handle, message]), [
+    ["reject", 7, "QuotaExceededError: quota"],
+    ["reject", 8, "Error"],
+    ["reject", 9, "NetWasmHostError: a string host service must return string or null"],
+  ]);
+  assert.equal(completions[0][3], reason);
+  assert.ok(completions[1][3] instanceof Error);
+});
+
+// A callback-lowered Promise whose failure callback raises no JSException leaves no error behind for a later failure;
+// one that takes it, as JSPromiseTaskSource.Reject does, gets the rejection's reason.
+test("drops a callback Promise's rejection its failure callback did not take", async () => {
+  for (const takes of [false, true]) {
+    const handles = createInteropHandleTable();
+    const errors = createJavaScriptErrorChannel(handles);
+    const taken = [];
+    const state = request({
+      errors, handles,
+      callbacks: [0, 1].map(parameterIndex => ({
+        module: baseDescriptor.module, importName: baseDescriptor.name, parameterIndex,
+        exportName: parameterIndex === 0 ? "success" : "failure",
+        parameters: parameterIndex === 0 ? ["i32"] : [], result: "void",
+      })),
+      descriptor: descriptor({ parameters: ["callback", "callback"], result: "promise" }),
+      getInstance: () => ({ exports: {
+        success() {},
+        failure() { if (takes) taken.push(errors.services.error_pending_message(), errors.services.error_take()); },
+        handle_release() {},
+      } }),
+      service: () => Promise.reject(new TypeError("unused")),
+    });
+    assert.equal(createInteropStatusService(state)(7, 8, 0), 0);
+    await tick();
+    assert.equal(errors.services.error_pending_message(), null);
+    if (takes) assert.equal(taken[0], "TypeError: unused");
   }
 });

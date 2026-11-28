@@ -72,12 +72,25 @@ internal sealed class ControlFlowDispatcherEmitter(
         Action<StructuredSequence, int> emitSequence)
     {
         var dispatcher = request.Dispatcher;
+        // An exit whose body may set the counter to one of the dispatcher's blocks goes on to one shared test of
+        // whether it did, after the exits and blocks, rather than a test of its own: each test compares the counter
+        // with every block, so a test per exit made the dispatcher's code its exits times its blocks. While that
+        // product stays small each exit keeps its own test, which the optimizer folds against the counter the body
+        // just set (often to a direct branch, which the shared test, reached from several bodies, cannot be).
+        var recheck = SharesRedispatch(dispatcher);
+        var shift = recheck ? 1u : 0u;
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Loop,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        if (recheck)
+        {
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.Block,
+                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        }
         foreach (var exit in dispatcher.Exits)
         {
             EmitProgramCounterEquals(
@@ -91,21 +104,19 @@ internal sealed class ControlFlowDispatcherEmitter(
             {
                 code.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.Branch,
-                    WasmInstructionOperand.Unsigned(2)));
+                    WasmInstructionOperand.Unsigned(2 + shift)));
+            }
+            else if (recheck)
+            {
+                emitSequence(exit.Body, checked((int)(1 + shift)));
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.Branch,
+                    WasmInstructionOperand.Unsigned(1)));
             }
             else
             {
                 emitSequence(exit.Body, 1);
-                foreach (var block in dispatcher.Blocks)
-                {
-                    EmitProgramCounterEquals(
-                        code,
-                        request.ProgramCounterLocal,
-                        block.Occurrence.Block.Value);
-                    code.Write(WasmInstruction.WithOperand(
-                        WasmOpcodes.BranchIf,
-                        WasmInstructionOperand.Unsigned(1)));
-                }
+                EmitRedispatchIfBlock(code, request, 1);
                 code.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.Branch,
                     WasmInstructionOperand.Unsigned(2)));
@@ -155,7 +166,7 @@ internal sealed class ControlFlowDispatcherEmitter(
                 {
                     code.Write(WasmInstruction.WithOperand(
                         WasmOpcodes.Branch,
-                        WasmInstructionOperand.Unsigned(2)));
+                        WasmInstructionOperand.Unsigned(2 + shift)));
                 }
                 else
                 {
@@ -164,10 +175,15 @@ internal sealed class ControlFlowDispatcherEmitter(
             }
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Branch,
-                WasmInstructionOperand.Unsigned(1)));
+                WasmInstructionOperand.Unsigned(1 + shift)));
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
+        if (recheck)
+        {
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            EmitRedispatchIfBlock(code, request, 0);
+        }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
 
@@ -197,6 +213,7 @@ internal sealed class ControlFlowDispatcherEmitter(
                 WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         }
 
+        var sharedRedispatch = SharesRedispatch(request.Dispatcher);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
             WasmInstructionOperand.Unsigned((uint)request.ProgramCounterLocal)));
@@ -217,6 +234,7 @@ internal sealed class ControlFlowDispatcherEmitter(
                 plan.Cases[index],
                 loopDepth,
                 dispatcherExitDepth,
+                sharedRedispatch,
                 emitBlock,
                 emitCondition,
                 emitSequence);
@@ -224,8 +242,49 @@ internal sealed class ControlFlowDispatcherEmitter(
 
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        // The block just inside the loop, which the table's default also ends, is where an exit with a body goes on
+        // to the one shared test of whether its body set the counter to one of the dispatcher's blocks. A counter
+        // that reaches the default is none of them, as before.
+        if (sharedRedispatch)
+        {
+            EmitRedispatchIfBlock(code, request, 0);
+        }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+    }
+
+    // The most compares the exits' own tests may add to a dispatcher (exits with bodies times blocks): above it they
+    // share one test, so a dispatcher's code is never its exits times its blocks.
+    internal const int MaximumOwnRedispatchCompares = 4096;
+
+    // Whether the exits with bodies share one test of whether a body set the counter to one of the dispatcher's
+    // blocks: when their own tests would add more than MaximumOwnRedispatchCompares compares.
+    private static bool SharesRedispatch(StructuredDispatcher dispatcher)
+    {
+        var bodies = 0;
+        foreach (var exit in dispatcher.Exits)
+        {
+            if (!exit.Body.Regions.IsEmpty) bodies++;
+        }
+        return bodies >= 2 && (long)bodies * dispatcher.Blocks.Length > MaximumOwnRedispatchCompares;
+    }
+
+    // Continues the dispatcher's loop, the branch depth given, when the counter names one of its blocks.
+    private static void EmitRedispatchIfBlock(
+        IWasmInstructionWriter code,
+        ControlFlowDispatcherEmissionRequest request,
+        uint loopDepth)
+    {
+        foreach (var block in request.Dispatcher.Blocks)
+        {
+            EmitProgramCounterEquals(
+                code,
+                request.ProgramCounterLocal,
+                block.Occurrence.Block.Value);
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.BranchIf,
+                WasmInstructionOperand.Unsigned(loopDepth)));
+        }
     }
 
     private static void EmitBranchTableCase(
@@ -234,6 +293,7 @@ internal sealed class ControlFlowDispatcherEmitter(
         DispatcherCasePlan item,
         uint loopDepth,
         uint dispatcherExitDepth,
+        bool sharedRedispatch,
         Action<StructuredDispatcherBlock> emitBlock,
         Action<StructuredDispatcherBlock> emitCondition,
         Action<StructuredSequence, int> emitSequence)
@@ -243,16 +303,15 @@ internal sealed class ControlFlowDispatcherEmitter(
             if (!exit.Body.Regions.IsEmpty)
             {
                 emitSequence(exit.Body, checked((int)loopDepth));
-                foreach (var dispatcherBlock in request.Dispatcher.Blocks)
+                if (sharedRedispatch)
                 {
-                    EmitProgramCounterEquals(
-                        code,
-                        request.ProgramCounterLocal,
-                        dispatcherBlock.Occurrence.Block.Value);
+                    // To the end of the block just inside the loop, where the shared test follows.
                     code.Write(WasmInstruction.WithOperand(
-                        WasmOpcodes.BranchIf,
-                        WasmInstructionOperand.Unsigned(loopDepth)));
+                        WasmOpcodes.Branch,
+                        WasmInstructionOperand.Unsigned(loopDepth - 1)));
+                    return;
                 }
+                EmitRedispatchIfBlock(code, request, loopDepth);
             }
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Branch,
@@ -316,6 +375,13 @@ internal sealed class ControlFlowDispatcherEmitter(
     {
         if (transition.DirectBranchDepth is { } directDepth)
         {
+            // An exit leaves the dispatcher with the counter naming its target: a dispatcher around this one, whose
+            // exit's body this one is in, dispatches on the counter once this one ends, and must not see the value
+            // that brought control into this one.
+            if (transition.LeavesDispatcher)
+            {
+                SetProgramCounter(code, programCounterLocal, transition.Target.Value);
+            }
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Branch,
                 WasmInstructionOperand.Unsigned(checked(directDepth + nestedDepth))));

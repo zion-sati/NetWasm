@@ -84,12 +84,12 @@ internal sealed class ReachabilityLedger
         ImmutableHashSet.CreateBuilder<ManagedExceptionKind>();
     internal Dictionary<string, ImmutableStack<CompilerDependencyStep>> MethodDependencyPaths { get; } =
         new(StringComparer.Ordinal);
-    internal Dictionary<string, ImmutableStack<CompilerDependencyStep>> DispatchDependencyPaths { get; } =
-        new(StringComparer.Ordinal);
+    // Each slot use's dependency path: its first site's.
+    internal Dictionary<DispatchSlot, ImmutableStack<CompilerDependencyStep>> DispatchDependencyPaths { get; } = [];
     internal Dictionary<string, ImmutableStack<CompilerDependencyStep>> TypeDependencyPaths { get; } =
         new(StringComparer.Ordinal);
     internal Queue<MethodInstanceModel> Pending { get; } = new();
-    internal Queue<(string DispatchKey, DispatchDeclaration Declaration,
+    internal Queue<(DispatchSlot Slot, DispatchDeclaration Declaration,
         CliTypeIdentity Receiver)> PendingDispatches
     { get; } = new();
     internal HashSet<string> Discovered { get; } = new(StringComparer.Ordinal);
@@ -111,10 +111,14 @@ internal sealed class ReachabilityLedger
     // Object's virtual calls whose many-target sites call a shared body, by declaration.
     internal Dictionary<string, MethodInstanceModel> SharedObjectDispatch { get; } =
         new(StringComparer.Ordinal);
-    internal Dictionary<string, Dictionary<string, DispatchTargetModel>> DispatchTargets
-    { get; } = new(StringComparer.Ordinal);
+    // The shared arrays the program allocates and their GetType, once Array.CreateInstance allocates one.
+    internal SharedArrayPlan? SharedArrays { get; set; }
+    // Each slot use's targets, by receiver; a site's are those its receiver bound admits.
+    internal Dictionary<DispatchSlot, Dictionary<string, DispatchTargetModel>> DispatchTargets { get; } = [];
     internal ImmutableDictionary<string, MethodInstanceModel>.Builder CallableMethods { get; } =
         ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
+    // Methods generated code calls rather than IL: an expander's, an import binding's, managed.throw's getters.
+    internal HashSet<string> GeneratedCallees { get; } = new(StringComparer.Ordinal);
     internal ImmutableDictionary<string, MethodInstanceModel>.Builder NativeCallbacks { get; } =
         ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
     internal ImmutableDictionary<EntityKey, MethodDefinitionModel>.Builder JavaScriptImports { get; } =
@@ -129,4 +133,10 @@ internal sealed class ReachabilityLedger
         ImmutableDictionary.CreateBuilder<EntityKey, JavaScriptAsyncMethodBinding>();
     internal ImmutableDictionary<string, MethodInstanceModel>.Builder JavaScriptConversions { get; } =
         ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
+
+    // The program exports a [JSExport] (JavaScriptExportFailureRooting.cs).
+    internal bool HasJavaScriptExportBoundary { get; set; }
+
+    // The program builds a JSException holding a JavaScript error (JavaScriptExportFailureRooting.cs).
+    internal bool ProducesJavaScriptErrors { get; set; }
 }

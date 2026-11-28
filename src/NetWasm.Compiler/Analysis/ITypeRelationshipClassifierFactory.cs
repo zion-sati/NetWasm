@@ -15,3 +15,13 @@ internal interface ITypeRelationshipClassifierFactory
         IImplementedInterfaceResolver interfaces,
         IBaseTypeResolver baseTypes);
 }
+
+internal interface IUnrememberedTypeRelationshipClassifierFactory
+{
+    ITypeRelationshipClassifier Create(
+        ITypeFinder types,
+        ITypeDefinitionResolver typeDefinitions,
+        ITypeIdentityResolver identities,
+        IImplementedInterfaceResolver interfaces,
+        IBaseTypeResolver baseTypes);
+}

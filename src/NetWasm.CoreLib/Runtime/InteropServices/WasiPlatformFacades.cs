@@ -11,8 +11,9 @@ namespace System.Runtime.InteropServices
 
     internal sealed class WasiStandardStreams : IStandardStreams
     {
-        private IStandardOutputWriter? _output;
-        private IStandardErrorWriter? _error;
+        // Each stream's writer by its own type, so writing to one stream reaches no other's imports.
+        private Output.WasiStreamBlockingOutputWriter<Streams.StandardOutputStreamKind>? _output;
+        private Output.WasiStreamBlockingOutputWriter<Streams.StandardErrorStreamKind>? _error;
         private IStandardInputReader? _input;
         private ITerminalDetector? _terminals;
 

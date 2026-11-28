@@ -174,6 +174,114 @@ public sealed class ConstantArgumentProgramReducerTests
         Assert.Equal(2, analyzer.Analyzed);
     }
 
+    // A switch on a parameter (as the reader lowers it, a test per case) whose callers pass only some of the case values
+    // never takes the others' tests, so the cases only they reach (ThrowHelper.GetArgumentName's names a program never
+    // passes) become unreachable: such a test's ldc.i4 becomes a pop and its bne.un a br to the next test.
+    [Theory]
+    [InlineData(new[] { 0, 2 }, new[] { 1 })]
+    [InlineData(new[] { 1, 7 }, new[] { 0, 2 })]
+    [InlineData(new[] { 0, 1, 2 }, new int[0])]
+    public void ASwitchKeepsOnlyTheTestsOfValuesItsCallersPass(int[] passed, int[] skipped)
+    {
+        var method = SwitchMethod(3);
+        var calls = passed.Select(value => new ConstantCallEvaluation(method.Method, [new ScalarConstant.Int32(value)]))
+            .ToImmutableArray();
+        var reducer = AsReducer(new ConstantArgumentProgramReducer(new FixedArguments(calls), new RecordingRewrites(), new GraphAnalyzer()));
+
+        var result = reducer.Reduce(Program(method), ReachabilityRoots.Empty);
+
+        if (skipped.Length == 0)
+        {
+            Assert.Empty(result);
+            return;
+        }
+        Assert.Equal(skipped, Skipped(Assert.Single(result).Value));
+    }
+
+    // A caller that passes on its own parameter passes what its callers pass for it; a caller called other than directly
+    // (here a delegate's target) may receive anything, so nothing is pruned for it, and past MaximumValues neither. A
+    // test that a branch from elsewhere also enters may see another value, so the chain stops before it.
+    [Theory]
+    [InlineData(false, 2, false, new[] { 0 })]
+    [InlineData(true, 2, false, null)]
+    [InlineData(false, ConstantArgumentProgramReducer.MaximumValues + 1, false, null)]
+    [InlineData(false, 2, true, null)]
+    public void AForwardedParameterCarriesItsCallersValues(bool openCaller, int values, bool enteredFromElsewhere, int[]? skipped)
+    {
+        var outer = Managed(1);
+        var caller = Managed(2);
+        var callee = SwitchMethod(3, enteredFromElsewhere);
+        var collector = new BodyArguments(body =>
+            body.Method == outer.Method
+                ? [.. Enumerable.Range(1, values).Select(value =>
+                    new ConstantCallEvaluation(caller.Method, [new ScalarConstant.Int32(value)]))]
+                : body.Method == caller.Method
+                    ? [new(callee.Method, [null]) { ForwardedParameters = [0] }]
+                    : []);
+        var program = Program(outer) with
+        {
+            Methods = Program(outer).Methods.Add(caller.Method.Definition.Key, caller).Add(callee.Method.Definition.Key, callee),
+        };
+        if (openCaller)
+        {
+            program = program with
+            {
+                CallableMethods = ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(caller.Method.CanonicalName, caller.Method),
+            };
+        }
+        var reducer = AsReducer(new ConstantArgumentProgramReducer(collector, new RecordingRewrites(), new GraphAnalyzer()));
+
+        var result = reducer.Reduce(program, ReachabilityRoots.Empty);
+
+        if (skipped is null)
+        {
+            Assert.False(result.ContainsKey(callee.Method.CanonicalName));
+            return;
+        }
+        Assert.Equal(skipped, Skipped(result[callee.Method.CanonicalName]));
+    }
+
+    // M(int p) => p switch { 0 => 10, 1 => 11, 2 => 12, _ => -1 }, as the reader lowers it: 0 ldarg.0; then a test per
+    // case at 1, 6 and 11 (dup; ldc.i4 i; bne.un next; pop; br case); 16 pop; 17 the default; the cases at 19, 21, 23.
+    // Entered from elsewhere, a branch at the end also goes to the first test.
+    private static ManagedMethodBody SwitchMethod(int token, bool enteredFromElsewhere = false)
+    {
+        var original = Managed(token);
+        var instructions = new List<CilInstruction> { Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(0)) };
+        foreach (var (value, target) in new[] { (0, 19), (1, 21), (2, 23) })
+        {
+            var at = instructions.Count;
+            instructions.Add(Instruction(at, CilOperation.Duplicate));
+            instructions.Add(Instruction(at + 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(value)));
+            instructions.Add(Instruction(at + 2, CilOperation.BranchIfNotEqual, new CilOperand.BranchTarget(at + 5)));
+            instructions.Add(Instruction(at + 3, CilOperation.Pop));
+            instructions.Add(Instruction(at + 4, CilOperation.Branch, new CilOperand.BranchTarget(target)));
+        }
+        instructions.Add(Instruction(16, CilOperation.Pop));
+        instructions.Add(Instruction(17, CilOperation.LoadInt32, new CilOperand.ConstantI4(-1)));
+        instructions.Add(Instruction(18, CilOperation.Return));
+        foreach (var (at, value) in new[] { (19, 10), (21, 11), (23, 12) })
+        {
+            instructions.Add(Instruction(at, CilOperation.LoadInt32, new CilOperand.ConstantI4(value)));
+            instructions.Add(Instruction(at + 1, CilOperation.Return));
+        }
+        if (enteredFromElsewhere)
+        {
+            instructions.Add(Instruction(25, CilOperation.LoadArgument, new CilOperand.Index(0)));
+            instructions.Add(Instruction(26, CilOperation.Branch, new CilOperand.BranchTarget(1)));
+        }
+        var body = original.Body with { MaxStack = 3, Instructions = [.. instructions] };
+        return new(original.Method, new(new ControlFlowGraphBuilderFactory().Create().Build(body),
+            ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty, ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty));
+    }
+
+    private static readonly int[] CaseValues = [0, 1, 2];
+
+    // The case values whose tests a rewrite skips: their ldc.i4 became a pop.
+    private static int[] Skipped(CilMethodBody body) =>
+        [.. CaseValues.Where(value => body.Instructions[2 + value * 5].Operation == CilOperation.Pop &&
+            body.Instructions[3 + value * 5].Operation == CilOperation.Branch)];
+
     private static IReachableProgramReducer AsReducer(IReachableProgramReducer reducer) => reducer;
 
     internal static ManagedMethodBody Managed(int token = 1)
@@ -215,7 +323,10 @@ public sealed class ConstantArgumentProgramReducerTests
             var graph = new ControlFlowGraphBuilderFactory().Create().Build(request.RewrittenBody!);
             var body = new ManagedMethodBody(request.Method, new(graph, ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty,
                 ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty));
-            return new(request.Method, body, [], [], new([], [], [], [], [], [], [], [], [], [], []));
+            return new(request.Method, body, [], [], new([], [], [], [], [], [], [], [], [], [], []))
+            {
+                ReachableRegions = [],
+            };
         }
     }
 

@@ -295,16 +295,22 @@ internal sealed class ManagedMethodSequenceEmitter(
         StructuredLeaveExit exit) =>
         FindInstruction(method, exit.InstructionOffset);
 
+    // A binary search: a structured method's instructions are in increasing offset order (its validation checks), and
+    // a scan for each leave made a method with N protected blocks cost N squared.
     private static CilInstruction? FindInstruction(
         StructuredMethod method,
         int offset)
     {
-        foreach (var instruction in method.Header.Instructions)
+        var instructions = method.Header.Instructions;
+        var low = 0;
+        var high = instructions.Length - 1;
+        while (low <= high)
         {
-            if (instruction.Offset == offset)
-            {
-                return instruction;
-            }
+            var middle = low + ((high - low) >> 1);
+            var at = instructions[middle].Offset;
+            if (at == offset) return instructions[middle];
+            if (at < offset) low = middle + 1;
+            else high = middle - 1;
         }
         return null;
     }
@@ -329,7 +335,7 @@ internal sealed class ManagedMethodSequenceEmitter(
                 context.StackTraceMethodId,
                 target.StackTraceLookups.ResolveSymbolId(
                     context.StackTraceMethodId,
-                    instruction.SourceOffset),
+                    instruction.LineOffset),
                 context.RuntimeImportSelection);
         }
         var request = new InstructionEmissionRequest(

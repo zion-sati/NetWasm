@@ -16,7 +16,10 @@ const application = Buffer.from(
   "base64");
 const adapterSource = encoder.encode("export const rawAdapterMetadata = {}; export function createAdapter() {}\n");
 const layout = Object.freeze({
-  schemaVersion: 2,
+  schemaVersion: 3,
+  runtimeFeatures: [],
+  nativeImports: [],
+  importModules: [],
   target: "wasm32",
   applicationStaticDataEnd: 64,
   managedExecutableEntryPoint: Object.freeze({
@@ -299,7 +302,7 @@ test("accepts schema-three reached native signatures and explicit empty imports"
   }
 });
 
-test("accepts and freezes schema-two runtime feature evidence", async () => {
+test("accepts and freezes runtime feature evidence", async () => {
   const runtimeFeatures = ["local-time"];
   const bytes = encoder.encode(JSON.stringify({ ...layout, runtimeFeatures }));
   const loaded = await loadRawArtifacts(requestWithContent("runtime-layout", bytes));
@@ -328,10 +331,13 @@ test("accepts the import modules a compiled layout records", async () => {
       importModules,
     })))), /import modules/);
   }
-  await assert.rejects(() => loadRawArtifacts(requestWithContent("runtime-layout", encoder.encode(JSON.stringify({
-    ...layout,
-    importModules: [],
-  })))), /shape/);
+  // Every compiler writes the runtime features, native imports and import modules; schema 2 is gone.
+  const { importModules: _modules, ...withoutModules } = layout;
+  const { runtimeFeatures: _features, ...withoutFeatures } = layout;
+  for (const value of [withoutModules, withoutFeatures, { ...layout, schemaVersion: 2 }]) {
+    await assert.rejects(() => loadRawArtifacts(requestWithContent("runtime-layout", encoder.encode(
+      JSON.stringify(value)))), /shape|unsupported/);
+  }
 });
 
 // Issue #128: a project may declare modules its native archives could import
@@ -410,7 +416,7 @@ test("accepts and freezes schema-four compiler callback evidence", async () => {
   const loadedTrampolines = await loadRawArtifacts(requestWithContent("runtime-layout", encoder.encode(
     JSON.stringify({ ...layout, schemaVersion: 4, nativeImports: [], nativeCallbackSupport: trampolinesOnly }))));
   assert.deepEqual(loadedTrampolines.runtimeLayout.nativeCallbackSupport, trampolinesOnly);
-  for (const featureEvidence of [{}, { runtimeFeatures: ["local-time"] }]) {
+  for (const featureEvidence of [{ runtimeFeatures: [] }, { runtimeFeatures: ["local-time"] }]) {
     const bytes = encoder.encode(JSON.stringify({
       ...layout,
       schemaVersion: 4,
@@ -426,9 +432,7 @@ test("accepts and freezes schema-four compiler callback evidence", async () => {
     assert.equal(Object.isFrozen(loaded.runtimeLayout.nativeCallbackSupport.callbacks), true);
     assert.equal(Object.isFrozen(loaded.runtimeLayout.nativeCallbackSupport.callbacks[0]), true);
     assert.deepEqual(loaded.runtimeLayout.runtimeFeatures, featureEvidence.runtimeFeatures);
-    if (featureEvidence.runtimeFeatures !== undefined) {
-      assert.equal(Object.isFrozen(loaded.runtimeLayout.runtimeFeatures), true);
-    }
+    assert.equal(Object.isFrozen(loaded.runtimeLayout.runtimeFeatures), true);
   }
 });
 
@@ -500,8 +504,9 @@ test("rejects incomplete and unqualified schema-three native contracts before lo
   const invalidImports = [null, {}, { ...validImport, libraryName: "" }, { ...validImport, entryPoint: null },
     { ...validImport, parameters: null }, { ...validImport, parameters: ["v128"] },
     { ...validImport, returnType: "nativeInt" }, { ...validImport, returnType: undefined }];
+  const { nativeImports: _imports, ...withoutImports } = layout;
   const invalidLayouts = [
-    { ...layout, schemaVersion: 3 },
+    withoutImports,
     { ...layout, schemaVersion: 3, nativeImports: null },
     ...invalidImports.map(value => ({ ...layout, schemaVersion: 3, nativeImports: [value] })),
   ];

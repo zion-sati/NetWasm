@@ -85,7 +85,7 @@ internal sealed class ReachabilityRootSeeder(
             if (exportedMethod.JSExport is not null &&
                 javaScriptBoundaryParameters.Length != 0)
             {
-                session.AddImplicit(ManagedExceptionKind.JSException, "System.JSException");
+                session.AddImplicit(ManagedExceptionKind.JSException, "System.Runtime.InteropServices.JavaScript.JSException");
                 session.AddImplicit(
                     ManagedExceptionKind.OutOfMemory,
                     "System.OutOfMemoryException");

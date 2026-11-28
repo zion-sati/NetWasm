@@ -48,15 +48,14 @@ internal static class ControlFlowTestSupport
     internal static IControlFlowGraphAnalyzer CreateGraphAnalyzer() =>
         ((IControlFlowGraphAnalyzerFactory)new ControlFlowGraphAnalyzerFactory(
             CreateDominanceAnalyzer(),
-            new ControlFlowPostDominanceAnalyzer(),
             new ControlFlowComponentAnalyzer(),
             CreateNaturalLoopAnalyzer())).Create();
 
     internal static IControlFlowDominanceAnalyzer CreateDominanceAnalyzer() =>
-        new ControlFlowDominanceAnalyzer();
+        new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
 
     internal static IControlFlowPostDominanceAnalyzer CreatePostDominanceAnalyzer() =>
-        new ControlFlowPostDominanceAnalyzer();
+        new ControlFlowPostDominanceAnalyzer(new DominatorTreeBuilder());
 
     internal static IControlFlowComponentAnalyzer CreateComponentAnalyzer() =>
         new ControlFlowComponentAnalyzer();

@@ -25,6 +25,17 @@ namespace System.Runtime.CompilerServices
         public ConfiguredValueTaskAwaiter GetAwaiter() =>
             new(_awaiter, _continueOnCapturedContext);
 
+        // Whether the value task has completed, and its result, as the awaiter gives them: runtime async's awaits
+        // read them (RuntimeAsync.IsCompleted and GetResult) without copying the value task into an awaiter first.
+        internal bool IsCompleted
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _awaiter.IsCompleted;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void GetResult() => _awaiter.GetResult();
+
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
         public readonly struct ConfiguredValueTaskAwaiter : ICriticalNotifyCompletion, INotifyCompletion
         {
@@ -70,6 +81,17 @@ namespace System.Runtime.CompilerServices
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ConfiguredValueTaskAwaiter GetAwaiter() =>
             new(_awaiter, _continueOnCapturedContext);
+
+        // Whether the value task has completed, and its result, as the awaiter gives them: runtime async's awaits
+        // read them (RuntimeAsync.IsCompleted and GetResult) without copying the value task into an awaiter first.
+        internal bool IsCompleted
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _awaiter.IsCompleted;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal T GetResult() => _awaiter.GetResult();
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
         public readonly struct ConfiguredValueTaskAwaiter : ICriticalNotifyCompletion, INotifyCompletion

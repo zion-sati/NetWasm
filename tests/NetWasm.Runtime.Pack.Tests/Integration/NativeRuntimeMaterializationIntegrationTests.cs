@@ -84,6 +84,7 @@ public sealed class NativeRuntimeMaterializationIntegrationTests
             schemaVersion = 3,
             target,
             applicationStaticDataEnd = 65_537,
+            importModules = Array.Empty<string>(),
             runtimeFeatures = Array.Empty<string>(),
             nativeImports = new[]
             {

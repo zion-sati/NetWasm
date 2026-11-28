@@ -4,6 +4,7 @@
 namespace System.Runtime.InteropServices.Sidecars
 {
     using System.Buffers.Binary;
+    using System.Runtime.CompilerServices;
 
     // A parsed symbols sidecar (the compiler's SymbolSidecarWriter format): its entries' IDs and strings, read
     // from the file's bytes as they are needed.
@@ -32,20 +33,28 @@ namespace System.Runtime.InteropServices.Sidecars
 
         internal int Count { get; }
 
-        internal int Id(int entry) =>
-            BinaryPrimitives.ReadInt32LittleEndian(_bytes.AsSpan(HeaderSize + entry * _entrySize));
+        internal int Id(int entry) => ReadInt32(HeaderSize + entry * _entrySize);
 
         // The string's UTF-16 text, or none (a type without a namespace).
         internal ReadOnlySpan<char> Text(int entry, int index, out bool present)
         {
             var field = HeaderSize + entry * _entrySize + sizeof(int) + index * sizeof(int) * 2;
-            var offset = BinaryPrimitives.ReadInt32LittleEndian(_bytes.AsSpan(field));
-            var length = BinaryPrimitives.ReadInt32LittleEndian(_bytes.AsSpan(field + sizeof(int)));
+            var offset = ReadInt32(field);
+            var length = ReadInt32(field + sizeof(int));
             present = length >= 0;
             return present
                 ? MemoryMarshal.Cast<byte, char>(
                     _bytes.AsSpan(_characters + offset * sizeof(char), length * sizeof(char)))
                 : default;
+        }
+
+        // Whether the string's field is none or a range inside the file's text.
+        internal bool StringFits(int entry, int index)
+        {
+            var field = HeaderSize + entry * _entrySize + sizeof(int) + index * sizeof(int) * 2;
+            var offset = ReadInt32(field);
+            var length = ReadInt32(field + sizeof(int));
+            return length == -1 || (length >= 0 && offset >= 0 && (long)offset + length <= CharacterCount);
         }
 
         internal string? String(int entry, int index)
@@ -55,6 +64,11 @@ namespace System.Runtime.InteropServices.Sidecars
         }
 
         internal int StringsPerEntry => _stringsPerEntry;
+
+        // A little-endian int32 of the file, whose entries SymbolSidecarParser has checked lie inside it before anything
+        // reads them: one read with no bounds check of its own, as WebAssembly memory is little-endian.
+        private int ReadInt32(int offset) =>
+            Unsafe.ReadUnaligned<int>(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bytes), offset));
 
         internal int CharacterCount => (_bytes.Length - _characters) / sizeof(char);
     }

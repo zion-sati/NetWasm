@@ -10,6 +10,7 @@ using System.Linq;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Metadata;
 
 using NetWasm.Compiler.Analysis.ManagedCallSites;
@@ -28,7 +29,10 @@ internal sealed class ReachabilityClosureBuilder(
     IReachableProgramBuilder programBuilder,
     IDelegateTypeRecognizer delegateTypes,
     ITypeTestPlanner typeTestPlanner,
-    IModuleInitializerOrderer moduleInitializerOrderer) : IReachabilityClosureBuilder
+    IModuleInitializerOrderer moduleInitializerOrderer,
+    IAnalysisStepRecorder steps,
+    ICompilerMemoryReleaser memory,
+    ReceiverFlow.IClosureReceiverFlowFactory receiverFlows) : IReachabilityClosureBuilder
 {
     private readonly IReachabilitySessionFactory _sessions = sessions ??
         throw new ArgumentNullException(nameof(sessions));
@@ -46,6 +50,10 @@ internal sealed class ReachabilityClosureBuilder(
         throw new ArgumentNullException(nameof(typeTestPlanner));
     private readonly IModuleInitializerOrderer _moduleInitializerOrderer = moduleInitializerOrderer ??
         throw new ArgumentNullException(nameof(moduleInitializerOrderer));
+    private readonly IAnalysisStepRecorder _steps = steps ?? throw new ArgumentNullException(nameof(steps));
+    private readonly ICompilerMemoryReleaser _memory = memory ?? throw new ArgumentNullException(nameof(memory));
+    private readonly ReceiverFlow.IClosureReceiverFlowFactory _receiverFlows =
+        receiverFlows ?? throw new ArgumentNullException(nameof(receiverFlows));
 
     // The closure: the roots are queued, then the queues drain and the derived roots are added until neither adds
     // anything.
@@ -65,13 +73,49 @@ internal sealed class ReachabilityClosureBuilder(
         {
             outwardBoundaries.Add(entryPoint.Key);
         }
+        var snapshot = Close(entryPoint, exports, roots, outwardBoundaries, rewrittenBodies);
+        // The build's ledger and receiver flow are released by now: the program is built from the snapshot alone, so the
+        // ledger is not held beside the snapshot's copy of it (nor, through the flow, into the next closure build).
+        _memory.Release();
+        var program = _steps.Record("program", () => _programBuilder.Build(
+            entryPoint,
+            [.. exports],
+            snapshot,
+            _delegateTypes,
+            _typeTestPlanner));
+        return program with
+        {
+            ModuleInitializers = _moduleInitializerOrderer.Order(program.ModuleInitializers),
+        };
+    }
+
+    // Runs the closure to its fixed point and snapshots its ledger, with each gated call's receiver flow admission.
+    private ReachabilityLedgerSnapshot Close(MethodDefinitionModel? entryPoint, ProgramExport[] exports,
+        ReachabilityRoots roots, HashSet<EntityKey> outwardBoundaries, ImmutableDictionary<string, CilMethodBody>? rewrittenBodies)
+    {
         using var session = _sessions.Create(entryPoint, outwardBoundaries, rewrittenBodies);
+        // Dispatched calls go by receiver flow (RECEIVER_TYPE_FLOW_DESIGN.md, steps C and D): their candidates
+        // wait in the gate, and each quiescence settles the flow and releases what it admits.
+        var flow = _receiverFlows.Create(session.State, entryPoint, exports, roots);
+        session.DispatchGate = flow.Gate;
         _roots.Seed(session, entryPoint, roots, exports);
-        while (true)
+        for (var iteration = 1; ; iteration++)
         {
             var before = session.CaptureClosureStamp();
-            _queues.Drain(session);
-            _derivedRoots.Expand(session);
+            _steps.Record($"drain {iteration}", () => _queues.Drain(session));
+            // The flow settles as soon as a drain leaves nothing pending; what it releases is drained before derived
+            // roots run, which cost the same whether or not anything changed.
+            if (session.State.Pending.Count == 0 && session.State.PendingDispatches.Count == 0 &&
+                _steps.Record($"receiver flow {iteration}", flow.Settle) > 0)
+            {
+                continue;
+            }
+            _steps.Record($"derived roots {iteration}", () => _derivedRoots.Expand(session));
+            if (session.State.Pending.Count == 0 && session.State.PendingDispatches.Count == 0)
+                _steps.Record($"receiver flow {iteration} after roots", flow.Settle);
+            // A drain and an expansion allocate far more than they keep (84 GB for an 11 GB ledger on Devolutions'
+            // Avalonia sample), and Satori keeps what they freed committed.
+            _memory.Release();
             if (session.State.Pending.Count == 0 &&
                 session.State.PendingDispatches.Count == 0 &&
                 session.CaptureClosureStamp() == before)
@@ -79,16 +123,8 @@ internal sealed class ReachabilityClosureBuilder(
                 break;
             }
         }
-        var program = _programBuilder.Build(
-            entryPoint,
-            [.. exports],
-            ReachabilityLedgerSnapshot.From(session.State),
-            _delegateTypes,
-            _typeTestPlanner);
-        return program with
-        {
-            ModuleInitializers = _moduleInitializerOrderer.Order(program.ModuleInitializers),
-        };
+        var snapshot = _steps.Record("ledger snapshot", () => ReachabilityLedgerSnapshot.From(session.State));
+        return snapshot with { ReceiverFlowAdmissions = _steps.Record("site admissions", flow.SiteAdmissions) };
     }
 }
 

@@ -63,7 +63,7 @@ Every option is optional:
 | --- | --- |
 | `stdout`, `stderr` | Receive guest output one line at a time, asynchronously: a line an export writes arrives after the export returns. `stderr` also receives a report of each managed exception that leaves an export. Default: the console. |
 | `environment` | Adds or replaces environment variables over the project's `NetWasmEnvironmentVariable` items. |
-| `modules` | Supplies import modules at runtime, keyed by module name, beside the bundled `NetWasmJavaScriptModule` items. A module may not be both. |
+| `modules` | Supplies import modules at runtime, keyed by module name, beside the bundled `NetWasmJavaScriptModule` items, the program's and its packages'. A module may not be both. |
 | `onNotification` | Receives notifications an import module sends, after the import returns. |
 | `platform` | Test hooks: `now()` returns epoch milliseconds for the wall clock, and `random(bytes)` fills random bytes. |
 
@@ -80,7 +80,7 @@ in a worker.
 | `page` (default) | Synchronous exports return values; `Task` exports return Promises. Import modules may use the DOM. | C# drives page UI, or calls are short. |
 | `worker` | Every export returns a Promise. Import modules run in the worker and reach the page through notifications. | Work is long enough to block the page. |
 | `page;worker` | Publishes both, sharing one runtime. | The page needs some calls of each kind. |
-| `node` | As `page`, from Node.js code. Import modules are passed to `open()`. | A server, CLI or serverless function calls C#. |
+| `node` | As `page`, from Node.js code. Bundled modules, a package's included, are bound as on the page; other modules are passed to `open()`. | A server, CLI or serverless function calls C#. |
 
 The worker host publishes `browser/<AssemblyName>.worker-client.mjs`; see
 [C# Web Workers](web-workers.md). The node host publishes
@@ -177,6 +177,37 @@ does not exist stops the build with `NWSDK093`, which names the module and the
 path, and a missing file that a module imports stops the bundle with the path
 it could not resolve. A file written by an earlier build step, such as a
 JavaScript bundler, must exist by then.
+
+A library whose imports call its own module ships the module in its package.
+The library registers the module with a `NetWasmJavaScriptModule` item in a
+`build/<PackageId>.targets` file, and packs that file and the module into both
+`build/` and `buildTransitive/`. A program that references the package,
+directly or through other packages, then bundles the module like its own:
+
+```xml
+<!-- build/Contoso.Charts.targets -->
+<Project>
+  <ItemGroup>
+    <NetWasmJavaScriptModule Include="$(MSBuildThisFileDirectory)charts.mjs"
+                             Module="contoso.charts" />
+  </ItemGroup>
+</Project>
+```
+
+```xml
+<!-- Contoso.Charts.csproj -->
+<ItemGroup>
+  <None Include="build/Contoso.Charts.targets;build/charts.mjs" Pack="true"
+        PackagePath="build/;buildTransitive/" />
+</ItemGroup>
+```
+
+The page, worker and node hosts bind a package's module with nothing passed to
+`open()`, and `open()` rejects the module if it is passed as well. NuGet
+imports these targets only from a package, so a program that references the
+library's project imports them itself, for example
+`<Import Project="../Contoso.Charts/build/Contoso.Charts.targets" />`. Without
+that import the program builds without the module, and `open()` fails.
 
 For an ordinary browser application rather than a worker, reachable
 `[JSImport]` declarations require `<NetWasmRawWasm>true</NetWasmRawWasm>`.
@@ -348,8 +379,29 @@ both ways. A `void` result takes `JSType.Void`, `JSType.Discard` or
 An `Exception` is an `Error`. An exception that came from JavaScript, a
 `JSException`, gives back the original `Error`; any other exception crosses as
 an `Error` named `ManagedError` with the exception's message, and it arrives
-back as the same exception. A JavaScript value that is not an `Error` arrives
-as a `JSException` whose message is the value as a string. `string[]`,
+back as the same exception. A JavaScript value arriving as an exception is a
+`JSException` whose message is the value's `toString()`, as on .NET's browser
+runtime: an `Error` reads as `Name: message`.
+
+A failed `JSImport` raises the same `JSException`: what the function threw, or
+what its Promise rejected with, gives the message, such as
+`NotAllowedError: Permission denied` or `AbortError: signal is aborted without
+reason`, so a caller can tell `AbortError`, `NotAllowedError` and
+`QuotaExceededError` apart. The exception,
+`System.Runtime.InteropServices.JavaScript.JSException` as on .NET, keeps the
+JavaScript value, which JavaScript gets back unchanged when the exception
+crosses to it again, including when it leaves an export: a synchronous export
+throws the original error and an async export's Promise rejects with it. A managed exception that crossed to
+JavaScript and comes back from a failed import is the original exception, as
+on .NET. Two `JSException`s are equal when they hold the same JavaScript
+value, or when neither holds one. As on
+.NET, a rejection without a reason (or with a falsy one) becomes `new Error()`,
+whose message is `Error`; a thrown `null` or `undefined` does the same, where
+.NET would return as if the call had succeeded. A value the boundary cannot
+convert, such as a string result that is a number, fails the call with the
+conversion's error, `NetWasmHostError: ...`. A `JSException`'s `ToString()` is
+its message, and its `StackTrace` adds the JavaScript error's stack after the
+managed frames, as on .NET. `string[]`,
 `JSObject[]` and `object[]` are JavaScript arrays, whose elements must be
 strings, objects, or any values, or `null`. Each number array
 uses the typed array with the same element type, and, as on .NET's browser
@@ -484,7 +536,8 @@ the application-facing Promise API.
 
 ## Async and failure behavior
 
-Imported Promises complete the returned managed task on the browser event loop.
+An imported Promise completes the task the import returned; see
+[when an awaited import resumes](#when-an-awaited-import-resumes).
 Exported `Task` and `ValueTask` methods become JavaScript Promises. A managed
 fault rejects the Promise; worker clients expose the managed message through
 `error.message` and, when available, structured metadata under
@@ -507,6 +560,50 @@ worker alike. `dispose()` drains accepted worker calls, while `terminate()`
 rejects pending calls and closes immediately. A worker module cannot access the
 page DOM because it runs in the worker realm; send a notification or return a
 value to page code.
+
+### When an awaited import resumes
+
+Code after `await` on an imported Promise runs inside that Promise's reaction,
+before control returns to the browser's event loop. NetWasm guarantees this in
+the page and worker hosts.
+
+Other queued work, such as `Task.Run` calls, thread-pool items and the code
+after `await Task.Yield()`, runs in batches of up to 30 ms, as on .NET's
+browser runtime. A batch runs until no work is queued or 30 ms have passed;
+work still queued then continues after the browser has taken a turn of its
+event loop, in which the page can render, handle input and run its timers. So
+`Task.Yield` may return to the browser, and a loop that awaits `Task.Yield()`
+or chains `Task.Run` calls lets the page take a turn about every 30 ms.
+`Task.Delay` and other timers always return to the browser. In the node host,
+work continues after a turn of Node.js's event loop the same way.
+
+The first rule keeps an IndexedDB transaction open across awaited requests.
+IndexedDB commits a transaction once it has no pending request and control
+returns to the event loop, so C# can await one request and then issue the next
+in the same transaction. Anything else that may return to the browser ends a
+transaction that has no request pending, as an awaited timeout does in
+JavaScript: a delay, an unrelated Promise, or a `Task.Yield` once the batch is
+past 30 ms. Inside a transaction, await only its own requests:
+
+```csharp
+var transaction = Store.Begin(database);
+await Store.Put(transaction, "a", "1");
+var value = await Store.Get(transaction, "a"); // the same transaction
+await Task.Delay(1);                           // the browser commits it here
+await Store.Put(transaction, "b", "2");        // fails: the transaction has ended
+```
+
+A `.then` handler that JavaScript adds to the same Promise after the import
+returned runs after the C# continuation.
+
+.NET's own browser runtime batches queued work the same way: its
+single-threaded thread pool dispatches for up to 30 ms before it returns to the
+browser. Awaited imports differ. In .NET 11 the task an import returns
+completes with `RunContinuationsAsynchronously`, and the thread pool runs the
+continuation from a zero-delay timer, in a later task. An IndexedDB
+transaction has then ended by the first awaited request, a `.then` handler
+added later runs before the continuation, and every awaited import waits for a
+timer.
 
 ### Cancel a call
 

@@ -1,10 +1,14 @@
 # Micro-benchmarks
 
 `run.py` times dotnet/performance's runtime micro-benchmarks, with its
-`System.Numerics` vector, `System.Runtime.Intrinsics` and `System.Memory`
+`System.Numerics` vector, `System.Runtime.Intrinsics`, `System.Memory` and async
+(`System.Threading.Tasks`, `System.Threading.Tasks.Extensions` and
+`System.Threading.Channels`, and the task-returning benchmarks of
+`System.IO.Pipelines`, `SemaphoreSlim` and the stream and text reader suites)
 benchmarks, and NetWasm's own workloads, on three runtimes:
 
-- desktop .NET 11's JIT, without tiering (`DOTNET_TieredCompilation=0`);
+- desktop .NET 11's JIT, without tiering (`DOTNET_TieredCompilation=0`), with
+  runtime async on for the benchmarks' own async methods;
 - Mono AOT for `wasi-wasm` with Wasm SIMD, under Wasmtime;
 - NetWasm at `O3` with NetWasmGC, wasm-opt repeating its passes until the module
   stops shrinking (`NetWasmOptimizerConverge=true`), under Wasmtime.
@@ -25,7 +29,15 @@ defined for all three.
 
 `runner/` times a case with a warm-up call, then a batch of calls doubled until
 it lasts 20 ms, and reports the fastest of five batches as nanoseconds per
-call. Each timed body is a function of its own, so one case's code does not
+call. A benchmark that returns a task is awaited: its timed body is an
+async method that awaits each call. NetWasm and Mono AOT run on one thread and
+throw on a synchronous wait for a task that has not completed, so the runner's
+entry point is async and its loop runs those cases' continuations. A class runs
+the benchmarks it inherits too, as BenchmarkDotNet does, and a setup's `Target`
+is a comma-separated list of benchmark names. A setup that returns a task is
+awaited. A source `run.py` lists as `async:<path>` contributes only the
+benchmarks that return a task, so a suite whose other benchmarks no family
+times adds its async ones alone. Each timed body is a function of its own, so one case's code does not
 change how the engine compiles another's. A result passes through
 `Runner.Consume`, so the work that produced it cannot be dropped.
 
@@ -42,6 +54,15 @@ dagger and leaves them out of the NetWasm / Mono AOT means.
 `workloads/` holds NetWasm's own workloads: issue #166's prime search, the
 timed regions of the [runtime-performance](../runtime-performance/README.md)
 allocation workloads, and loops that read a span at a pixel's neighbors.
+The Async family adds the async workload's scenarios (`AsyncPatterns.cs`) and
+two of dotnet/runtime's runtime async microbenchmarks (`src/tests/async`,
+v11.0.0): the cost of a call by how caller and callee compile
+(`AsyncCallCost.cs`) and an exception or a value coming back up a chain of
+async methods (`AsyncExceptions.cs`). Plain async methods compile as each
+runtime compiles them by default: runtime async on NetWasm and on desktop .NET
+(runtime async on), state machines on Mono AOT, which has no runtime async.
+Methods marked `[RuntimeAsyncMethodGeneration(false)]` compile as state
+machines everywhere, which compares the two compilations within each runtime.
 
 ## Reproduce
 

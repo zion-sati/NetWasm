@@ -15,6 +15,8 @@ internal sealed class ExceptionContinuationGraphProjector : IExceptionContinuati
         ArgumentNullException.ThrowIfNull(graph);
 
         var successors = graph.Successors.ToArray();
+        // Blocks by start, so each handler's blocks are found by a binary search rather than a scan of the method.
+        var byStart = graph.Blocks.OrderBy(block => block.StartOffset).ToArray();
         foreach (var region in graph.MethodBody.ExceptionRegions)
         {
             if (region.Kind is not (CilExceptionRegionKind.Catch or CilExceptionRegionKind.Filter))
@@ -24,7 +26,15 @@ internal sealed class ExceptionContinuationGraphProjector : IExceptionContinuati
 
             var entry = graph.GetBlockAtOffset(region.TryOffset).Index;
             var handlerEnd = checked(region.HandlerOffset + region.HandlerLength);
-            var continuations = graph.Blocks
+            var low = 0;
+            var high = byStart.Length;
+            while (low < high)
+            {
+                var middle = low + (high - low) / 2;
+                if (byStart[middle].StartOffset < region.HandlerOffset) low = middle + 1;
+                else high = middle;
+            }
+            var continuations = byStart.Skip(low).TakeWhile(block => block.StartOffset < handlerEnd)
                 .Where(block => graph.ReachableBlocks.Contains(block.Index) &&
                     block.StartOffset >= region.HandlerOffset && block.StartOffset < handlerEnd &&
                     block.Terminator.Operation == CilOperation.Leave)

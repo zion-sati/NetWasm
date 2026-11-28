@@ -114,9 +114,10 @@ public sealed class QualifiedProcessRunnerTests
             ],
             TimeSpan.FromSeconds(30)), cancellation.Token));
 
+        // The shell can take seconds to start on a loaded machine; the child sleeps 30.
         Assert.True(SpinWait.SpinUntil(
             () => File.Exists(childPath),
-            TimeSpan.FromSeconds(5)));
+            TimeSpan.FromSeconds(25)));
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);

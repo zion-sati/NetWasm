@@ -26,7 +26,9 @@ public sealed class ExceptionGroupStructurerCoverageTests
             new UnusedLoopContinuationBuilder(),
             new NonNestedFlowClassifier(),
             ranges,
-            new FixedNormalLeaveTargetFinder([])));
+            new FixedNormalLeaveTargetFinder([]),
+            new TerminalContinuationFinder(),
+            new BoundaryContinuationExtentFinder()));
 
         var groups = structurer.Structure(state, regions);
 
@@ -75,7 +77,9 @@ public sealed class ExceptionGroupStructurerCoverageTests
             new UnusedLoopContinuationBuilder(),
             new NonNestedFlowClassifier(),
             new EmptyBlockRangeStructurer(),
-            new FixedNormalLeaveTargetFinder(targets));
+            new FixedNormalLeaveTargetFinder(targets),
+            new TerminalContinuationFinder(),
+            new BoundaryContinuationExtentFinder());
 
         var groups = structurer.Structure(state, regions);
 
@@ -85,6 +89,35 @@ public sealed class ExceptionGroupStructurerCoverageTests
         Assert.All(parent.NormalContinuations, continuation =>
             Assert.Empty(continuation.Body.Regions));
         Assert.Equal(targetAfterBoundary, parent.ContinuationJoinBlock is null);
+    }
+
+    // Continuations that run past the boundary give the dispatcher the method's blocks up to its end and join nothing:
+    // the code after the dispatcher is not where all of them go.
+    [Fact]
+    public void ContinuationsRunningPastTheBoundaryDispatchToTheMethodEndWithoutAJoin()
+    {
+        var regions = ImmutableArray.Create(
+            new CilExceptionRegion(CilExceptionRegionKind.Finally, 0, 4, 4, 1, null, null),
+            new CilExceptionRegion(CilExceptionRegionKind.Finally, 1, 1, 2, 1, null, null),
+            new CilExceptionRegion(CilExceptionRegionKind.Finally, 4, 1, 4, 1, null, null),
+            new CilExceptionRegion(CilExceptionRegionKind.Finally, 6, 1, 7, 1, null, null));
+        var state = CreateState(regions);
+        var dispatchers = new RecordingContinuationDispatcherBuilder();
+        var structurer = new ExceptionGroupStructurer(
+            new ExceptionScopeFinder(),
+            dispatchers,
+            new UnusedLoopContinuationBuilder(),
+            new NonNestedFlowClassifier(),
+            new EmptyBlockRangeStructurer(),
+            new FixedNormalLeaveTargetFinder([5, 6]),
+            new TerminalContinuationFinder(),
+            new BoundaryContinuationExtentFinder(runsPast: true));
+
+        var parent = structurer.Structure(state, regions)[0];
+
+        Assert.NotNull(parent.ContinuationDispatcher);
+        Assert.Equal(state.Graph.MethodBody.Instructions[^1].NextOffset, dispatchers.End);
+        Assert.Null(parent.ContinuationJoinBlock);
     }
 
     [Theory]
@@ -106,7 +139,9 @@ public sealed class ExceptionGroupStructurerCoverageTests
             loopContinuations,
             new NonNestedFlowClassifier(),
             new EmptyBlockRangeStructurer(),
-            new FixedNormalLeaveTargetFinder([2, 5]));
+            new FixedNormalLeaveTargetFinder([2, 5]),
+            new TerminalContinuationFinder(),
+            new BoundaryContinuationExtentFinder());
 
         var group = Assert.Single(structurer.Structure(state, regions));
 
@@ -151,7 +186,9 @@ public sealed class ExceptionGroupStructurerCoverageTests
             loopContinuations,
             new NonNestedFlowClassifier(),
             ranges,
-            new LeaveTargetsByTry(new Dictionary<int, int[]> { [1] = [6], [2] = [childTarget] }));
+            new LeaveTargetsByTry(new Dictionary<int, int[]> { [1] = [6], [2] = [childTarget] }),
+            new TerminalContinuationFinder(),
+            new BoundaryContinuationExtentFinder());
 
         structurer.Structure(state, regions);
 
@@ -213,15 +250,24 @@ public sealed class ExceptionGroupStructurerCoverageTests
     {
         public int[] Targets { get; private set; } = [];
 
+        public int End { get; private set; }
+
         public StructuredDispatcherDraft Build(
             ControlFlowStructuringState state,
             IEnumerable<int> targets,
-            int continuationBoundary,
-            int methodEnd)
+            int end)
         {
             Targets = targets.ToArray();
+            End = end;
             return new StructuredDispatcherDraft(null, [], []);
         }
+    }
+
+    // Ends continuations at the boundary unless a target lies past it, or always at the method's end when they run past it.
+    private sealed class BoundaryContinuationExtentFinder(bool runsPast = false) : IContinuationExtentFinder
+    {
+        public int End(ControlFlowGraph graph, IReadOnlyCollection<int> targets, int boundary, int methodEnd) =>
+            runsPast || targets.Any(target => target > boundary) ? methodEnd : boundary;
     }
 
     private sealed class RecordingLoopContinuationBuilder : ILoopContinuationBuilder

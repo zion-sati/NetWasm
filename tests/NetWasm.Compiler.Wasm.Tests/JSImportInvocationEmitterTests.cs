@@ -91,7 +91,7 @@ public sealed class JSImportInvocationEmitterTests
         Assert.Equal(expectedCallbackCount, callbackHandles.Count);
         Assert.Equal(expectedTransferredCount, transferred.Count);
         Assert.Equal(expectedReleaseCount, handles.Count);
-        Assert.Equal([ManagedExceptionKind.JSException], exceptions.Kinds);
+        Assert.Equal([ManagedExceptionKind.JSImportFailure], exceptions.Kinds);
         Assert.NotNull(results.Request);
         Assert.Equal(hasCallback && subscription, results.Request.Callback is not null);
     }
@@ -174,7 +174,7 @@ public sealed class JSImportInvocationEmitterTests
         var instructions = code.ToInstructions();
         Assert.Equal(2, arguments.Count);
         Assert.Null(results.Request);
-        Assert.Equal([ManagedExceptionKind.JSException], exceptions.Kinds);
+        Assert.Equal([ManagedExceptionKind.JSImportFailure], exceptions.Kinds);
         Assert.Equal(
             [WasmOpcodes.Block, WasmOpcodes.Block, WasmOpcodes.TryTable, WasmOpcodes.Call, WasmOpcodes.End,
                 WasmOpcodes.Branch, WasmOpcodes.End, WasmOpcodes.Unreachable, WasmOpcodes.End, WasmOpcodes.LocalSet],
@@ -229,7 +229,6 @@ public sealed class JSImportInvocationEmitterTests
             IWasmInstructionWriter code,
             CliTypeIdentity type,
             int local,
-            MethodEmissionContext context,
             InteropImportPlan interop) => Count++;
     }
 

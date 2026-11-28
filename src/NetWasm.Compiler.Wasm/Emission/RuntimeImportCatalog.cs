@@ -104,12 +104,25 @@ internal enum RuntimeImportSymbol
     AllocateObjectFallback,
     TypeIsAssignable,
     AllocateUninitializedValueArray,
+    FrameMarkRoot,
+    FrameMarkValueCursor,
+    FrameMarkStackTrace,
+    FrameMarksRewind,
+    FramesUnwind,
+    ExceptionCellEnter,
+    ExceptionCellLeave,
+    ExceptionFilterFramesLive,
+    ExceptionCatchSelect,
     RecordReferenceWrite,
     RecordReferenceWrites,
     GcObjectGeneration,
     CollectWhenIdle,
     CollectWhenQuiet,
     GcCollectYoung,
+    RegisterSharedArrays,
+    IsAssignableShared,
+    ArrayCopyShared,
+    ArraySetValueShared,
 }
 
 internal readonly record struct RuntimeImportBinding(
@@ -194,5 +207,6 @@ internal sealed class RuntimeImportCatalog : IRuntimeImportResolver
             IncludeArraySetValue: true,
             IncludeUnhandledExceptionHint: true,
             IncludeObjectClone: true,
-            IncludeUninitializedArrays: true);
+            IncludeUninitializedArrays: true,
+            IncludeSharedArrays: true);
 }

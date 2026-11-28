@@ -17,4 +17,13 @@ internal sealed record AttributeQueryCall(
     int ArgumentCount,
     int? FilterArgument,
     CliTypeIdentity? GenericFilter,
-    int? InheritArgument);
+    int? InheritArgument)
+{
+    // Which family of overloads the call is: desktop answers one target and filter differently by family (an interface
+    // filter is a target's own query but an ArgumentException for Attribute's statics and the extensions).
+    public AttributeQueryApiKind Api { get; init; } = AttributeQueryApiKind.Instance;
+
+    // The filter of a query that names none: object for a target's own GetCustomAttributes(bool), Attribute for
+    // Attribute's statics and the extensions.
+    public CliTypeIdentity? ImplicitFilter { get; init; }
+}

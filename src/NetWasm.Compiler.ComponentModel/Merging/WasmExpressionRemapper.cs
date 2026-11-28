@@ -43,15 +43,25 @@ internal static class WasmExpressionRemapper
     private static readonly AtomicImmediate[] AtomicOpcodes = AtomicImmediates();
 
     // A function body: its locals, then its instructions to the end of the body.
-    public static void Body(ReadOnlySpan<byte> code, int start, int length, WasmMergeIndices indices, WasmMergeSink sink)
+    public static void Body(ReadOnlySpan<byte> code, int start, int length, WasmMergeIndices indices, WasmMergeSink sink) =>
+        Instructions(code, start, Locals(code, start), start + length, false, indices, sink);
+
+    // Each instruction of a function body, by its offset and its opcode (a prefixed instruction by its prefix), as the
+    // debug line writer reads a linked module; nothing is copied.
+    public static void Walk(ReadOnlySpan<byte> code, int start, int length, Action<int, byte> visit)
     {
-        var at = start;
+        ArgumentNullException.ThrowIfNull(visit);
+        Instructions(code, start, Locals(code, start), start + length, false, WasmMergeIndices.None, null, visit);
+    }
+
+    private static int Locals(ReadOnlySpan<byte> code, int at)
+    {
         for (var groups = WasmMergeRead.Unsigned(code, ref at); groups > 0; groups--)
         {
             WasmMergeRead.Skip(code, ref at);
             WasmMergeRead.ValueType(code, ref at);
         }
-        Instructions(code, start, at, start + length, false, indices, sink);
+        return at;
     }
 
     // A constant expression, through its end; returns where it ends.
@@ -59,11 +69,13 @@ internal static class WasmExpressionRemapper
         Instructions(code, at, at, code.Length, true, indices, sink);
 
     private static int Instructions(ReadOnlySpan<byte> code, int copied, int at, int limit, bool constant,
-        WasmMergeIndices indices, WasmMergeSink? sink)
+        WasmMergeIndices indices, WasmMergeSink? sink, Action<int, byte>? visit = null)
     {
         while (at < limit)
         {
+            var offset = at;
             var opcode = WasmMergeRead.Byte(code, ref at);
+            visit?.Invoke(offset, opcode);
             switch (Opcodes[opcode])
             {
                 case Immediate.None:
@@ -149,7 +161,7 @@ internal static class WasmExpressionRemapper
         }
         if (constant || at != limit)
             throw WasmMergeRead.Invalid("a core module holds an expression that runs past its end");
-        sink!.Write(code[copied..at]);
+        sink?.Write(code[copied..at]);
         return at;
     }
 

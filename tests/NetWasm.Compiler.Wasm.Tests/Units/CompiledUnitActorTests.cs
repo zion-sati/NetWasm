@@ -114,6 +114,18 @@ internal static class UnitActorFixture
             [new(UnitStoreFormat.HashOf(unit.Identity), 0, location.Offset)], 2), _ => new PinnedUnitSegmentMemory(segment));
     }
 
+    // The units a state's emitted segments hold, in the order they were written.
+    internal static List<CompiledUnit> Emitted(CompiledUnitState state)
+    {
+        var units = new List<CompiledUnit>();
+        foreach (var writer in state.EmittedSegments.Writers.Where(writer => writer.Count != 0))
+        {
+            using var segment = UnitSegment.Over(0, new PinnedUnitSegmentMemory(Pinned(writer)))!;
+            units.AddRange(writer.Entries.Select(entry => segment.Record(entry.Offset).ToUnit()));
+        }
+        return units;
+    }
+
     internal static byte[] Pinned(UnitSegmentWriter writer)
     {
         var bytes = GC.AllocateUninitializedArray<byte>(checked((int)writer.Length), pinned: true);
@@ -208,7 +220,7 @@ public sealed class CompiledUnitCapturerTests
     {
         var (state, emission, _, identity) = Captured();
 
-        var unit = Assert.Single(state.Captured);
+        var unit = Assert.Single(UnitActorFixture.Emitted(state));
         Assert.Equal(1, state.Emitted);
         Assert.Equal(identity, unit.Identity);
         Assert.Equal([("method:Callee", 2), ("Type:3", 4)], unit.Relocations.Select(relocation => (relocation.Symbol, relocation.Offset)));
@@ -229,7 +241,7 @@ public sealed class CompiledUnitCapturerTests
 
         var (state, _, rootMap, _) = Captured((state, identity) => state.RootMapDependencies[identity] = facts);
 
-        var unit = Assert.Single(state.Captured);
+        var unit = Assert.Single(UnitActorFixture.Emitted(state));
         Assert.Equal(UnitRootMapFormat.Write(rootMap), unit.RootMap);
         Assert.Equal(facts, unit.RootMapDependencies);
     }
@@ -254,7 +266,7 @@ public sealed class CompiledUnitCapturerTests
             state.Store = corrupt ? UnitActorFixture.Corrupt(source) : UnitActorFixture.Store(source);
         });
 
-        var unit = Assert.Single(state.Captured);
+        var unit = Assert.Single(UnitActorFixture.Emitted(state));
         Assert.Equal(corrupt ? null : UnitRootMapFormat.Write(rootMap), unit.RootMap);
         Assert.Equal(corrupt ? [] : facts, unit.RootMapDependencies);
     }
@@ -269,7 +281,7 @@ public sealed class CompiledUnitCapturerTests
             state.RootMapSources[identity] = new UnitLocation(0, 64);
         });
 
-        var unit = Assert.Single(state.Captured);
+        var unit = Assert.Single(UnitActorFixture.Emitted(state));
         Assert.Null(unit.RootMap);
         Assert.Empty(unit.RootMapDependencies);
     }
@@ -284,7 +296,7 @@ public sealed class CompiledUnitCapturerTests
 
         Assert.Equal(1, state.Restored);
         Assert.Equal([location], state.Carried);
-        Assert.Empty(state.Captured);
+        Assert.Equal(0, state.EmittedSegments.Count);
     }
 
     // Each reason a body cannot be rebound later keeps it from being a unit.
@@ -303,7 +315,7 @@ public sealed class CompiledUnitCapturerTests
             _ => Captured(body: false),
         };
 
-        Assert.Empty(state.Captured);
+        Assert.Equal(0, state.EmittedSegments.Count);
         Assert.Equal(1, state.Emitted);
     }
 
@@ -320,7 +332,7 @@ public sealed class CompiledUnitCapturerTests
         capturer.Capture(UnitActorFixture.Name(method), UnitActorFixture.Emission(Body) with { Unit = new(0, 64) },
             UnitActorFixture.Structured(method), UnitActorFixture.RootMap(method));
 
-        Assert.Empty(state.Captured);
+        Assert.Equal(0, state.EmittedSegments.Count);
         Assert.Empty(state.Carried);
         Assert.Equal((1, 1), (state.Emitted, state.Restored));
     }
@@ -368,18 +380,18 @@ public sealed class CompiledUnitPublisherTests
     // Publishes with the given units carried and captured; the store the change gives.
     private static (UnitStoreChange Change, UnitStore Next) Publish(CompiledUnit[][] segments, string[] carried,
         CompiledUnit[] captured, Action<CompiledUnitState>? arrange = null,
-        long segmentCapacity = CompiledUnitPublisher.SegmentCapacity, long sectionLimit = UnitSegmentWriter.SectionLimit)
+        long segmentCapacity = EmittedUnitSegments.SegmentCapacity, long sectionLimit = UnitSegmentWriter.SectionLimit)
     {
         var (store, bytes) = UnitActorFixture.Segments(segments);
-        var state = new CompiledUnitState("units") { Store = store };
+        var state = new CompiledUnitState("units") { Store = store, EmittedSegments = new(segmentCapacity, sectionLimit) };
         foreach (var identity in carried) state.Carried.Add(store.Find(identity)!.Value);
-        foreach (var unit in captured) state.Captured.Add(unit);
+        foreach (var unit in captured) state.EmittedSegments.Add(unit);
         arrange?.Invoke(state);
 
-        new CompiledUnitPublisher(state, segmentCapacity, sectionLimit).Publish();
+        new CompiledUnitPublisher(state).Publish();
 
         var change = state.Change!.Value;
-        foreach (var segment in change.Segments) bytes[segment.Sequence] = UnitActorFixture.Pinned(segment.Writer);
+        foreach (var segment in change.Segments) bytes[segment.Sequence] = UnitActorFixture.Pinned(segment.Writer!);
         return (change, change.Manifest is { } manifest
             ? UnitStore.Over(manifest, sequence => new PinnedUnitSegmentMemory(bytes[sequence]))
             : UnitStore.Empty);
@@ -417,7 +429,7 @@ public sealed class CompiledUnitPublisherTests
 
         var added = Assert.Single(change.Segments);
         Assert.Equal(3, added.Sequence);
-        Assert.Equal(3, added.Writer.Count);
+        Assert.Equal(3, added.Count);
         Assert.Equal([2, 3], change.LiveSequences.Order());
         Assert.Equal(next.Find("F")!.Value.Segment, next.Find("A")!.Value.Segment);
         Assert.Equal(8, next.Segments[next.Find("E")!.Value.Segment]!.Record(next.Find("E")!.Value.Offset).Body.Length);
@@ -428,8 +440,8 @@ public sealed class CompiledUnitPublisherTests
     // one reaching the capacity, or declining a unit as full, starts another.
     [Theory]
     [InlineData(1, UnitSegmentWriter.SectionLimit, 3)]
-    [InlineData(CompiledUnitPublisher.SegmentCapacity, UnitStoreFormat.FixedRecordSize * 3 / 2, 3)]
-    [InlineData(CompiledUnitPublisher.SegmentCapacity, UnitSegmentWriter.SectionLimit, 1)]
+    [InlineData(EmittedUnitSegments.SegmentCapacity, UnitStoreFormat.FixedRecordSize * 3 / 2, 3)]
+    [InlineData(EmittedUnitSegments.SegmentCapacity, UnitSegmentWriter.SectionLimit, 1)]
     public void ACompileWritesAsManySegmentsAsItsUnitsNeed(long segmentCapacity, long sectionLimit, int added)
     {
         var (change, next) = Publish([[Unit("A")]], ["A"], [Unit("E"), Unit("F"), Unit("G")],
@@ -462,7 +474,7 @@ public sealed class CompiledUnitPublisherTests
 
         var (change, next) = Publish(segments, [.. segments.Select(segment => segment[0].Identity)], [Unit("New")]);
 
-        Assert.Equal(16, Assert.Single(change.Segments).Writer.Count);
+        Assert.Equal(16, Assert.Single(change.Segments).Count);
         Assert.Equal([6, 17], change.LiveSequences.Order());
         Assert.All(segments, segment => Assert.NotNull(next.Find(segment[0].Identity)));
     }

@@ -32,6 +32,42 @@ public sealed class UnhandledFailureDiagnosticFactoryTests
             diagnostic.ToString());
     }
 
+    // A thrown defect carries where it was thrown and what it wraps, so a failure while loading metadata, which names
+    // no method, can be located from the build log.
+    [Fact]
+    public void AThrownDefectCarriesItsStackTraceAndInnerException()
+    {
+        Exception thrown;
+        try
+        {
+            ThrowWrapped();
+            throw new InvalidOperationException("unreached");
+        }
+        catch (InvalidOperationException exception)
+        {
+            thrown = exception;
+        }
+
+        var message = new UnhandledFailureDiagnosticFactory().Create(thrown).Message;
+
+        Assert.StartsWith("the compiler failed with System.InvalidOperationException: loading failed", message,
+            StringComparison.Ordinal);
+        Assert.Contains("System.FormatException: bad metadata", message, StringComparison.Ordinal);
+        Assert.Contains(nameof(ThrowWrapped), message, StringComparison.Ordinal);
+    }
+
+    private static void ThrowWrapped()
+    {
+        try
+        {
+            throw new FormatException("bad metadata");
+        }
+        catch (FormatException inner)
+        {
+            throw new InvalidOperationException("loading failed", inner);
+        }
+    }
+
     [Fact]
     public void CreateRejectsAMissingFailure()
     {

@@ -22,13 +22,14 @@ public sealed class LayoutContractCoverageTests
     {
         Assert.Throws<ArgumentNullException>(() =>
             new AssignableTypeMetadataBuilderFactory(null!,
-                new TypeRelationshipClassifierFactory(), new TypeRelationshipKeyResolverFactory()));
+                new UnrememberedTypeRelationshipClassifierFactory(), new TypeRelationshipKeyResolverFactory()));
         Assert.Throws<ArgumentNullException>(() =>
             new AssignableTypeMetadataBuilderFactory(
                 new UnusedImplementedInterfaceResolverFactory(), null!, new TypeRelationshipKeyResolverFactory()));
         Assert.Throws<ArgumentNullException>(() =>
             new AssignableTypeMetadataBuilderFactory(
-                new UnusedImplementedInterfaceResolverFactory(), new TypeRelationshipClassifierFactory(), null!));
+                new UnusedImplementedInterfaceResolverFactory(), new UnrememberedTypeRelationshipClassifierFactory(),
+                null!));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedLayoutForkPublisher(null!, []));
         Assert.Throws<ArgumentNullException>(() =>
@@ -56,7 +57,7 @@ public sealed class LayoutContractCoverageTests
         "System.ArgumentOutOfRangeException")]
     [InlineData(ManagedExceptionKind.ArrayTypeMismatch,
         "System.ArrayTypeMismatchException")]
-    [InlineData(ManagedExceptionKind.JSException, "System.JSException")]
+    [InlineData(ManagedExceptionKind.JSException, "System.Runtime.InteropServices.JavaScript.JSException")]
     [InlineData(ManagedExceptionKind.InvalidOperation,
         "System.InvalidOperationException")]
     [InlineData(ManagedExceptionKind.NotSupported, "System.NotSupportedException")]

@@ -55,33 +55,113 @@ public sealed class EmptyFinallyRemoverTests
         Assert.Same(body, new EmptyFinallyRemover(true).Rewrite(body));
     }
 
-    // try { try { x = 1; } catch { x = 2; } } finally { }: both leaves still
+    // try { try { x = 1 / x; } catch { x = 2; } } finally { }: both leaves still
     // leave the inner try or its catch, so they stay leaves.
     [Fact]
     public void KeepsTheLeavesThatStillLeaveAnotherRegion()
     {
-        var @catch = new CilExceptionRegion(CilExceptionRegionKind.Catch, 2, 3, 5, 4, null, null);
+        var @catch = new CilExceptionRegion(CilExceptionRegionKind.Catch, 2, 5, 7, 4, null, null);
         var body = Body(
-            [@catch, Region(CilExceptionRegionKind.Finally, 2, 7, 9, 1)],
+            [@catch, Region(CilExceptionRegionKind.Finally, 2, 9, 11, 1)],
             I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
             I(1, CilOperation.StoreLocal, new CilOperand.Index(0)),
             I(2, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
-            I(3, CilOperation.StoreLocal, new CilOperand.Index(0)),
-            I(4, CilOperation.Leave, new CilOperand.BranchTarget(10)),
-            I(5, CilOperation.Pop),
-            I(6, CilOperation.LoadInt32, new CilOperand.ConstantI4(2)),
-            I(7, CilOperation.StoreLocal, new CilOperand.Index(0)),
-            I(8, CilOperation.Leave, new CilOperand.BranchTarget(10)),
-            I(9, CilOperation.EndFinally),
-            I(10, CilOperation.LoadLocal, new CilOperand.Index(0)),
-            I(11, CilOperation.Return));
+            I(3, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(4, CilOperation.Divide),
+            I(5, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(6, CilOperation.Leave, new CilOperand.BranchTarget(12)),
+            I(7, CilOperation.Pop),
+            I(8, CilOperation.LoadInt32, new CilOperand.ConstantI4(2)),
+            I(9, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(10, CilOperation.Leave, new CilOperand.BranchTarget(12)),
+            I(11, CilOperation.EndFinally),
+            I(12, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(13, CilOperation.Return));
 
         var result = new EmptyFinallyRemover(true).Rewrite(body);
 
         Assert.Same(@catch, Assert.Single(result.ExceptionRegions));
-        Assert.Equal(CilOperation.Leave, result.Instructions[4].Operation);
-        Assert.Equal(CilOperation.Leave, result.Instructions[8].Operation);
-        Assert.Equal(CilOperation.Nop, result.Instructions[9].Operation);
+        Assert.Equal(CilOperation.Leave, result.Instructions[6].Operation);
+        Assert.Equal(CilOperation.Leave, result.Instructions[10].Operation);
+        Assert.Equal(CilOperation.Nop, result.Instructions[11].Operation);
+    }
+
+    // int x; try { x = 1; } catch { x = 2; } return x: nothing in the try can throw, so the catch is unreachable, as a
+    // runtime-async method's own catch is around an empty body.
+    [Fact]
+    public void RemovesACatchWhoseTryCannotThrow()
+    {
+        var body = Body(
+            [Region(CilExceptionRegionKind.Catch, 0, 3, 3, 4)],
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            I(1, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(2, CilOperation.Leave, new CilOperand.BranchTarget(7)),
+            I(3, CilOperation.Pop),
+            I(4, CilOperation.LoadInt32, new CilOperand.ConstantI4(2)),
+            I(5, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(6, CilOperation.Leave, new CilOperand.BranchTarget(7)),
+            I(7, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(8, CilOperation.Return));
+
+        var result = new EmptyFinallyRemover(true).Rewrite(body);
+
+        Assert.Empty(result.ExceptionRegions);
+        Assert.Equal(I(2, CilOperation.Branch, new CilOperand.BranchTarget(7)), result.Instructions[2]);
+        Assert.All(result.Instructions.Skip(3).Take(4), instruction => Assert.Equal(CilOperation.Nop, instruction.Operation));
+    }
+
+    // try { x = <operation>; } catch { x = 2; }: a division, a checked add and a throw can raise what the catch takes.
+    [Theory]
+    [InlineData(CilOperation.Divide)]
+    [InlineData(CilOperation.AddChecked)]
+    [InlineData(CilOperation.Throw)]
+    public void KeepsACatchWhoseTryCanThrow(CilOperation operation)
+    {
+        var body = Body(
+            [Region(CilExceptionRegionKind.Catch, 0, 5, 5, 4)],
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            I(1, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(2, operation),
+            I(3, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(4, CilOperation.Leave, new CilOperand.BranchTarget(9)),
+            I(5, CilOperation.Pop),
+            I(6, CilOperation.LoadInt32, new CilOperand.ConstantI4(2)),
+            I(7, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(8, CilOperation.Leave, new CilOperand.BranchTarget(9)),
+            I(9, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(10, CilOperation.Return));
+
+        Assert.Same(body, new EmptyFinallyRemover(true).Rewrite(body));
+    }
+
+    // A filter's code is not the catch's handler; and a try holding another region keeps its catch until that region
+    // goes, which the next round of the optimizer takes.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void KeepsAFilterAndACatchAroundAnotherRegion(bool nested)
+    {
+        var outer = nested
+            ? Region(CilExceptionRegionKind.Catch, 0, 6, 6, 2)
+            : new CilExceptionRegion(CilExceptionRegionKind.Filter, 0, 6, 6, 2, null, 8);
+        var body = Body(
+            nested ? [Region(CilExceptionRegionKind.Catch, 1, 2, 3, 2), outer] : [outer],
+            I(0, CilOperation.Nop),
+            I(1, CilOperation.Nop),
+            I(2, CilOperation.Leave, new CilOperand.BranchTarget(5)),
+            I(3, CilOperation.Pop),
+            I(4, CilOperation.Leave, new CilOperand.BranchTarget(5)),
+            I(5, CilOperation.Leave, new CilOperand.BranchTarget(10)),
+            I(6, CilOperation.Pop),
+            I(7, CilOperation.Leave, new CilOperand.BranchTarget(10)),
+            I(8, CilOperation.Pop),
+            I(9, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            I(10, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(11, CilOperation.Return));
+
+        var result = new EmptyFinallyRemover(true).Rewrite(body);
+
+        Assert.Contains(outer, result.ExceptionRegions);
     }
 
     // try { throw null; } finally { } with nothing after the handler: its nops

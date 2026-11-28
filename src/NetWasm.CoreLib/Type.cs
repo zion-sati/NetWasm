@@ -7,10 +7,13 @@ using System.Runtime.CompilerServices;
 
 namespace System
 {
-    // NetWasm: every Type object is a RuntimeType, as on .NET, so a type is its own TypeInfo.
-    internal sealed class RuntimeType : TypeInfo
+    // NetWasm: every Type object is a RuntimeType, as on .NET, so a type is its own TypeInfo. The runtime makes them,
+    // except a shared array's (SharedArrayType), which CoreLib makes.
+    internal class RuntimeType : TypeInfo
     {
         private RuntimeType() { }
+
+        private protected RuntimeType(int semanticTypeId) : base(semanticTypeId) { }
     }
 
     public abstract partial class Type : MemberInfo
@@ -25,6 +28,9 @@ namespace System
         {
             throw new PlatformNotSupportedException("Constructing custom Type metadata providers is not supported on NetWasm.");
         }
+
+        // A shared array's type (SharedArrayType), which CoreLib makes for an array type the program has none of.
+        private protected Type(int semanticTypeId) => SemanticTypeId = semanticTypeId;
 
         // The compiler lowers every call, this one included, to the handle's type; the body is
         // what a delegate or function pointer to the method runs.
@@ -122,6 +128,10 @@ namespace System
             {
                 return true;
             }
+            if (candidate is SharedArrayType || this is SharedArrayType)
+            {
+                return SharedArrays.IsAssignable(this, candidate);
+            }
             // The runtime walks the candidate's base chain and its casting lists, as a cast does.
             return InternalIsTypeAssignable(candidate.SemanticTypeId, SemanticTypeId) != 0;
         }
@@ -180,7 +190,7 @@ namespace System
         private static extern int InternalGetBaseTypeId(int semanticTypeId);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int InternalIsTypeAssignable(int candidateTypeId, int targetTypeId);
+        internal static extern int InternalIsTypeAssignable(int candidateTypeId, int targetTypeId);
     }
 
     internal static class RuntimeTypeFactsFlags

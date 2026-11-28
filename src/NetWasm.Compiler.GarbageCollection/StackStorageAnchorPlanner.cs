@@ -42,11 +42,12 @@ public sealed class StackStorageAnchorPlanner(IStackStorageContinuationAnalyzer 
                     _ => false,
                 };
                 if (!valid) throw new ArgumentException("Anchor demand has an invalid storage location.", nameof(request));
-                var entries = anchor.Location.Kind == StackStorageLocationKind.EvaluationStack
-                    ? request.Storage.Entries : request.Storage.Locals;
-                if (!entries.TryGetValue(offset, out var descriptors) || anchor.Location.Index >= descriptors.Length ||
-                    !descriptors[anchor.Location.Index].CompleteBackingKnown ||
-                    !descriptors[anchor.Location.Index].CapturedBackings.Contains(anchor.BackingType))
+                StackStorageType? descriptor = anchor.Location.Kind == StackStorageLocationKind.EvaluationStack
+                    ? request.Storage.Entries.TryGetValue(offset, out var stack) && anchor.Location.Index < stack.Length
+                        ? stack[anchor.Location.Index] : null
+                    : request.Storage.Locals.TryGetValue(offset, out var locals) && anchor.Location.Index < locals.Length
+                        ? locals[anchor.Location.Index] : null;
+                if (descriptor is not { CompleteBackingKnown: true } known || !known.CapturedBackings.Contains(anchor.BackingType))
                     throw new ArgumentException("Anchor demand has no complete captured backing evidence.", nameof(request));
             }
         }

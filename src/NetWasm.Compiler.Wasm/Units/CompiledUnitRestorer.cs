@@ -100,6 +100,8 @@ internal sealed class CompiledUnitRestorer(
         var body = rewriter.Rewrite(unit.Body, operands.MoveToImmutable(), Identity);
         var parameters = ImmutableArray.CreateBuilder<CliValueKind>(unit.ParameterCount);
         for (var index = 0; index < unit.ParameterCount; index++) parameters.Add(unit.Parameter(index));
+        var moreResults = ImmutableArray.CreateBuilder<CliValueKind>(unit.MoreResultCount);
+        for (var index = 0; index < unit.MoreResultCount; index++) moreResults.Add(unit.MoreResult(index));
         var blocks = ImmutableDictionary.CreateBuilder<int, int>();
         for (var index = 0; index < unit.BlockCount; index++)
         {
@@ -108,7 +110,10 @@ internal sealed class CompiledUnitRestorer(
         }
         var environmentKey = unit.EnvironmentKey.IsEmpty ? "" : unit.EnvironmentKey.ToString();
         var function = new WasmFunctionDefinition(
-            unit.FunctionName.ToString(), new WasmFunctionType(parameters.MoveToImmutable(), unit.Result), body)
+            unit.FunctionName.ToString(), new WasmFunctionType(parameters.MoveToImmutable(), unit.Result)
+            {
+                MoreResults = moreResults.MoveToImmutable(),
+            }, body)
         {
             IsAggressiveInlining = unit.IsAggressiveInlining,
             IsNoInlining = unit.IsNoInlining,

@@ -18,6 +18,20 @@
     <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.Numerics.Vectors/**/*.cs" />
     <!-- The span and string benchmarks, which take upstream's vectorized SpanHelpers, SearchValues and Ascii. -->
     <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.Memory/**/*.cs" />
+    <!-- async methods, ValueTask and channels, the Async family. -->
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.Threading.Tasks/**/*.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.Threading.Tasks.Extensions/**/*.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.Threading.Channels/**/*.cs" />
+    <!-- Suites whose task-returning benchmarks join the Async family; the generator takes no others from them. -->
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.IO.Pipelines/**/*.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.Threading/Perf.SemaphoreSlim.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.IO/TextReaderReadLineTests.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.IO/StreamReaderReadToEndTests.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.IO/StringReaderReadToEndTests.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.IO/StreamReaderReadLineTests.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.IO/StringReaderReadLineTests.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.IO/MemoryStreamTests.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.IO/MemoryStreamChunkedTests.cs" />
     <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/Categories.cs" />
     <Compile Include="$(Micro)shim/*.cs;$(Micro)runner/*.cs;$(MicroBenchmarkGenerated)/Benchmarks.g.cs" />
     <!-- NetWasm's own workloads, such as issue #166's prime search. -->

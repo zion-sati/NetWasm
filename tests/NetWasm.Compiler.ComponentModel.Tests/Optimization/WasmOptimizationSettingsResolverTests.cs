@@ -22,10 +22,32 @@ public sealed class WasmOptimizationSettingsResolverTests
             : StaticInitializationHoistingPolicy.MethodEntry;
 
     // Every optimizing preset turns a branch whose arms only compute a number into a select.
+    // Without wasm-opt, locals that never hold a value from one block into another share slots.
+    private static LocalSlotSharingPolicy LocalSlotSharing(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? LocalSlotSharingPolicy.BlockLocals
+            : LocalSlotSharingPolicy.Disabled;
+
     private static ConditionalSelectPolicy ConditionalSelects(FinalWasmOptimization preset) =>
         preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
             ? ConditionalSelectPolicy.Disabled
             : ConditionalSelectPolicy.Enabled;
+
+    // Every optimizing preset leaves out the null checks of managed addresses it proves non-null and versions loops for
+    // them.
+    private static ByRefNullCheckEliminationPolicy ByRefNullChecks(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? ByRefNullCheckEliminationPolicy.Disabled
+            : ByRefNullCheckEliminationPolicy.VersionedLoops;
+
+    // Every optimizing preset copies small finally handlers into their normal exits: the speed ones up to 256
+    // instructions of copies, the size ones up to 48.
+    private static int FinallyCloningBudget(FinalWasmOptimization preset) => preset switch
+    {
+        FinalWasmOptimization.None or FinalWasmOptimization.O0 => 0,
+        FinalWasmOptimization.Os or FinalWasmOptimization.Oz => 48,
+        _ => 256,
+    };
 
     // The speed presets share CoreLib's bodies for calls on object only at large sites; the rest at 32 targets.
     private static ObjectDispatchPolicy ObjectDispatch(FinalWasmOptimization preset) =>
@@ -131,10 +153,22 @@ public sealed class WasmOptimizationSettingsResolverTests
             ? RangeBranchFoldingPolicy.Disabled
             : RangeBranchFoldingPolicy.ProvenRanges;
 
-    private static UnwrittenStaticFieldFoldingPolicy UnwrittenStaticFieldFolding(FinalWasmOptimization preset) =>
+    // The presets that take whole-program facts take which runtime-async methods cannot suspend.
+    private static RuntimeAsyncSuspensionPolicy RuntimeAsyncSuspension(FinalWasmOptimization preset) =>
         preset is FinalWasmOptimization.O2 or FinalWasmOptimization.O3 or FinalWasmOptimization.Os or FinalWasmOptimization.Oz
-            ? UnwrittenStaticFieldFoldingPolicy.WholeProgram
-            : UnwrittenStaticFieldFoldingPolicy.Disabled;
+            ? RuntimeAsyncSuspensionPolicy.WholeProgram
+            : RuntimeAsyncSuspensionPolicy.Local;
+
+    // The presets whose managed analysis is local to each method dispatch only generic virtual calls by receiver flow:
+    // the early cutoff serves edits there, analyzing each edited method alone.
+    private static ReceiverFlowDispatchPolicy ReceiverFlowDispatch(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? ReceiverFlowDispatchPolicy.GenericVirtualCalls
+            : ReceiverFlowDispatchPolicy.EveryVirtualCall;
+
+    // At every level: the fold decides which host imports a program reaches, which no level may change.
+    private static UnwrittenStaticFieldFoldingPolicy UnwrittenStaticFieldFolding(FinalWasmOptimization preset) =>
+        UnwrittenStaticFieldFoldingPolicy.WholeProgram;
 
     private static LoopInvariantExpressionHoistingPolicy LoopInvariantExpressionHoisting(FinalWasmOptimization preset) =>
         preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
@@ -167,6 +201,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                 ? ManagedSwitchBitTests.Enabled : ManagedSwitchBitTests.Disabled));
             var selects = resolver.Resolve(preset, new(ConditionalSelects: enabled
                 ? ManagedConditionalSelects.Enabled : ManagedConditionalSelects.Disabled));
+            var byRefNullChecks = resolver.Resolve(preset, new(ByRefNullCheckElimination: enabled
+                ? ManagedByRefNullCheckElimination.Enabled : ManagedByRefNullCheckElimination.Disabled));
             var devirtualization = resolver.Resolve(preset, new(Devirtualization: enabled
                 ? ManagedDevirtualization.Enabled : ManagedDevirtualization.Disabled));
             var allocations = resolver.Resolve(preset, new(AllocationElimination: enabled
@@ -235,6 +271,11 @@ public sealed class WasmOptimizationSettingsResolverTests
             {
                 ConditionalSelects = enabled ? ConditionalSelectPolicy.Enabled : ConditionalSelectPolicy.Disabled,
             }, selects);
+            Assert.Equal(baseline with
+            {
+                ByRefNullCheckElimination = enabled
+                    ? ByRefNullCheckEliminationPolicy.VersionedLoops : ByRefNullCheckEliminationPolicy.Disabled,
+            }, byRefNullChecks);
             Assert.Equal(baseline with
             {
                 Devirtualization = enabled ? DevirtualizationPolicy.ExactType : DevirtualizationPolicy.Disabled,
@@ -368,6 +409,8 @@ public sealed class WasmOptimizationSettingsResolverTests
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
             new(ConditionalSelects: (ManagedConditionalSelects)255)));
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(ByRefNullCheckElimination: (ManagedByRefNullCheckElimination)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
             new(Devirtualization: (ManagedDevirtualization)255)));
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
             new(AllocationElimination: (ManagedAllocationElimination)255)));
@@ -469,8 +512,9 @@ public sealed class WasmOptimizationSettingsResolverTests
             new(LoopStrengthReduction: ManagedLoopStrengthReduction.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(RangeBranchFolding: ManagedRangeBranchFolding.Enabled)));
-        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
-            new(UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Enabled)));
+        // The unwritten-field fold runs at every level, None included, so enabling it there is its default.
+        Assert.Equal(UnwrittenStaticFieldFoldingPolicy.WholeProgram, resolver.Resolve(FinalWasmOptimization.None,
+            new(UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Enabled)).UnwrittenStaticFieldFolding);
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(LoopInvariantFieldHoisting: ManagedLoopInvariantFieldHoisting.NullChecks)));
         Assert.Equal(resolver.Resolve(FinalWasmOptimization.None), resolver.Resolve(FinalWasmOptimization.None,
@@ -501,7 +545,8 @@ public sealed class WasmOptimizationSettingsResolverTests
                 NewObjectNullCheckElimination: ManagedNewObjectNullCheckElimination.Disabled,
                 LoopStrengthReduction: ManagedLoopStrengthReduction.Disabled,
                 RangeBranchFolding: ManagedRangeBranchFolding.Disabled,
-                UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Disabled)));
+                // The unwritten-field fold is None's default too.
+                UnwrittenStaticFieldFolding: ManagedUnwrittenStaticFieldFolding.Enabled)));
     }
 
     [Theory]
@@ -593,7 +638,12 @@ public sealed class WasmOptimizationSettingsResolverTests
             RangeBranchFolding: RangeBranchFolding(preset),
             UnwrittenStaticFieldFolding: UnwrittenStaticFieldFolding(preset),
             ObjectDispatch: ObjectDispatch(preset),
-            ConditionalSelects: ConditionalSelects(preset));
+            ConditionalSelects: ConditionalSelects(preset),
+            LocalSlotSharing: LocalSlotSharing(preset),
+            RuntimeAsyncSuspension: RuntimeAsyncSuspension(preset),
+            ByRefNullCheckElimination: ByRefNullChecks(preset),
+            FinallyCloningBudget: FinallyCloningBudget(preset),
+            ReceiverFlowDispatch: ReceiverFlowDispatch(preset));
         var actual = resolver.Resolve(preset);
         Assert.Equal(expected, actual);
         Assert.Equal(preset, actual.BackendPreset);
@@ -726,7 +776,12 @@ public sealed class WasmOptimizationSettingsResolverTests
                     RangeBranchFolding: RangeBranchFolding(preset),
                     UnwrittenStaticFieldFolding: UnwrittenStaticFieldFolding(preset),
                     ObjectDispatch: ObjectDispatch(preset),
-                    ConditionalSelects: ConditionalSelects(preset)),
+                    ConditionalSelects: ConditionalSelects(preset),
+                    LocalSlotSharing: LocalSlotSharing(preset),
+                    RuntimeAsyncSuspension: RuntimeAsyncSuspension(preset),
+                    ByRefNullCheckElimination: ByRefNullChecks(preset),
+                    FinallyCloningBudget: FinallyCloningBudget(preset),
+                    ReceiverFlowDispatch: ReceiverFlowDispatch(preset)),
                 resolver.Resolve(preset, new(hint)));
         }
     }

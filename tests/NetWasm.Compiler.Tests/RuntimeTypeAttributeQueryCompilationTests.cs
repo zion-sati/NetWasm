@@ -11,7 +11,8 @@ namespace NetWasm.Compiler.Tests;
 
 using static CompilerTestSupport;
 
-// An attribute query on a Type known only at run time (a parameter, a lambda's argument, a GetType() result) answers from
+// An attribute query on a Type known only at run time (a parameter, a lambda's argument, a GetType() result, an array's
+// or a span's element, a value read through a ref) answers from
 // the program's run-time types that carry the attribute, through every query form: the instance methods, Attribute's
 // statics and the generic extensions, with inheritance constant or chosen at run time. A type without the attribute
 // answers false, null or an empty array, and a null target throws as on .NET.
@@ -54,6 +55,10 @@ public sealed class RuntimeTypeAttributeQueryCompilationTests
 
             private static Type s_current = typeof(Plain);
 
+            private static readonly Type[] s_types = [typeof(Base), typeof(Derived), typeof(Other), typeof(Plain)];
+
+            private static int CountByRef(ref Type type) => type.GetCustomAttributes(typeof(MarkAttribute), true).Length;
+
             private static bool IsMarked(Type type) =>
                 Marked.GetOrAdd(type, static type => type.GetCustomAttributes(typeof(MarkAttribute), true).Length > 0);
 
@@ -88,6 +93,16 @@ public sealed class RuntimeTypeAttributeQueryCompilationTests
                 if (s_current.GetCustomAttribute<MarkAttribute>()?.Name != "other") return 7;
                 var holder = new Holder { Held = Pick(1) };
                 if (!Attribute.IsDefined(holder.Held, typeof(MarkAttribute), true)) return 8;
+                // An element of a Type[] or of a span of Types, and a Type read through a ref, are Types too.
+                if (s_types[input % 4 == 1 ? 2 : 3].GetCustomAttribute<MarkAttribute>()?.Name != "other") return 9;
+                ReadOnlySpan<Type> span = s_types;
+                if (!Attribute.IsDefined(span[input % 4], typeof(MarkAttribute), true) || Attribute.IsDefined(span[3], typeof(MarkAttribute), true)) return 10;
+                ref Type first = ref s_types[input % 4 - 1];
+                if (first.GetCustomAttributes(typeof(LocalAttribute), false).Length != 1) return 11;
+                if (CountByRef(ref s_current) != 1 || CountByRef(ref holder.Held) != 1) return 12;
+                var marked = 0;
+                foreach (var type in s_types) marked += type.IsDefined(typeof(MarkAttribute), false) ? 1 : 0;
+                if (marked != 2) return 13;
                 return input + 1;
             }
         }
@@ -138,13 +153,16 @@ public sealed class RuntimeTypeAttributeQueryCompilationTests
         }
     }
 
+    // Debug and Release IL: Release keeps the values on the stack where Debug stores them in locals typed Type.
     [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void ARunTimeTypesAttributesAreRead(WasmTarget target)
+    [InlineData(WasmTarget.Wasm32, false)]
+    [InlineData(WasmTarget.Wasm64, false)]
+    [InlineData(WasmTarget.Wasm32, true)]
+    public void ARunTimeTypesAttributesAreRead(WasmTarget target, bool optimizedIl)
     {
         using var assets = TestAssets.Create();
-        var assembly = assets.CompileSource($"RuntimeTypeAttributes{target}", Source);
+        var name = $"RuntimeTypeAttributes{target}{(optimizedIl ? "Release" : "")}";
+        var assembly = optimizedIl ? assets.CompileOptimizedSource(name, Source) : assets.CompileSource(name, Source);
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "RuntimeTypeAttributes.EntryPoint", "Run",
             [new("run", "RuntimeTypeAttributes.EntryPoint", "Run")], Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),

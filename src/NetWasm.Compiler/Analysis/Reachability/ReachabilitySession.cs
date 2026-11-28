@@ -37,6 +37,7 @@ internal sealed class ReachabilitySession : IDisposable
     private readonly ITypeIdentityResolver _typeIdentities;
     private readonly ITypeRepository _typeRepository;
     private readonly IGenericCycleSession _genericCycleSession;
+    private readonly IEffectFreeTypeInitializerClassifier _effectFreeInitializers;
     private readonly IDispatchCandidateIndex _dispatchCandidateIndex;
     private readonly IReadOnlySet<EntityKey> _outwardBoundaries;
     private readonly MethodDefinitionModel? _entryPoint;
@@ -66,8 +67,10 @@ internal sealed class ReachabilitySession : IDisposable
         ITypeDefinitionResolver typeDefinitions,
         ITypeFinder typeFinder,
         ITypeIdentityResolver typeIdentities,
-        ITypeRepository typeRepository)
+        ITypeRepository typeRepository,
+        IEffectFreeTypeInitializerClassifier effectFreeInitializers)
     {
+        _effectFreeInitializers = effectFreeInitializers;
         _state = state;
         MethodAnalysis = methodAnalysis;
         _genericCycleSession = genericCycleSession;
@@ -94,9 +97,14 @@ internal sealed class ReachabilitySession : IDisposable
 
     internal ReachabilityLedger State => _state;
 
-    // Only method-body dependencies seed runtime-typed array creation; derived array roots must not feed themselves
-    // on the next closure pass.
-    internal HashSet<CliTypeIdentity> ArrayElementSeeds { get; } = [];
+    // The type facts the program reads so far.
+    internal RuntimeTypeFactReads TypeFactReads => new(
+        _state.RequiresTypeFacts,
+        _state.RequiresGenericArguments,
+        _state.RequiresDeclaringTypes,
+        _state.RequiresGenericDefinitions,
+        _state.RequiresElementTypes,
+        _state.RequiresInterfaces);
 
     // Types whose handles method bodies name; RuntimeHelpers.RunClassConstructor compiles their initializers.
     internal HashSet<CliTypeIdentity> TypeHandleSeeds { get; } = [];
@@ -208,6 +216,19 @@ internal sealed class ReachabilitySession : IDisposable
             IntrinsicAddressBodies.Enqueue(request);
             MethodAnalysis.Prefetcher.Prefetch(request);
         }
+    }
+
+    // A method generated code calls: reached as any other, and recorded as called from no method body.
+    internal void EnqueueGenerated(MethodInstanceModel method)
+    {
+        _state.GeneratedCallees.Add(method.CanonicalName);
+        EnqueueInstance(method);
+    }
+
+    internal void VisitGenerated(CilOperation operation, MethodInstanceModel method)
+    {
+        _state.GeneratedCallees.Add(method.CanonicalName);
+        VisitMethod(operation, method);
     }
 
     internal void EnqueueInstance(MethodInstanceModel method)
@@ -325,16 +346,21 @@ internal sealed class ReachabilitySession : IDisposable
             return;
         }
 
-        _state.DispatchDependencyPaths.Add(key, CurrentDependencyPath);
+        _state.DispatchDependencyPaths.TryAdd(
+            new DispatchSlot(declaration.Operation, declaration.Declaration.CanonicalName), CurrentDependencyPath);
         EnqueueDispatches(candidates);
     }
+
+    // A dispatched slot use's candidates wait for the receiver flow when the closure dispatches by it.
+    internal ReceiverFlow.ReceiverFlowDispatchGate? DispatchGate { get; set; }
 
     private void EnqueueDispatches(ImmutableArray<DispatchCandidate> candidates)
     {
         foreach (var candidate in candidates)
         {
+            if (DispatchGate?.Holds(candidate) == true) continue;
             _state.PendingDispatches.Enqueue((
-                candidate.DispatchKey,
+                candidate.Slot,
                 candidate.Declaration,
                 candidate.Receiver));
         }
@@ -499,9 +525,7 @@ internal sealed class ReachabilitySession : IDisposable
             return;
         }
 
-        AddDescriptorImplementationType(method.Definition.Name is ".ctor" or ".cctor"
-            ? "System.Reflection.RuntimeConstructorInfo"
-            : "System.Reflection.RuntimeMethodInfo");
+        AddDescriptorImplementationType(Layout.MemberDescriptorTypes.Of(method.Definition));
         AddDescriptorType(method.DeclaringType);
         AddDescriptorType(method.Signature.ReturnSignatureType);
         foreach (var parameter in method.Signature.ParameterSignatureTypes)
@@ -521,7 +545,7 @@ internal sealed class ReachabilitySession : IDisposable
             return;
         }
 
-        AddDescriptorImplementationType("System.Reflection.RuntimeFieldInfo");
+        AddDescriptorImplementationType(Layout.MemberDescriptorTypes.Field);
         AddDescriptorType(field.DeclaringType);
         AddDescriptorType(field.FieldType);
     }
@@ -542,7 +566,7 @@ internal sealed class ReachabilitySession : IDisposable
         }
         _state.PropertyDescriptors.Add(property.CanonicalName, property);
 
-        AddDescriptorImplementationType("System.Reflection.RuntimePropertyInfo");
+        AddDescriptorImplementationType(Layout.MemberDescriptorTypes.Property);
         AddDescriptorType(property.DeclaringType);
         AddDescriptorType(property.PropertyType);
         foreach (var parameter in property.IndexParameterTypes)
@@ -607,7 +631,9 @@ internal sealed class ReachabilitySession : IDisposable
             .Methods
             .Select(_methodRepository.GetMethod)
             .SingleOrDefault(candidate => candidate.Name == ".cctor");
-        if (initializer is null)
+        // An initializer that only stores default values into its own type's statics changes nothing, so the type
+        // needs neither it nor a check that it ran.
+        if (initializer is null || _effectFreeInitializers.Classify(initializer))
         {
             return;
         }
@@ -652,9 +678,9 @@ internal sealed class ReachabilitySession : IDisposable
             var type = _typeFinder.FindType(typeName);
             _state.Types.Add(type.Key);
             AddAllocatedType(_typeIdentities.GetTypeIdentity(type.Key));
-            Enqueue(_typeFinder.FindType(RuntimeExceptionGetters.TypeName).Methods
+            EnqueueGenerated(DirectInstance(_typeFinder.FindType(RuntimeExceptionGetters.TypeName).Methods
                 .Select(_methodRepository.GetMethod)
-                .Single(method => method.Name == RuntimeExceptionGetters.MethodName(kind)));
+                .Single(method => method.Name == RuntimeExceptionGetters.MethodName(kind))));
         }
     }
 

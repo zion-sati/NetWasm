@@ -56,7 +56,7 @@ public static class ThreadPool
     private static void Queue(Action work, ExecutionContext? context)
     {
         s_pendingWorkItemCount++;
-        PlatformServices.Scheduler.Schedule(() =>
+        PlatformServices.Scheduler.Post(() =>
         {
             s_pendingWorkItemCount--;
             if (context is null)
@@ -67,7 +67,7 @@ public static class ThreadPool
             {
                 ExecutionContext.Run(context, static state => ((Action)state!)(), work);
             }
-        }, 0);
+        });
     }
 
     public static bool BindHandle(IntPtr osHandle) => throw Unsupported();

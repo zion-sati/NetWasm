@@ -21,11 +21,12 @@ public sealed class BranchingSequenceStepExecutorTests
         var overlaps = new FixedBranchOverlapClassifier(false);
         var factories = new (string Parameter, Func<BranchingSequenceStepExecutor> Create)[]
         {
-            ("joins", () => new(null!, reachable, branchJoins, overlaps, new DispatcherExitSelector())),
-            ("reachableBlocks", () => new(joins, null!, branchJoins, overlaps, new DispatcherExitSelector())),
-            ("branchJoins", () => new(joins, reachable, null!, overlaps, new DispatcherExitSelector())),
-            ("branchOverlaps", () => new(joins, reachable, branchJoins, null!, new DispatcherExitSelector())),
-            ("dispatcherExits", () => new(joins, reachable, branchJoins, overlaps, null!)),
+            ("joins", () => new(null!, reachable, branchJoins, overlaps, new DispatcherExitSelector(), Chains)),
+            ("reachableBlocks", () => new(joins, null!, branchJoins, overlaps, new DispatcherExitSelector(), Chains)),
+            ("branchJoins", () => new(joins, reachable, null!, overlaps, new DispatcherExitSelector(), Chains)),
+            ("branchOverlaps", () => new(joins, reachable, branchJoins, null!, new DispatcherExitSelector(), Chains)),
+            ("dispatcherExits", () => new(joins, reachable, branchJoins, overlaps, null!, Chains)),
+            ("elseIfChains", () => new(joins, reachable, branchJoins, overlaps, new DispatcherExitSelector(), null!)),
         };
 
         foreach (var (parameter, create) in factories)
@@ -227,7 +228,7 @@ public sealed class BranchingSequenceStepExecutorTests
     {
         var distances = new ControlFlowDistanceFinder();
         var joins = new CommonReachableBlockFinder(
-            new ControlFlowPostDominatorFinder(new ControlFlowPostDominanceAnalyzer()),
+            new ControlFlowPostDominatorFinder(new ControlFlowPostDominanceAnalyzer(new DominatorTreeBuilder())),
             distances);
         var reachableBlocks = new ReachableBlockFinder(distances);
         var command = new BranchingSequenceStepExecutor(
@@ -242,7 +243,8 @@ public sealed class BranchingSequenceStepExecutorTests
                     new ControlFlowComponentAnalyzer(),
                     new ControlFlowCycleClassifier())),
             new BranchReachabilityOverlapClassifier(reachableBlocks),
-                new DispatcherExitSelector());
+                new DispatcherExitSelector(),
+            new ElseIfChainPolicy(2));
         var state = ControlFlowStructuringStateTestFactory.CreateSingleReturnBlock();
         var recursiveBuilder = new StructuredControlFlowBuilderProbe();
         var regions = ImmutableArray.CreateBuilder<StructuredRegionDraft>();
@@ -263,6 +265,8 @@ public sealed class BranchingSequenceStepExecutorTests
         Assert.Equal(0, recursiveBuilder.CallCount);
     }
 
+    private static readonly IElseIfChainPolicy Chains = new ElseIfChainPolicy(2);
+
     private static BranchingSequenceStepExecutor CreateActor(
         FixedJoinFinder joins,
         FixedReachableBlockFinder? reachable = null,
@@ -272,7 +276,8 @@ public sealed class BranchingSequenceStepExecutorTests
             reachable ?? new FixedReachableBlockFinder(),
             branchJoins ?? new FixedBranchJoinSelector(joins.PairResult),
             new FixedBranchOverlapClassifier(overlaps),
-            new DispatcherExitSelector());
+            new DispatcherExitSelector(),
+            new ElseIfChainPolicy(2));
 
     private static StructuredSequenceStepResult Execute<TActor>(
         TActor actor,

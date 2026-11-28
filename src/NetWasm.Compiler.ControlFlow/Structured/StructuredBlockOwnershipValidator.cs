@@ -38,6 +38,13 @@ internal sealed class StructuredBlockOwnershipValidator : IStructuredBlockOwners
                 case StructuredCode code:
                     Record(code.Occurrence, owners);
                     break;
+                case StructuredSwitch table:
+                    Record(table.Head, owners);
+                    foreach (var block in table.Chain)
+                    {
+                        Record(block, owners);
+                    }
+                    break;
                 case StructuredIf conditional:
                     Record(conditional.Condition, owners);
                     Visit(conditional.WhenTrue, method, owners, visitedGroups);

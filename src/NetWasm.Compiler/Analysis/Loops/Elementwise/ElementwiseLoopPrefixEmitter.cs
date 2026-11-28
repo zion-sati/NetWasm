@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using NetWasm.Compiler.Analysis.NullChecks;
 using NetWasm.Compiler.Core;
 using static NetWasm.Compiler.Analysis.Loops.Elementwise.ElementwiseCil;
 using static NetWasm.Compiler.Analysis.Loops.Elementwise.ElementwiseNodes;
@@ -77,6 +78,36 @@ internal sealed class ElementwiseLoopPrefixEmitter(IVectorLoopMethodResolver met
             code.Add(CilOperation.Add);
             prefix.Add(Copy(check.Length));
             code.Add(CilOperation.BranchIfGreaterThanOrEqualUnsigned, testTarget);
+        }
+        // The vector loop reads a span's elements without the checks O0 makes, so it runs only where none of the
+        // elements the loop reads, from i to end - 1 at each of the span's offsets, is at address 0; elsewhere the loop
+        // runs itself and throws where O0 does.
+        foreach (var elements in loop.Folds.SelectMany(static fold => Elements(fold.Value)).Concat(loop.Copies.Values)
+                     .Where(static element => element.Span is not null)
+                     .GroupBy(static element => (element.Array.Operation, element.Array.Operand)))
+        {
+            var element = elements.First();
+            var low = elements.Min(static element => element.Offset);
+            var high = elements.Max(static element => element.Offset);
+            NonZeroAddressRange.BranchUnlessNonZero(
+                code.Add,
+                () =>
+                {
+                    prefix.Add(Copy(element.Array));
+                    code.Counter(low);
+                    if (element.Span!.Conversion is { } conversion) prefix.Add(Copy(conversion));
+                    prefix.Add(Copy(element.Span.Add));
+                },
+                () =>
+                {
+                    code.Emit(loop.End);
+                    code.Constant(high - low - 1);
+                    code.Add(CilOperation.Add);
+                    code.Counter(0);
+                    code.Add(CilOperation.Subtract);
+                },
+                element.Type,
+                testTarget);
         }
         foreach (var (first, second) in Hazards(stores)!)
         {

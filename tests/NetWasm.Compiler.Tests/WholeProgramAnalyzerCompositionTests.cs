@@ -173,6 +173,7 @@ public sealed class WholeProgramAnalyzerCompositionTests
                 new NetWasm.Compiler.Analysis.Arrays.ArrayBoundsCheckEliminatorFactory(),
                 new NetWasm.Compiler.Analysis.Arrays.RepeatedArrayAccessEliminatorFactory(),
                 new NetWasm.Compiler.Analysis.NullChecks.ConstructedObjectNullCheckEliminatorFactory(),
+                new NetWasm.Compiler.Analysis.NullChecks.ByRefNullCheckEliminatorFactory(),
                 new IntegerCheckEliminatorFactory()),
             new AttributeQueryMethodSpecializerFactory(new MetadataCompilationMaterializationFactory()),
             dispatchTargets,
@@ -190,6 +191,7 @@ public sealed class WholeProgramAnalyzerCompositionTests
                 new NetWasm.Compiler.Analysis.Arrays.ArrayBoundsCheckEliminatorFactory(),
                 new NetWasm.Compiler.Analysis.Arrays.RepeatedArrayAccessEliminatorFactory(),
                 new NetWasm.Compiler.Analysis.NullChecks.ConstructedObjectNullCheckEliminatorFactory(),
+                new NetWasm.Compiler.Analysis.NullChecks.ByRefNullCheckEliminatorFactory(),
                 new IntegerCheckEliminatorFactory()),
             typeTests,
             exceptions,
@@ -209,7 +211,11 @@ public sealed class WholeProgramAnalyzerCompositionTests
             new ReachabilityProgressReporter(
                 new CompilerTestLogger<ReachabilityProgressReporter>(), TimeProvider.System),
             typeClassifiers,
-            new ControlFlowGraphBuilderFactory());
+            new ControlFlowGraphBuilderFactory(),
+            UnrecordedAnalysisSteps.Instance,
+            new NetWasm.Compiler.Diagnostics.CollectingCompilerMemoryReleaser(hasProcess: false,
+                new NetWasm.Compiler.Diagnostics.ProcessCompilerMemoryReader(hasProcess: false), floor: 0, growth: 0,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<NetWasm.Compiler.Diagnostics.CollectingCompilerMemoryReleaser>.Instance));
         var settings = new WasmOptimizationSettingsResolver().Resolve(FinalWasmOptimization.Oz,
             new(ConstantArgumentPropagation: constants ? ManagedConstantArgumentPropagation.Enabled : ManagedConstantArgumentPropagation.Disabled,
                 StaticArrayPopulationElimination: populations ? ManagedStaticArrayPopulationElimination.Enabled : ManagedStaticArrayPopulationElimination.Disabled,
@@ -407,7 +413,8 @@ public sealed class WholeProgramAnalyzerCompositionTests
             WasmOptimizationSettings optimizationSettings,
             IRuntimeIntrinsicRegistry intrinsics,
             PlatformWorldCapabilities world,
-            ITypeIdentityResolver typeIdentities)
+            ITypeIdentityResolver typeIdentities,
+            NetWasm.Compiler.Analysis.CompositeFormats.IToStringOnlyTypeClassifier toStringOnlyTypes)
         {
             Called = true;
             return new MethodSpecializerFactory(
@@ -428,7 +435,8 @@ public sealed class WholeProgramAnalyzerCompositionTests
                 optimizationSettings,
                 intrinsics,
                 world,
-                typeIdentities);
+                typeIdentities,
+                toStringOnlyTypes);
         }
     }
 
@@ -551,14 +559,17 @@ public sealed class WholeProgramAnalyzerCompositionTests
             IAllocationCapabilityAnalyzer allocationCapabilities,
             IManagedByRefEffectAnalyzer byRefEffects,
             IDelegateBindingPlanner delegateBindings,
-            IObjectDispatchSharing objectDispatchSharing)
+            IObjectDispatchSharing objectDispatchSharing,
+            IDispatchSiteTargetSelector siteTargets)
         {
             Called = true;
             return new ReachableProgramBuilder(
                 allocationCapabilities,
                 byRefEffects,
                 delegateBindings,
-                objectDispatchSharing);
+                objectDispatchSharing,
+                siteTargets,
+                UnrecordedAnalysisSteps.Instance);
         }
     }
 

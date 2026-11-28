@@ -24,8 +24,21 @@ internal readonly record struct RuntimeImportSelection(
     // The program's event loop asks for idle and quiet collections.
     bool IncludeEventLoopCollection = false,
     // The program collects its collector's youngest generation alone (GC.Collect(0)).
-    bool IncludeYoungCollection = false)
+    bool IncludeYoungCollection = false,
+    // The program allocates shared arrays (SharedArrayShapes), so its casts, copies and stores use the runtime's
+    // forms that read a shared array's element.
+    bool IncludeSharedArrays = false)
 {
+    // The runtime's cast of an object: the form that also reads a shared array's element where the program has them.
+    public RuntimeImportSymbol IsAssignable =>
+        IncludeSharedArrays ? RuntimeImportSymbol.IsAssignableShared : RuntimeImportSymbol.IsAssignable;
+
+    public RuntimeImportSymbol ArrayCopy =>
+        IncludeSharedArrays ? RuntimeImportSymbol.ArrayCopyShared : RuntimeImportSymbol.ArrayCopy;
+
+    public RuntimeImportSymbol ArraySetValue =>
+        IncludeSharedArrays ? RuntimeImportSymbol.ArraySetValueShared : RuntimeImportSymbol.ArraySetValue;
+
     // Whether a module with this selection imports the runtime function.
     public bool Includes(RuntimeImportSymbol symbol) =>
         (IncludeExceptionCapture || symbol != RuntimeImportSymbol.ManagedExceptionCapture) &&
@@ -57,6 +70,10 @@ internal readonly record struct RuntimeImportSelection(
             (RuntimeImportSymbol.RecordReferenceWrite or RuntimeImportSymbol.RecordReferenceWrites)) &&
         (IncludeObjectGeneration || symbol != RuntimeImportSymbol.GcObjectGeneration) &&
         (IncludeYoungCollection || symbol != RuntimeImportSymbol.GcCollectYoung) &&
+        (IncludeSharedArrays || symbol is not
+            (RuntimeImportSymbol.RegisterSharedArrays or RuntimeImportSymbol.IsAssignableShared or
+             RuntimeImportSymbol.ArrayCopyShared)) &&
+        (IncludeSharedArrays && IncludeArraySetValue || symbol != RuntimeImportSymbol.ArraySetValueShared) &&
         (IncludeEventLoopCollection || symbol is not
             (RuntimeImportSymbol.CollectWhenIdle or RuntimeImportSymbol.CollectWhenQuiet)) &&
         (IncludeUnhandledExceptionHint || symbol != RuntimeImportSymbol.ReportUnhandledException) &&

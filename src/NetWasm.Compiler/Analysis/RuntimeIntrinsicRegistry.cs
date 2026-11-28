@@ -53,6 +53,16 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                     method.Signature.ParameterTypes.AsSpan().SequenceEqual(
                         [CliValueKind.I4, CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I4]) =>
                     RuntimeIntrinsic.ArrayCreateRectangularInstance,
+                ("System.Array", "InternalCreateBoundedInstance") when method.IsStatic &&
+                    method.GenericArity == 0 && method.Signature.ReturnType == CliValueKind.ManagedReference &&
+                    method.Signature.ParameterTypes.AsSpan().SequenceEqual(
+                        [CliValueKind.I4, CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I4]) =>
+                    RuntimeIntrinsic.ArrayCreateBoundedInstance,
+                ("System.Array", "InternalCreateSharedInstance") when method.IsStatic &&
+                    method.GenericArity == 0 && method.Signature.ReturnType == CliValueKind.ManagedReference &&
+                    method.Signature.ParameterTypes.AsSpan().SequenceEqual(
+                        [CliValueKind.I4, CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I4]) =>
+                    RuntimeIntrinsic.ArrayCreateSharedInstance,
                 ("System.Array", "InternalGetValue") => RuntimeIntrinsic.ArrayGetValue,
                 ("System.Array", "InternalCopy") => RuntimeIntrinsic.ArrayCopy,
                 ("System.Array", "InternalClear") => RuntimeIntrinsic.ArrayClear,
@@ -151,6 +161,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                     RuntimeIntrinsic.UnsafeAsRef,
                 ("System.Runtime.CompilerServices.Unsafe", "NullRef") =>
                     RuntimeIntrinsic.UnsafeNullRef,
+                ("System.Runtime.CompilerServices.NonZeroAddress", "Of") =>
+                    RuntimeIntrinsic.NonZeroAddress,
                 ("System.Runtime.CompilerServices.Unsafe", "IsAddressGreaterThan") =>
                     RuntimeIntrinsic.UnsafeIsAddressGreaterThan,
                 ("System.Runtime.CompilerServices.Unsafe", "SizeOf") =>
@@ -286,6 +298,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                     RuntimeIntrinsic.NativeIntegerSize,
                 ("System.Runtime.InteropServices.NetWasmHost", "get_IsJavaScriptHost") =>
                     RuntimeIntrinsic.JavaScriptHost,
+                ("System.Runtime.CompilerServices.RuntimeHelpers", "IsKnownConstant") =>
+                    RuntimeIntrinsic.IsKnownConstant,
                 ("System.BitConverter", "SingleToInt32Bits") =>
                     RuntimeIntrinsic.SingleToInt32Bits,
                 ("System.BitConverter", "Int32BitsToSingle") =>

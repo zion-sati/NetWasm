@@ -57,6 +57,10 @@ internal interface ICompilationScenarioExecutor
 internal sealed class CompilationScenarioExecutor(TestAssets assets) :
     ICompilationScenarioExecutor
 {
+    // NETWASM_TEST_RECEIVER_FLOW_AUDIT=1 compiles every scenario with the receiver flow audit.
+    private static readonly bool ReceiverFlowAuditRun =
+        System.Environment.GetEnvironmentVariable("NETWASM_TEST_RECEIVER_FLOW_AUDIT") == "1";
+
     private readonly TestAssets _assets = assets ??
         throw new ArgumentNullException(nameof(assets));
 
@@ -111,7 +115,11 @@ internal sealed class CompilationScenarioExecutor(TestAssets assets) :
             Optimization: scenario.Optimization,
             EntryPointKind: scenario.ObserveMethodName is null
                 ? CompilerEntryPointKind.RawFunction
-                : CompilerEntryPointKind.ManagedExecutable));
+                : CompilerEntryPointKind.ManagedExecutable)
+        {
+            // A qualification run of the scenarios under the receiver flow audit (RECEIVER_TYPE_FLOW_DESIGN.md, step B).
+            ReceiverFlowAudit = ReceiverFlowAuditRun,
+        });
 
         CompilerTestSupport.ValidateWithNode(compilation.ApplicationModule, _assets.Directory);
 

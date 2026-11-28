@@ -142,7 +142,18 @@ internal sealed class WasmMergeSink
 
     private void Reserve(int count)
     {
-        if (Length + count <= _buffer.Length) return;
-        Array.Resize(ref _buffer, Math.Max(_buffer.Length * 2, Length + count));
+        if ((long)Length + count <= _buffer.Length) return;
+        Array.Resize(ref _buffer, Grown(_buffer.Length, (long)Length + count));
+    }
+
+    // The capacity to grow to: double, so a section written piece by piece is copied a logarithmic number of times,
+    // computed in 64 bits and capped at the largest array. Doubled in 32 bits, a capacity past 1 GiB overflowed and the
+    // buffer grew only to what each write needed, so every later write copied it whole: the three-app repro's merged
+    // code section, past 1 GiB, took over twenty minutes in one merge.
+    internal static int Grown(int capacity, long needed)
+    {
+        if (needed > Array.MaxLength)
+            throw new InvalidOperationException("A merged module section does not fit in one array.");
+        return (int)Math.Min(Math.Max(2L * capacity, needed), Array.MaxLength);
     }
 }

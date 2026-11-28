@@ -32,19 +32,37 @@ internal sealed class NumericComparisonInstructionEmitter(
         Action<InstructionEmissionRequest, IWasmInstructionWriter> emit) =>
         new(operation, InstructionFamily.Numeric, emit);
 
-    private void EmitGreaterThanSigned(InstructionEmissionRequest request, IWasmInstructionWriter code) =>
+    // An address orders as unsigned: desktop's are never negative, where a wasm32 one may have its top bit set.
+    private static bool ComparesAddresses(InstructionEmissionRequest request) =>
+        request.Stack[^1] == CliValueKind.ManagedAddress || request.Stack[^2] == CliValueKind.ManagedAddress;
+
+    private void EmitGreaterThanSigned(InstructionEmissionRequest request, IWasmInstructionWriter code)
+    {
+        if (ComparesAddresses(request))
+        {
+            EmitComparison(request, code, ComparisonKind.GreaterThanUnsigned);
+            return;
+        }
         EmitNumericComparison(
             request, code, () => code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32GreaterThanSigned)),
             () => code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64GreaterThanSigned)),
             () => code.Write(WasmInstruction.NoOperand(WasmOpcodes.F32GreaterThan)),
             () => code.Write(WasmInstruction.NoOperand(WasmOpcodes.F64GreaterThan)));
+    }
 
-    private void EmitLessThanSigned(InstructionEmissionRequest request, IWasmInstructionWriter code) =>
+    private void EmitLessThanSigned(InstructionEmissionRequest request, IWasmInstructionWriter code)
+    {
+        if (ComparesAddresses(request))
+        {
+            EmitComparison(request, code, ComparisonKind.LessThanUnsigned);
+            return;
+        }
         EmitNumericComparison(
             request, code, () => code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32LessThanSigned)),
             () => code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64LessThanSigned)),
             () => code.Write(WasmInstruction.NoOperand(WasmOpcodes.F32LessThan)),
             () => code.Write(WasmInstruction.NoOperand(WasmOpcodes.F64LessThan)));
+    }
 
     private void EmitNumericComparison(
         InstructionEmissionRequest request, IWasmInstructionWriter code,

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using NetWasm.Compiler.ComponentModel.Tests.Debugging;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -253,13 +254,15 @@ public sealed class ComponentModelCoverageTests
             new WasmCoreModuleValidator(new NoopPackageOperations()),
             new NoopInlineAnnotations()));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
-            null!, coreLinker, new SystemFileMover(), new PlainCoreModuleImportValidator()));
+            null!, coreLinker, new SystemFileMover(), new PlainCoreModuleImportValidator(), new RecordingDebugInformation()));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
-            packageOperations, null!, new SystemFileMover(), new PlainCoreModuleImportValidator()));
+            packageOperations, null!, new SystemFileMover(), new PlainCoreModuleImportValidator(), new RecordingDebugInformation()));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
-            packageOperations, coreLinker, null!, new PlainCoreModuleImportValidator()));
+            packageOperations, coreLinker, null!, new PlainCoreModuleImportValidator(), new RecordingDebugInformation()));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
-            packageOperations, coreLinker, new SystemFileMover(), null!));
+            packageOperations, coreLinker, new SystemFileMover(), null!, new RecordingDebugInformation()));
+        Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
+            packageOperations, coreLinker, new SystemFileMover(), new PlainCoreModuleImportValidator(), null!));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageOperationRunner(null!));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackager(
             null!, packageFactory, packageExecution, capability));
@@ -511,7 +514,8 @@ public sealed class ComponentModelCoverageTests
             ComponentTarget target,
             FinalWasmOptimization optimization,
             bool converge,
-            bool lowMemoryUnused)
+            bool lowMemoryUnused,
+            bool keepNames)
         {
         }
     }

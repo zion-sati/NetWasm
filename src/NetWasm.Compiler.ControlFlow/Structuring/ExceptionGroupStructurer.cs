@@ -16,7 +16,9 @@ internal sealed class ExceptionGroupStructurer(
     ILoopContinuationBuilder loopContinuations,
     INestedFlowClassifier nestedFlows,
     IBlockRangeStructurer ranges,
-    INormalLeaveTargetFinder leaveTargets) : IExceptionGroupStructurer
+    INormalLeaveTargetFinder leaveTargets,
+    ITerminalContinuationFinder terminalContinuations,
+    IContinuationExtentFinder continuationExtents) : IExceptionGroupStructurer
 {
     private readonly IExceptionScopeFinder _exceptionScopes = exceptionScopes ?? throw new ArgumentNullException(nameof(exceptionScopes));
     private readonly IContinuationDispatcherBuilder _continuationDispatchers = continuationDispatchers ?? throw new ArgumentNullException(nameof(continuationDispatchers));
@@ -24,6 +26,10 @@ internal sealed class ExceptionGroupStructurer(
     private readonly INestedFlowClassifier _nestedFlows = nestedFlows ?? throw new ArgumentNullException(nameof(nestedFlows));
     private readonly IBlockRangeStructurer _ranges = ranges ?? throw new ArgumentNullException(nameof(ranges));
     private readonly INormalLeaveTargetFinder _leaveTargets = leaveTargets ?? throw new ArgumentNullException(nameof(leaveTargets));
+    private readonly ITerminalContinuationFinder _terminalContinuations = terminalContinuations ??
+        throw new ArgumentNullException(nameof(terminalContinuations));
+    private readonly IContinuationExtentFinder _continuationExtents = continuationExtents ??
+        throw new ArgumentNullException(nameof(continuationExtents));
 
     public ImmutableArray<StructuredExceptionGroupDraft> Structure(ControlFlowStructuringState state,
         ImmutableArray<CilExceptionRegion> regions)
@@ -32,32 +38,56 @@ internal sealed class ExceptionGroupStructurer(
         {
             return [];
         }
+        // The reachable blocks' starts, in order: whether a try holds one is a binary search.
+        var reachableStarts = state.Graph.Blocks
+            .Where(block => state.Graph.ReachableBlocks.Contains(block.Index))
+            .Select(block => block.StartOffset)
+            .Order()
+            .ToArray();
         var sources = regions
             // Keep all original regions in the CIL graph for lexical transfer
             // validation, but only executable protected code owns a group.
-            .Where(region => state.Graph.Blocks.Any(block =>
-                state.Graph.ReachableBlocks.Contains(block.Index) &&
-                block.StartOffset >= region.TryOffset &&
-                block.StartOffset < region.TryOffset + region.TryLength))
+            .Where(region => HoldsReachableBlock(reachableStarts, region.TryOffset, region.TryOffset + region.TryLength))
             .GroupBy(region => (region.TryOffset, region.TryLength))
             .Select(group => new ExceptionGroupSource(
                 group.Key.TryOffset,
                 group.Key.TryLength,
                 [.. group]))
             .ToArray();
-        var parents = new Dictionary<ExceptionGroupSource, ExceptionGroupSource>();
-        foreach (var child in sources)
+        var parents = Parents(sources);
+        // Each group's children in try order, and its index among the groups, from the parent map once.
+        var childrenOf = new Dictionary<ExceptionGroupSource, List<ExceptionGroupSource>>();
+        var sourceIndex = new Dictionary<ExceptionGroupSource, int>(sources.Length);
+        for (var index = 0; index < sources.Length; index++)
         {
-            var parent = sources
-                .Where(candidate => candidate != child &&
-                    _exceptionScopes.Find(candidate, child) is not null)
-                .OrderBy(candidate =>
-                    _exceptionScopes.Find(candidate, child)!.Value.Length)
-                .FirstOrDefault();
-            if (parent is not null)
+            sourceIndex[sources[index]] = index;
+            if (!parents.TryGetValue(sources[index], out var parent)) continue;
+            if (!childrenOf.TryGetValue(parent, out var list)) childrenOf[parent] = list = [];
+            list.Add(sources[index]);
+        }
+        foreach (var list in childrenOf.Values)
+        {
+            var ordered = list.OrderBy(candidate => candidate.TryOffset).ToArray();
+            list.Clear();
+            list.AddRange(ordered);
+        }
+        // The groups a group holds: its descendants, which in valid IL are exactly the groups inside one of its
+        // scopes, in the order of the groups.
+        ExceptionGroupSource[] Descendants(ExceptionGroupSource source)
+        {
+            var found = new List<ExceptionGroupSource>();
+            var pending = new Stack<ExceptionGroupSource>();
+            pending.Push(source);
+            while (pending.Count > 0)
             {
-                parents.Add(child, parent);
+                if (!childrenOf.TryGetValue(pending.Pop(), out var children)) continue;
+                foreach (var child in children)
+                {
+                    found.Add(child);
+                    pending.Push(child);
+                }
             }
+            return [.. found.OrderBy(candidate => sourceIndex[candidate])];
         }
         var methodEnd = state.Graph.MethodBody.Instructions[^1].NextOffset;
 
@@ -65,21 +95,22 @@ internal sealed class ExceptionGroupStructurer(
             ExceptionGroupSource source,
             int continuationBoundary)
         {
-            var children = sources
-                .Where(candidate => parents.GetValueOrDefault(candidate) == source)
-                .OrderBy(candidate => candidate.TryOffset)
-                .ToArray();
+            var children = childrenOf.TryGetValue(source, out var ownChildren) ? ownChildren.ToArray() : [];
             var childScopes = children.ToDictionary(
                 child => child,
                 child => _exceptionScopes.Find(source, child)!.Value);
+            // Per scope, its children's try starts in order, for the continuation boundaries.
+            var siblingStarts = new Dictionary<ExceptionScope, List<int>>();
+            foreach (var child in children)
+            {
+                if (!siblingStarts.TryGetValue(childScopes[child], out var starts)) siblingStarts[childScopes[child]] = starts = [];
+                starts.Add(child.TryOffset);
+            }
             var protectedChildren = children
                 .Where(child => childScopes[child].Kind ==
                     ExceptionScopeKind.Protected)
                 .ToArray();
-            var nestedSources = sources
-                .Where(candidate => candidate != source &&
-                    IsContained(source, candidate))
-                .ToArray();
+            var nestedSources = Descendants(source);
             var handlerNestedSources = nestedSources
                 .Where(candidate => _exceptionScopes.Find(source, candidate)!
                     .Value.Kind != ExceptionScopeKind.Protected)
@@ -141,6 +172,7 @@ internal sealed class ExceptionGroupStructurer(
                 parents.TryGetValue(source, out var parent) &&
                 _exceptionScopes.Find(parent, source)!.Value.Kind ==
                 ExceptionScopeKind.Protected;
+            var continuationEnds = new Dictionary<int, int>();
             var continuations = leaveTargets.Select((target, index) =>
             {
                 var internalLoop = FindInternalLoop(source, target);
@@ -156,9 +188,7 @@ internal sealed class ExceptionGroupStructurer(
                         target,
                         StructuredSequenceDraft.Empty);
                 }
-                var continuationEnd = continuationBoundary +
-                    (methodEnd - continuationBoundary) *
-                    Math.Max(0, Math.Sign((long)target - continuationBoundary));
+                var continuationEnd = ContinuationEnd(target);
                 return new StructuredExceptionContinuationDraft(
                     target,
                     internalLoop is null
@@ -170,16 +200,51 @@ internal sealed class ExceptionGroupStructurer(
                             continuationEnd - target,
                             internalLoop));
             }).ToImmutableArray();
-            var canDispatchContinuations = !parents.ContainsKey(source) &&
+            // A top-level block's continuations after the first are emitted after it, each behind a test of the leave
+            // that chose it, when none of them can run on into the next: straight-line blocks ending in a return, or a
+            // closed set of blocks that ends in a return or a throw on every path (TerminalContinuationFinder), whose
+            // blocks the continuation then owns as it owns straight-line ones. Otherwise a dispatcher takes them all.
+            var dispatchable = !parents.ContainsKey(source) &&
                 continuations.Length > 1 &&
-                continuations.Skip(1).Any(continuation =>
-                    !IsReturnContinuation(continuation.Body)) &&
                 leaveTargets.All(target => FindInternalLoop(source, target) is null);
+            var open = dispatchable
+                ? continuations.Skip(1).Where(continuation => !IsReturnContinuation(continuation.Body)).ToArray()
+                : [];
+            var closed = open.Select(continuation => _terminalContinuations.Find(state.Graph,
+                    continuation.TargetOffset,
+                    ContinuationEnd(continuation.TargetOffset),
+                    [.. continuations.Select(other => other.TargetOffset)
+                        .Where(other => other != continuation.TargetOffset)]))
+                .ToArray();
+            var canDispatchContinuations = closed.Any(blocks => blocks is null);
+            if (!canDispatchContinuations)
+            {
+                foreach (var blocks in closed) state.ContinuationOwnedBlocks.UnionWith(blocks!);
+            }
+
+            // Where one continuation's code ends (ContinuationExtentFinder), found once per target.
+            int ContinuationEnd(int target)
+            {
+                if (!continuationEnds.TryGetValue(target, out var end))
+                {
+                    continuationEnds[target] = end =
+                        _continuationExtents.End(state.Graph, [target], continuationBoundary, methodEnd);
+                }
+                return end;
+            }
+
+            // A dispatcher takes the code of all the continuations, which ends at the boundary, where it joins the code
+            // after it, only if none of them runs past the boundary.
+            var dispatcherEnd = canDispatchContinuations
+                ? _continuationExtents.End(state.Graph,
+                    [.. continuations.Select(continuation => continuation.TargetOffset)],
+                    continuationBoundary,
+                    methodEnd)
+                : methodEnd;
             var dispatcher = canDispatchContinuations
                 ? _continuationDispatchers.Build(state,
                     continuations.Select(continuation => continuation.TargetOffset),
-                    continuationBoundary,
-                    methodEnd)
+                    dispatcherEnd)
                 : null;
             return new StructuredExceptionGroupDraft(
                 source.TryOffset,
@@ -189,11 +254,11 @@ internal sealed class ExceptionGroupStructurer(
                     ..source.Regions.Select((region, clauseIndex) =>
                         new StructuredExceptionClauseDraft(
                             region,
-                            BuildNestedExceptionRange(
+                            Handler(region, BuildNestedExceptionRange(
                                 region.HandlerOffset,
                                 region.HandlerLength,
                                 ExceptionScopeKind.Handler,
-                                clauseIndex),
+                                clauseIndex)),
                             region.FilterOffset is int filterOffset
                                 ? BuildNestedExceptionRange(
                                     filterOffset,
@@ -208,23 +273,31 @@ internal sealed class ExceptionGroupStructurer(
                         continuation with { Body = StructuredSequenceDraft.Empty })])
             {
                 ContinuationDispatcher = dispatcher,
-                ContinuationJoinBlock = dispatcher is null ||
-                    continuationBoundary >= methodEnd ||
-                    leaveTargets.Any(target => target > continuationBoundary)
-                        ? null
-                        : state.Graph.GetBlockAtOffset(continuationBoundary).Index,
+                ContinuationJoinBlock = dispatcher is null || dispatcherEnd >= methodEnd
+                    ? null
+                    : state.Graph.GetBlockAtOffset(continuationBoundary).Index,
             };
 
+            // A finally or fault handler is left by falling out of its end, so its endfinally ends it.
+            static StructuredSequenceDraft Handler(CilExceptionRegion region, StructuredSequenceDraft body) =>
+                region.Kind is CilExceptionRegionKind.Finally or CilExceptionRegionKind.Fault
+                    ? EndFinallyPlacement.EndLast(body)
+                    : body;
+
+            // The next child in the same scope (children are in try order), or the scope's end.
             int FindChildContinuationBoundary(ExceptionGroupSource child)
             {
                 var scope = childScopes[child];
-                return children
-                    .Where(candidate => candidate != child &&
-                        childScopes[candidate] == scope &&
-                        candidate.TryOffset > child.TryOffset)
-                    .Select(candidate => candidate.TryOffset)
-                    .DefaultIfEmpty(scope.End)
-                    .Min();
+                var starts = siblingStarts[scope];
+                var low = 0;
+                var high = starts.Count;
+                while (low < high)
+                {
+                    var middle = low + (high - low) / 2;
+                    if (starts[middle] <= child.TryOffset) low = middle + 1;
+                    else high = middle;
+                }
+                return low < starts.Count ? starts[low] : scope.End;
             }
 
             StructuredSequenceDraft BuildNestedExceptionRange(
@@ -319,6 +392,7 @@ internal sealed class ExceptionGroupStructurer(
                     // loop. Only protected regions in the body can route their
                     // continuations through this loop's break/continue labels.
                     loop.BodyComponent.Contains(tryEntry) &&
+                    HoldsGroup(loop, tryEntry) &&
                     (loop.Component.Contains(targetBlock) ||
                         loop.Exit == targetBlock) &&
                     (enclosingParent is null ||
@@ -327,6 +401,15 @@ internal sealed class ExceptionGroupStructurer(
                 .FirstOrDefault();
         }
 
+        // A loop whose header is the try's entry lies inside the protected code, as a while (true) loop that is
+        // the first statement of a using block does: its back edges come from inside the try. A branch from outside
+        // to the try's first instruction, and a catch's leave into its own try, go to an entry point the try reentry
+        // lowerer puts just before the try, so a loop around a try has its header there or earlier (Roslyn's starts
+        // at a nop before the try). A loop inside the group breaks out of itself, not out of the group, so the
+        // group's continuations cannot use its labels, even where the loop's exit is a continuation's target. Any
+        // other header whose loop holds the try's entry is outside the protected code.
+        static bool HoldsGroup(LoopRegion loop, int tryEntry) => loop.Header != tryEntry;
+
         bool IsInProtectedCode(ExceptionGroupSource group, int block)
         {
             var offset = state.Graph.GetBlock(block).StartOffset;
@@ -334,6 +417,60 @@ internal sealed class ExceptionGroupStructurer(
         }
     }
 
-    private bool IsContained(ExceptionGroupSource container, ExceptionGroupSource candidate) =>
-        _exceptionScopes.Find(container, candidate) is not null;
+    private static bool HoldsReachableBlock(int[] starts, int start, int end)
+    {
+        var low = 0;
+        var high = starts.Length;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (starts[middle] < start) low = middle + 1;
+            else high = middle;
+        }
+        return low < starts.Length && starts[low] < end;
+    }
+
+    // Each group's parent: of the groups with a scope (its try, a filter, a handler) holding the group from its try to
+    // the end of its last handler, the one whose scope is shortest, the earlier group on a tie. One sweep over the
+    // groups in try order with the scopes open there, which are nested in valid IL: the groups' nesting depth per
+    // group, not every group per group.
+    private static Dictionary<ExceptionGroupSource, ExceptionGroupSource> Parents(ExceptionGroupSource[] sources)
+    {
+        var scopes = new List<(int Start, int End, int Owner)>();
+        for (var owner = 0; owner < sources.Length; owner++)
+        {
+            var source = sources[owner];
+            scopes.Add((source.TryOffset, source.TryEnd, owner));
+            foreach (var region in source.Regions)
+            {
+                if (region.FilterOffset is int filter) scopes.Add((filter, region.HandlerOffset, owner));
+                scopes.Add((region.HandlerOffset, checked(region.HandlerOffset + region.HandlerLength), owner));
+            }
+        }
+        var byStart = scopes.OrderBy(scope => scope.Start).ToArray();
+        var parents = new Dictionary<ExceptionGroupSource, ExceptionGroupSource>();
+        var open = new List<(int Start, int End, int Owner)>();
+        var next = 0;
+        foreach (var child in Enumerable.Range(0, sources.Length).OrderBy(index => sources[index].TryOffset))
+        {
+            var start = sources[child].TryOffset;
+            var extent = sources[child].Extent;
+            while (next < byStart.Length && byStart[next].Start <= start) open.Add(byStart[next++]);
+            open.RemoveAll(scope => scope.End < start);
+            var best = -1;
+            var bestLength = 0;
+            foreach (var scope in open)
+            {
+                if (scope.Owner == child || scope.End < extent) continue;
+                var length = scope.End - scope.Start;
+                if (best < 0 || length < bestLength || length == bestLength && scope.Owner < best)
+                {
+                    best = scope.Owner;
+                    bestLength = length;
+                }
+            }
+            if (best >= 0) parents.Add(sources[child], sources[best]);
+        }
+        return parents;
+    }
 }

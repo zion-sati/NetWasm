@@ -17,7 +17,8 @@ internal sealed class ConstrainedCallRewriter(
     IMethodRepository methods,
     IMethodInstanceResolver methodInstances,
     ISymbolFormatter symbols,
-    IConstrainedCallTargetResolver targets) : IMethodRewriteRule
+    IConstrainedCallTargetResolver targets,
+    IRuntimeIntrinsicRegistry intrinsics) : IMethodRewriteRule
 {
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -140,6 +141,25 @@ internal sealed class ConstrainedCallRewriter(
                 changed = true;
                 continue;
             }
+            // A value type whose method a reference type implements (System.Enum's methods for an enum, such as its
+            // explicit ISpanFormattable.TryFormat and IConvertible members) takes the call on a box of its value, as
+            // the prefix does (ECMA-335 III.2.1): that method's this is an object. The box's type is exact, so the
+            // call is direct. Only the intrinsics whose emitters read the value at the prefix's managed pointer keep
+            // the prefix.
+            if (concreteType.IsValueType && !implementation.IsStatic && directOperation == CilOperation.Call &&
+                implementation.DeclaringType != concreteType.Key &&
+                !typeDefinitions.ResolveTypeIdentity(resolved.DeclaringType).IsValueType &&
+                !TakesConstrainedReceiver(implementation))
+            {
+                boxed.Add((index - 1, constrainedType, resolved.Signature.ParameterSignatureTypes));
+                instructions[index] = call with
+                {
+                    Operation = CilOperation.Call,
+                    Operand = new CilOperand.MethodInstance(resolved),
+                };
+                changed = true;
+                continue;
+            }
             instructions[index] = call with
             {
                 Operation = directOperation,
@@ -197,6 +217,16 @@ internal sealed class ConstrainedCallRewriter(
     // A value type that inherits a parameterless ToString from Object or ValueType still has its
     // managed pointer on the stack, not a box, so a direct call would read the value as an object.
     // CoreLib's by-reference helper answers with the value type's name, as the boxed call does.
+    // The intrinsics whose emitters take a constrained call's receiver as the managed pointer to the value
+    // (EnumEqualsIntrinsicEmitter, EnumGetHashCodeIntrinsicEmitter, EnumCompareToIntrinsicEmitter,
+    // EnumHasFlagIntrinsicEmitter, EnumTypeCodeIntrinsicEmitter, ValueTypeEqualsIntrinsicEmitter,
+    // ValueTypeGetHashCodeIntrinsicEmitter); every other inherited method, intrinsic or not, takes the box.
+    private bool TakesConstrainedReceiver(MethodDefinitionModel implementation) =>
+        intrinsics.TryGetIntrinsic(implementation.Key, out var intrinsic) && intrinsic is
+            RuntimeIntrinsic.EnumEquals or RuntimeIntrinsic.EnumGetHashCode or RuntimeIntrinsic.EnumCompareTo or
+            RuntimeIntrinsic.EnumHasFlag or RuntimeIntrinsic.EnumGetTypeCode or
+            RuntimeIntrinsic.ValueTypeEquals or RuntimeIntrinsic.ValueTypeGetHashCode;
+
     private MethodInstanceModel? InheritedValueTypeToString(
         TypeDefinitionModel concreteType,
         MethodDefinitionModel implementation,

@@ -12,4 +12,9 @@ public sealed record RootDecisionRequest(
     int Block,
     CilInstruction Instruction,
     IMembership<EntityKey> AllocatingMethods,
-    IMembership<string> AllocatingConstructedMethods);
+    IMembership<string> AllocatingConstructedMethods)
+{
+    // Decide as though nothing the instruction throws could reach a handler in the method: whether the point can
+    // collect and then go on, rather than only collect while what it throws travels to a handler here.
+    public bool IgnoresHandlers { get; init; }
+}

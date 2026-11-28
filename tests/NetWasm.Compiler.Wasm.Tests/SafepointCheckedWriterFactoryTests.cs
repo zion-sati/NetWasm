@@ -23,7 +23,7 @@ public sealed class SafepointCheckedWriterFactoryTests
     private static readonly RuntimeImportSelection Everything = new(WasmModuleProfile.ComponentCoreModule, true,
         IncludeStackTrace: true, IncludeExceptionCapture: true, IncludeEphemeronHandles: true,
         IncludeFinalization: true, IncludeWeakHandles: true, IncludeRandomSeed: true, IncludeObjectClone: true,
-        IncludeUninitializedArrays: true, IncludeEventLoopCollection: true);
+        IncludeUninitializedArrays: true, IncludeEventLoopCollection: true, IncludeSharedArrays: true);
 
     public static TheoryData<string> CollectingSymbols() =>
         [.. CollectingRuntimeImports.Symbols.Select(static symbol => symbol.ToString()).Order()];

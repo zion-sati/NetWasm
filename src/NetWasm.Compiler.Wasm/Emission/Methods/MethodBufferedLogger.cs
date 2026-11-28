@@ -28,9 +28,10 @@ internal sealed class MethodBufferedLogger(
 
     public void EndMethod() => _current = -1;
 
+    // Replays a method's events once and drops them.
     public void Replay(int index)
     {
-        if (!_events.TryGetValue(index, out var events)) return;
+        if (!_events.Remove(index, out var events)) return;
         var replay = new ReplayState(downstream);
         try
         {

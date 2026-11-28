@@ -24,9 +24,11 @@ internal interface IConstructedReceiverPlanner
 // with such an object, in a block that dominates the access's own and so ran
 // before it. A this that the callers have proven non-null, as a method's is when
 // every call of it checks or proves its receiver, counts as such an object while
-// the method never stores to it or exposes its address. Exception handlers
-// can enter blocks no dominating store reached, so a method with them is left
-// alone, as the structured lowering drops its proof anyway.
+// the method never stores to it or exposes its address. A handler or filter
+// begins where control arrives from wherever its protected block throws, and
+// the dominance roots each of their first blocks, so no store in a protected
+// block proves a read in its handler; a block's stack starts unknown, as a
+// handler's does.
 internal sealed class ConstructedReceiverPlanner(
     IControlFlowDominanceAnalyzer dominance,
     IStackEffectResolver stackEffects,
@@ -44,7 +46,6 @@ internal sealed class ConstructedReceiverPlanner(
         ArgumentNullException.ThrowIfNull(controlFlow);
         var graph = controlFlow.Graph;
         var body = graph.MethodBody;
-        if (!body.ExceptionRegions.IsEmpty) return [];
         var exposed = body.Instructions
             .Where(static instruction => instruction.Operation is CilOperation.LoadLocalAddress or CilOperation.LoadArgumentAddress)
             .Select(static instruction => new Slot(instruction.Operation == CilOperation.LoadArgumentAddress,

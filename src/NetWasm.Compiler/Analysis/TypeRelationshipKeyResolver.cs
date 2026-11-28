@@ -41,6 +41,7 @@ internal sealed class TypeRelationshipKeyResolver(
     private readonly ConcurrentDictionary<CliTypeIdentity, TypeRelationshipKeys> _keys = [];
     private readonly ConcurrentDictionary<CliTypeIdentity, TypeRelationshipKeys> _hierarchies = [];
     private IReadOnlySet<string>? _resolvedArrayKeys;
+    private IReadOnlySet<string>? _elementKeys;
 
     public TypeRelationshipKeys Resolve(CliTypeIdentity type)
     {
@@ -64,16 +65,34 @@ internal sealed class TypeRelationshipKeyResolver(
         if (type.Shape is CliTypeShape.SzArray or CliTypeShape.Array && type.ElementType is { } element)
         {
             // T[] implements IList<U> where T[] converts to U[]: a reference element converts to its hierarchy's
-            // types, and a value element to the same-sized primitives and enums, so those admit any argument.
-            var admitted = element.IsValueType ? null : HierarchyKeys(element);
+            // types, an integral or enum element to the elements of the same reduced type (which share no key, so
+            // they admit any argument), and any other value element only to its own type.
+            var reduced = element.IsValueType ? TypeRelationshipClassifier.GetReducedArrayElementType(element) : null;
+            var admitted = !element.IsValueType
+                ? HierarchyKeys(element)
+                : reduced is null ? OwnKey(element) : null;
             foreach (var name in ArrayInterfaces)
             {
                 AddArguments(arguments, DefinitionKey(types.FindType(name).Key), admitted);
             }
-            // Array targets share the array key and are filed by their element, which converts the same way.
-            AddArguments(arguments, ArrayKey, admitted);
+            // Array targets share the array key and are filed by their element (ArgumentKey), an integral or enum one
+            // by its reduced type, so an array admits exactly the elements it converts to.
+            AddArguments(arguments, ArrayKey,
+                reduced is null ? admitted : new HashSet<string>(StringComparer.Ordinal) { ReducedKey(reduced) });
+            keys = keys with
+            {
+                ElementKeys = ElementKeys(),
+                ElementArguments = Hierarchy(element).Unbounded ? null : Resolve(element).Arguments,
+            };
         }
-        return keys with { Arguments = arguments, ArgumentKey = ArgumentKey(type) };
+        return keys with
+        {
+            Arguments = arguments,
+            ArgumentKey = ArgumentKey(type),
+            NestedArgumentKey = ArgumentType(type) is { } argument && !Hierarchy(argument).Unbounded
+                ? Resolve(argument).ArgumentKey
+                : null,
+        };
     }
 
     // The type's own key and the keys of its hierarchy, without argument facts.
@@ -88,8 +107,9 @@ internal sealed class TypeRelationshipKeyResolver(
         {
             return new("unresolved:" + type.CanonicalName, NoKeys, Unbounded: true);
         }
+        // A shared array may convert to any array of its shape, so every pair with it is classified.
         if (type.Shape is not (CliTypeShape.Named or CliTypeShape.GenericInstantiation or
-            CliTypeShape.SzArray or CliTypeShape.Array or CliTypeShape.Primitive))
+            CliTypeShape.SzArray or CliTypeShape.Array or CliTypeShape.Primitive) || SharedArrayShapes.IsShared(type))
         {
             return new(own, NoKeys, Unbounded: true);
         }
@@ -116,6 +136,11 @@ internal sealed class TypeRelationshipKeyResolver(
 
     private IReadOnlySet<string>? HierarchyKeys(CliTypeIdentity type) =>
         Hierarchy(type) is { Unbounded: false } keys ? keys.Reachable : null;
+
+    private HashSet<string>? OwnKey(CliTypeIdentity type) =>
+        Hierarchy(type) is { Unbounded: false } keys ? new HashSet<string>(StringComparer.Ordinal) { keys.Own } : null;
+
+    private static string ReducedKey(string reduced) => "reduced:" + reduced;
 
     // The generic instantiations among the type, its base types and their interfaces.
     private IEnumerable<CliTypeIdentity> Instantiations(CliTypeIdentity type)
@@ -167,13 +192,37 @@ internal sealed class TypeRelationshipKeyResolver(
 
     private string? ArgumentKey(CliTypeIdentity type)
     {
-        var argument = type.Shape switch
+        if (type.Shape is CliTypeShape.SzArray or CliTypeShape.Array &&
+            type.ElementType is { IsValueType: true } element &&
+            TypeRelationshipClassifier.GetReducedArrayElementType(element) is { } reduced)
         {
-            CliTypeShape.GenericInstantiation when !type.TypeArguments.IsDefaultOrEmpty => type.TypeArguments[0],
-            CliTypeShape.SzArray or CliTypeShape.Array => type.ElementType,
-            _ => null,
-        };
-        return argument is not null && Hierarchy(argument) is { Unbounded: false } keys ? keys.Own : null;
+            return ReducedKey(reduced);
+        }
+        return ArgumentType(type) is { } argument && Hierarchy(argument) is { Unbounded: false } keys ? keys.Own : null;
+    }
+
+    // The type a target is filed by: a generic instantiation's first type argument, or an array's element.
+    private static CliTypeIdentity? ArgumentType(CliTypeIdentity type) => type.Shape switch
+    {
+        CliTypeShape.GenericInstantiation when !type.TypeArguments.IsDefaultOrEmpty => type.TypeArguments[0],
+        CliTypeShape.SzArray or CliTypeShape.Array => type.ElementType,
+        _ => null,
+    };
+
+    // The array key and the array interfaces' definitions, whose argument is an array's element.
+    private IReadOnlySet<string> ElementKeys()
+    {
+        if (Volatile.Read(ref _elementKeys) is { } resolved)
+        {
+            return resolved;
+        }
+        var keys = new HashSet<string>(StringComparer.Ordinal) { ArrayKey };
+        foreach (var name in ArrayInterfaces)
+        {
+            keys.Add(DefinitionKey(types.FindType(name).Key));
+        }
+        Volatile.Write(ref _elementKeys, keys);
+        return keys;
     }
 
     private static void AddArguments(

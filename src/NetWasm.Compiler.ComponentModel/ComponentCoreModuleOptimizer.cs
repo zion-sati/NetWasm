@@ -13,14 +13,16 @@ public interface IComponentCoreModuleOptimizer
 {
     // Converging repeats the preset until the module stops shrinking. With low memory unused,
     // wasm-opt folds constant address adds into load and store offsets, which is valid only
-    // while nothing lives in the first KiB of memory.
+    // while nothing lives in the first KiB of memory. Keeping names keeps the module's name
+    // section, which a debug build's debugger and trap backtraces read.
     void Optimize(
         string inputPath,
         string outputPath,
         ComponentTarget target,
         FinalWasmOptimization optimization,
         bool converge = false,
-        bool lowMemoryUnused = false);
+        bool lowMemoryUnused = false,
+        bool keepNames = false);
 }
 
 public sealed class ComponentCoreModuleOptimizer(
@@ -59,7 +61,8 @@ public sealed class ComponentCoreModuleOptimizer(
         ComponentTarget target,
         FinalWasmOptimization optimization,
         bool converge = false,
-        bool lowMemoryUnused = false)
+        bool lowMemoryUnused = false,
+        bool keepNames = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
@@ -86,7 +89,7 @@ public sealed class ComponentCoreModuleOptimizer(
             inputPath,
             OptimizationFlags[optimization],
             "--remove-unused-module-elements",
-            "--strip-debug",
+            keepNames ? "--debuginfo" : "--strip-debug",
             "--enable-multimemory",
             "--enable-exception-handling",
             // Preserve exnref cleanup blocks when optimizing async process completion.

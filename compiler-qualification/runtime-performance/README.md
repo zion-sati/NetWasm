@@ -57,7 +57,10 @@ python3 compiler-qualification/runtime-performance/run.py \
   the scheduler, `value-task-source` resumes a reusable IValueTaskSource from a
   queued work item, `ping-pong` hands a value between two loops through
   TaskCompletionSource, `async-iterator` drains an async iterator that yields
-  every 64th item, and `when-all` awaits eight methods that each suspend once.
+  every 64th item, `when-all` awaits eight methods that each suspend once,
+  `yield-chain` awaits two nested methods whose innermost suspends, and
+  `exception-chain` and `exception-chain-yield` catch an exception thrown ten
+  methods down, at once or after the innermost method suspends.
   Completions come from queued work or the event loop, never another thread,
   so every runtime runs the same interleaving and the checksum is exact.
 

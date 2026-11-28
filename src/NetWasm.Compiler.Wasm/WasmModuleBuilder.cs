@@ -13,6 +13,21 @@ public sealed record WasmFunctionType(
     ImmutableArray<CliValueKind> Parameters,
     CliValueKind Result)
 {
+    // The results after Result, for a function that returns several values (Result is then the first); empty for one
+    // result or none.
+    public ImmutableArray<CliValueKind> MoreResults { get; init; } = [];
+
+    // Every result, in order; none for Void.
+    public ImmutableArray<CliValueKind> Results => Result == CliValueKind.Void ? [] : [Result, .. MoreResults];
+
+    // Whether the other type has the same parameters and results.
+    public bool SameAs(WasmFunctionType other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return Result == other.Result && Parameters.AsSpan().SequenceEqual(other.Parameters.AsSpan()) &&
+            MoreResults.AsSpan().SequenceEqual(other.MoreResults.AsSpan());
+    }
+
     public static WasmFunctionType Create(
         CliValueKind result,
         params CliValueKind[] parameters) =>

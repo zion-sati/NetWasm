@@ -12,5 +12,6 @@ internal interface IReachableProgramBuilderFactory
         IAllocationCapabilityAnalyzer allocationCapabilities,
         IManagedByRefEffectAnalyzer byRefEffects,
         IDelegateBindingPlanner delegateBindings,
-        IObjectDispatchSharing objectDispatchSharing);
+        IObjectDispatchSharing objectDispatchSharing,
+        IDispatchSiteTargetSelector siteTargets);
 }

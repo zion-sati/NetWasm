@@ -132,10 +132,35 @@ public sealed class MethodSpecializerTests
         Assert.Same(body, rewritten);
     }
 
+    // A non-generic overload names the location's type by its first parameter, an address of it.
     [Fact]
-    public void InterlockedRuleLeavesNonGenericCompareExchangeAsOrdinaryCil()
+    public void InterlockedRuleRewritesNonGenericCompareExchangeOfItsLocationsType()
     {
-        var target = Target("CompareExchange", 12, "System.Threading.Interlocked");
+        var integer = CliTypeIdentity.Primitive("i2", CliValueKind.I4);
+        var target = Target("CompareExchange", 12, "System.Threading.Interlocked") with
+        {
+            Signature = new MethodSignatureModel(integer, [CliTypeIdentity.ManagedByReference(integer), integer, integer]),
+        };
+
+        var rewritten = Rewrite(
+            new InterlockedCallRewriter(
+                new FixedCalledMethodResolver(target),
+                new FixedSymbolFormatter("System.Threading.Interlocked")),
+            Body(new CilInstruction(
+                0,
+                1,
+                CilOperation.Call,
+                new CilOperand.Entity(target.Definition.Key))));
+
+        Assert.Equal(CilOperation.CompareExchange, rewritten.Instructions[0].Operation);
+        Assert.Equal(new CilOperand.TypeIdentity(integer), rewritten.Instructions[0].Operand);
+    }
+
+    // Without an address of the location first, the call is not one of the overloads the rule knows.
+    [Fact]
+    public void InterlockedRuleLeavesACallWithoutALocationAsOrdinaryCil()
+    {
+        var target = Target("CompareExchange", 14, "System.Threading.Interlocked");
         var body = Body(new CilInstruction(
             0,
             1,
@@ -149,7 +174,6 @@ public sealed class MethodSpecializerTests
             body);
 
         Assert.Same(body, rewritten);
-        Assert.Equal(CilOperation.Call, rewritten.Instructions[0].Operation);
     }
 
     [Fact]
@@ -568,7 +592,9 @@ public sealed class MethodSpecializerTests
                     CilOperation.CallVirtual,
                     new CilOperand.Entity(target.Definition.Key))));
 
-        Assert.Equal(CilOperation.Constrained, rewritten.Instructions[0].Operation);
+        // GetObjectType takes the constrained type and the prefix's managed pointer itself; the prefix goes, so a call
+        // after it is not taken as constrained.
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
         Assert.Equal(CilOperation.GetObjectType, rewritten.Instructions[1].Operation);
         Assert.Equal(
             new CilOperand.TypeIdentity(valueType),
@@ -645,6 +671,27 @@ public sealed class MethodSpecializerTests
 
         Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
         Assert.Equal(CilOperation.Return, rewritten.Instructions[2].Operation);
+        // The return reports the epilogue's sequence point, and keeps where it came from: the branch it replaced, whose
+        // bytes the inliner still counts.
+        Assert.Equal((2, 2, 4), (rewritten.Instructions[2].Offset, rewritten.Instructions[2].SourceOffset,
+            rewritten.Instructions[2].LineOffset));
+    }
+
+    [Fact]
+    public void SharedEpilogueRuleReturnsAtABranchToAReturnWithTheReturnsSequencePoint()
+    {
+        var rewritten = Rewrite(
+            new SharedReturnEpilogueRewriter(),
+            Body(
+                new CilInstruction(0, 1, CilOperation.Branch, new CilOperand.BranchTarget(2))
+                {
+                    OriginalOffset = 10,
+                },
+                new CilInstruction(1, 2, CilOperation.Nop, new CilOperand.None()),
+                new CilInstruction(2, 3, CilOperation.Return, new CilOperand.None()) { OriginalOffset = 20 }));
+
+        Assert.Equal(CilOperation.Return, rewritten.Instructions[0].Operation);
+        Assert.Equal((10, 20), (rewritten.Instructions[0].SourceOffset, rewritten.Instructions[0].LineOffset));
     }
 
     [Fact]
@@ -1954,7 +2001,18 @@ public sealed class MethodSpecializerTests
             new ConstrainedCallTargetResolver(
                 types,
                 methods,
-                new EmptyMethodImplementationResolver()));
+                new EmptyMethodImplementationResolver()),
+            new NoRuntimeIntrinsics());
+
+    // The rewriter's tests name no runtime intrinsic.
+    private sealed class NoRuntimeIntrinsics : IRuntimeIntrinsicRegistry
+    {
+        public bool TryGetIntrinsic(EntityKey method, out RuntimeIntrinsic intrinsic)
+        {
+            intrinsic = default;
+            return false;
+        }
+    }
 
     private static CilMethodBody Specialize<TSpecializer>(
         TSpecializer specializer,

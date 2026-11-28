@@ -57,7 +57,7 @@ public sealed class CompilerComplexityGrowthTests
                      "SwitchFanIn",
                      "NestedFinally",
                      "Irreducible",
-                     "<Async>",
+                     "Async",
                  })
         {
             var family = reports.Select(item => (
@@ -88,16 +88,28 @@ public sealed class CompilerComplexityGrowthTests
                 metric.OriginalBodyEmissionCount));
     }
 
+    // A method's body; for the async method, its state machine's MoveNext when the fixture is compiled with state
+    // machines, otherwise the method itself, which the runtime async lowering rewrites in place.
     private static CompilerMethodComplexityMetric SingleMetric(
         CompilerComplexityReport report,
         string methodName)
     {
-        var matches = report.Methods.Where(metric =>
-            metric.Identity.Contains(methodName, StringComparison.Ordinal) &&
-            (methodName != "<Async>" ||
-             metric.Identity.Contains("MoveNext", StringComparison.Ordinal)))
-            .ToArray();
-        return Assert.Single(matches);
+        if (methodName == "Async")
+        {
+            var stateMachine = report.Methods.Where(metric =>
+                metric.Identity.Contains("<Async>", StringComparison.Ordinal) &&
+                metric.Identity.Contains("MoveNext", StringComparison.Ordinal)).ToArray();
+            if (stateMachine.Length > 0) return Assert.Single(stateMachine);
+            // Runtime async runs a method without protected blocks in a body beside its entry; the body grows.
+            var body = report.Methods.Where(metric =>
+                metric.Identity.EndsWith("::Async (runtime async body)", StringComparison.Ordinal)).ToArray();
+            return body.Length > 0
+                ? Assert.Single(body)
+                : Assert.Single(report.Methods, metric => metric.Identity.EndsWith("::Async", StringComparison.Ordinal));
+        }
+
+        return Assert.Single(report.Methods, metric =>
+            metric.Identity.Contains(methodName, StringComparison.Ordinal));
     }
 
     private static void AssertBounded(

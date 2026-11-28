@@ -9,80 +9,40 @@ namespace NetWasm.Compiler.ControlFlow;
 
 public sealed class ControlFlowPostDominanceAnalyzer : IControlFlowPostDominanceAnalyzer
 {
-    // The maximal fixed point of PDom(n) = {n} ∪ ∩ PDom(s) over n's successors, where a
-    // block with a successor outside the allowed blocks, the stop block and a block with no
-    // allowed successor post-dominate only themselves.
-    public Dictionary<int, ImmutableHashSet<int>> Analyze(
+    private readonly IDominatorTreeBuilder _trees;
+
+    public ControlFlowPostDominanceAnalyzer(IDominatorTreeBuilder trees) =>
+        _trees = trees ?? throw new ArgumentNullException(nameof(trees));
+
+    // PDom(n) = {n} ∪ ∩ PDom(s) over n's successors, its maximal fixed point: the stop block, a
+    // block with a successor outside the allowed blocks and a block with no allowed successor
+    // post-dominate only themselves, and a block that reaches none of them is post-dominated by
+    // every allowed block. That is dominance on the reversed edges, with those blocks as roots.
+    public DominatorTree Analyze(
         ControlFlowGraph graph,
         int? stopBlock,
         ImmutableHashSet<int> allowed)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(allowed);
-        var sets = new DominanceBitSets(DominanceBitSets.CountFor(graph, allowed));
-        // A block that can continue starts post-dominated by all allowed blocks: one full row, copied.
-        var all = new ulong[sets.Scratch.Length];
-        DominanceBitSets.Fill(all, allowed);
-        foreach (var node in allowed)
+        var roots = new List<int>();
+        foreach (var block in allowed)
         {
-            var row = sets.Row(node);
-            var anyAllowed = false;
-            foreach (var successor in graph.Successors[node])
-            {
-                if (allowed.Contains(successor))
-                {
-                    anyAllowed = true;
-                    break;
-                }
-            }
-            if (node == stopBlock || !anyAllowed)
-            {
-                row.Clear();
-                DominanceBitSets.Set(row, node);
-            }
-            else
-            {
-                all.CopyTo(row);
-            }
+            if (block == stopBlock || Ends(graph, block, allowed)) roots.Add(block);
         }
-        var order = new List<int>(allowed);
-        order.Sort(static (left, right) => right.CompareTo(left));
-        var scratch = sets.Scratch;
-        bool changed;
-        do
+        return _trees.Build(new DominanceProblem(
+            allowed, roots, graph.Successors, graph.Predecessors));
+    }
+
+    // Whether the block leaves the allowed blocks or has nowhere allowed to go.
+    private static bool Ends(ControlFlowGraph graph, int block, ImmutableHashSet<int> allowed)
+    {
+        var anyAllowed = false;
+        foreach (var successor in graph.Successors[block])
         {
-            changed = false;
-            foreach (var node in order)
-            {
-                if (node == stopBlock)
-                {
-                    continue;
-                }
-                var first = true;
-                var leaves = false;
-                foreach (var successor in graph.Successors[node])
-                {
-                    if (!allowed.Contains(successor))
-                    {
-                        leaves = true;
-                        continue;
-                    }
-                    if (first)
-                    {
-                        sets.Row(successor).CopyTo(scratch);
-                        first = false;
-                    }
-                    else
-                    {
-                        DominanceBitSets.And(scratch, sets.Row(successor));
-                    }
-                }
-                if (first || leaves) Array.Clear(scratch);
-                DominanceBitSets.Set(scratch, node);
-                changed |= sets.Update(node);
-            }
+            if (!allowed.Contains(successor)) return true;
+            anyAllowed = true;
         }
-        while (changed);
-        return sets.ToSets(allowed);
+        return !anyAllowed;
     }
 }

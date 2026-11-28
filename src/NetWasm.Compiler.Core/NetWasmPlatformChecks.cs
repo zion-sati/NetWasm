@@ -16,6 +16,21 @@ public static class NetWasmPlatformChecks
     public const string OperatingSystem = "System.OperatingSystem";
     public const string RuntimeInformation = "System.Runtime.InteropServices.RuntimeInformation";
     public const string OSPlatform = "System.Runtime.InteropServices.OSPlatform";
+    public const string RuntimeFeature = "System.Runtime.CompilerServices.RuntimeFeature";
+
+    /// <summary>A RuntimeFeature property getter that is false on NetWasm: no code is generated or compiled at run time,
+    /// and there is one thread.</summary>
+    public static bool IsNeverTrueRuntimeFeature(string getter) => getter is
+        "get_IsDynamicCodeSupported" or "get_IsDynamicCodeCompiled" or "get_IsMultithreadingSupported";
+
+    /// <summary>A static call that takes no arguments and is false on NetWasm, as a feature switch or an operating system
+    /// test is read.</summary>
+    public static bool IsNeverTrueParameterlessCall(string declaringType, string name) => declaringType switch
+    {
+        RuntimeFeature => IsNeverTrueRuntimeFeature(name),
+        OperatingSystem => IsNeverTrueOperatingSystemCheck(name),
+        _ => false,
+    };
 
     /// <summary>An OperatingSystem method that is false on NetWasm whatever its arguments.</summary>
     public static bool IsNeverTrueOperatingSystemCheck(string name) => name is

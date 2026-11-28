@@ -17,6 +17,8 @@ using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime.MemberExecution;
 
 // A method case: the arguments' count is checked, then a constructor allocates and runs, a method runs on the
@@ -38,10 +40,13 @@ internal sealed class MemberMethodCaseEmitter(
     IKeyedDispatchEmitter keyedDispatch,
     IImplicitExceptionEmitter exceptions,
     IAddressInstructionEmitter addresses,
-    IReferenceWriteBarrierEmitter writeBarrier) : IMemberMethodCaseEmitter
+    IReferenceWriteBarrierEmitter writeBarrier,
+    IValueTypeResultConventionFactory resultConventions) : IMemberMethodCaseEmitter
 {
     private readonly IReferenceWriteBarrierEmitter _writeBarrier = writeBarrier ??
         throw new ArgumentNullException(nameof(writeBarrier));
+    private readonly IValueTypeResultConventionFactory _resultConventions = resultConventions ??
+        throw new ArgumentNullException(nameof(resultConventions));
     private readonly IMemberDescriptorLayout _descriptors = descriptors ??
         throw new ArgumentNullException(nameof(descriptors));
     private readonly IMemberArgumentCountCheckEmitter _argumentCounts = argumentCounts ??
@@ -177,7 +182,7 @@ internal sealed class MemberMethodCaseEmitter(
         CliTypeIdentity resultType)
     {
         // The receiver's type id picks the target, through the runs of type ids that share one, as a virtual call does.
-        var dispatchCases = _cases.Plan(execution.Targets, execution.Targets);
+        var dispatchCases = _cases.Plan(execution.Targets, execution.Targets, exhaustive: true);
         var typeIdLocal = request.Instruction.Context.NumericTemporaryI4;
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
@@ -219,41 +224,52 @@ internal sealed class MemberMethodCaseEmitter(
                 IsMethodInvocation: true), code, request.FunctionIndices);
         }
         var underlying = _nullableTypes.Resolve(resultType);
-        // A struct result goes to a box allocated (and rooted) before the call, which the callee writes.
+        // A struct result goes to a box allocated (and rooted) before the call, a nullable one to the member result
+        // scratch; the method's return convention has the callee write it there or the caller store it after the call.
         var boxedResult = underlying is null && resultType.StackKind == CliValueKind.ValueType;
         int resultLocal = request.Local(0, CliValueKind.ManagedReference);
-        if (underlying is not null)
-        {
-            EmitMemberResultAddress(request, code);
-        }
-        else if (boxedResult)
+        if (boxedResult)
         {
             _allocator.Allocate(request, code, resultType, resultLocal, rooted: true);
-            _payloads.Emit(code, resultLocal, resultType);
         }
-        if (!method.Definition.IsStatic)
+        void EmitCall(IWasmInstructionWriter code)
         {
-            var owner = receiverType ?? method.DeclaringType;
-            if (owner.IsValueType && method.DeclaringType.IsValueType)
+            if (!method.Definition.IsStatic)
             {
-                _payloads.Emit(code, receiverLocal, owner);
+                var owner = receiverType ?? method.DeclaringType;
+                if (owner.IsValueType && method.DeclaringType.IsValueType)
+                {
+                    _payloads.Emit(code, receiverLocal, owner);
+                }
+                else
+                {
+                    code.Write(WasmInstruction.WithOperand(
+                        WasmOpcodes.LocalGet,
+                        WasmInstructionOperand.Unsigned((uint)receiverLocal)));
+                }
             }
-            else
-            {
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.LocalGet,
-                    WasmInstructionOperand.Unsigned((uint)receiverLocal)));
-            }
+            _arguments.Emit(
+                request,
+                code,
+                argumentsLocal,
+                method.Signature.ParameterSignatureTypes);
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.Call,
+                WasmInstructionOperand.Unsigned(
+                    (uint)request.FunctionIndices.Resolve(method))));
         }
-        _arguments.Emit(
-            request,
-            code,
-            argumentsLocal,
-            method.Signature.ParameterSignatureTypes);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned(
-                (uint)request.FunctionIndices.Resolve(method))));
+        if (resultType.StackKind == CliValueKind.ValueType)
+        {
+            _resultConventions.Create(method.Signature.ReturnSignatureType).Emit(code, writer =>
+            {
+                if (underlying is not null) EmitMemberResultAddress(request, writer);
+                else _payloads.Emit(writer, resultLocal, resultType);
+            }, new(request.Instruction.Context.StructResultLocals, request.Instruction.Context.VectorScratch), EmitCall);
+        }
+        else
+        {
+            EmitCall(code);
+        }
         if (underlying is not null)
         {
             EmitMemberResultAddress(request, code);

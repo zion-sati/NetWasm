@@ -42,9 +42,16 @@ internal sealed class ImplicitExceptionDiscovery(
                         ManagedExceptionKind.ArgumentOutOfRange, "System.ArgumentOutOfRangeException"));
                 }
                 break;
+            // Each dereferences an object reference or a managed address the emitters check for null, as desktop
+            // .NET throws NullReferenceException through either (ldind decodes as ldobj, stind as stobj).
             case CilOperation.LoadField:
+            case CilOperation.LoadFieldAddress:
             case CilOperation.StoreField:
             case CilOperation.LoadArrayLength:
+            case CilOperation.LoadObject:
+            case CilOperation.StoreObject:
+            case CilOperation.CopyObject:
+            case CilOperation.InitializeObject:
             case CilOperation.CompareExchange:
                 requirements.Add(new(ManagedExceptionKind.NullReference, "System.NullReferenceException"));
                 break;

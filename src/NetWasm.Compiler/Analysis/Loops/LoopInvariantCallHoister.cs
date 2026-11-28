@@ -47,6 +47,7 @@ internal sealed class LoopInvariantCallHoister(ICalledMethodResolver calledMetho
             .Concat(body.ExceptionRegions.SelectMany(static region => (int?[])
                 [region.TryOffset, region.HandlerOffset, region.FilterOffset]).OfType<int>())
             .ToHashSet();
+        var sources = LoopEntries.BranchSources(instructions, indices);
         var exposed = ExposedSlots.Of(instructions);
         var locals = body.Locals.ToBuilder();
         var localTypes = body.LocalSignatureTypes.ToBuilder();
@@ -76,7 +77,8 @@ internal sealed class LoopInvariantCallHoister(ICalledMethodResolver calledMetho
                     break;
                 }
             }
-            if (end < 0) continue;
+            // The call's value is computed ahead of the entry jump, so that jump must be the loop's only way in.
+            if (end < 0 || LoopEntries.EnteredElsewhere(sources, jump, end)) continue;
             var written = Written(instructions, jump + 1, end);
             written.UnionWith(exposed);
 

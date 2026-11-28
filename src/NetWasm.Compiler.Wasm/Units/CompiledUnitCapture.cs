@@ -109,8 +109,8 @@ internal sealed class CompiledUnitState(string? directory) : IDisposable
     internal UnitReplay? Replay { get; set; }
     // Units restored in this compile; they stay where they are.
     internal ConcurrentBag<UnitLocation> Carried { get; } = [];
-    // Units emitted in this compile.
-    internal ConcurrentBag<CompiledUnit> Captured { get; } = [];
+    // Units emitted in this compile, already in the store's segment format.
+    internal EmittedUnitSegments EmittedSegments { get; init; } = new();
     // The program's identities by canonical name, built once if a query needs one.
     internal Lazy<UnitQueryArguments>? Program { get; set; }
     // Methods restored from their units in this compile.
@@ -263,13 +263,14 @@ internal sealed class CompiledUnitCapturer(
         ImmutableArray<UnitDependency>? rootMapDependencies =
             state.RootMapDependencies.TryGetValue(identity, out var recorded) ? recorded :
             state.RootMapSources.TryGetValue(identity, out var source) ? KeptRootMapDependencies(source) : null;
-        state.Captured.Add(new(identity, input, emission.Dependencies,
+        state.EmittedSegments.Add(new(identity, input, emission.Dependencies,
             ImmutableArray.Create(emission.Function.Body), relocations.MoveToImmutable(),
             emission.Record.Emission.WasmInstructionCount)
         {
             FunctionName = emission.Function.Name,
             Parameters = emission.Function.Type.Parameters,
             Result = emission.Function.Type.Result,
+            MoreResults = emission.Function.Type.MoreResults,
             IsAggressiveInlining = emission.Function.IsAggressiveInlining,
             IsNoInlining = emission.Function.IsNoInlining,
             EnvironmentKey = emission.EnvironmentKey,
@@ -288,17 +289,9 @@ internal sealed class CompiledUnitCapturer(
 /// so the store's size follows the program and each compile writes what it changed. The
 /// change is left on the state for the pipeline to commit through its storage.
 /// </summary>
-// The segment capacity and the section limit default to the format's; tests make them small.
-internal sealed class CompiledUnitPublisher(
-    CompiledUnitState state,
-    long segmentCapacity = CompiledUnitPublisher.SegmentCapacity,
-    long sectionLimit = UnitSegmentWriter.SectionLimit) : ICompiledUnitPublisher
+internal sealed class CompiledUnitPublisher(CompiledUnitState state) : ICompiledUnitPublisher
 {
     private const int SegmentBudget = 16;
-
-    // A compile starts another segment once one reaches this length, so every segment stays well
-    // inside the format's 32-bit offsets and an array's length, however many units it writes (issue 229).
-    internal const long SegmentCapacity = 1L << 30;
 
     public void Publish()
     {
@@ -318,11 +311,10 @@ internal sealed class CompiledUnitPublisher(
     private UnitStoreChange Prepare(UnitStore store)
     {
         var carried = new HashSet<UnitLocation>(state.Carried);
-        if (state.Captured.IsEmpty && carried.Count == store.Count)
+        var emittedSegments = state.EmittedSegments;
+        if (emittedSegments.Count == 0 && carried.Count == store.Count)
             return new([], null, new HashSet<int>(), Summary(store.Count, store.Segments.Count));
-        var emitted = state.Captured.OrderBy(unit => unit.Identity, StringComparer.Ordinal).ToArray();
-        var emittedIdentities = new HashSet<string>(emitted.Select(unit => unit.Identity), StringComparer.Ordinal)
-            .GetAlternateLookup<ReadOnlySpan<char>>();
+        var emittedIdentities = emittedSegments.Identities.GetAlternateLookup<ReadOnlySpan<char>>();
         var segments = store.Segments;
         var live = new int[segments.Count];
         var kept = new List<UnitLocation>(carried.Count);
@@ -351,17 +343,16 @@ internal sealed class CompiledUnitPublisher(
             var largest = remaining.MaxBy(segment => segments[segment]!.Length);
             foreach (var segment in remaining) merge[segment] = segment != largest;
         }
-        var writers = new List<UnitSegmentWriter> { new(sectionLimit) };
-        foreach (var unit in emitted) Write(writers, unit);
+        // Emitted units are in the segments already, as emission captured them; merged units follow.
         foreach (var unit in kept)
         {
-            if (merge[unit.Segment]) Write(writers, segments[unit.Segment]!.Record(unit.Offset).ToUnit());
+            if (merge[unit.Segment]) emittedSegments.Write(segments[unit.Segment]!.Record(unit.Offset).ToUnit());
         }
-        if (writers[^1].Count == 0) writers.RemoveAt(writers.Count - 1);
+        var added = emittedSegments.Segments(store.NextSequence);
         var manifestSegments = new List<UnitManifestSegment>();
         var ordinals = new int[segments.Count];
         Array.Fill(ordinals, -1);
-        var entries = new List<UnitManifestEntry>(kept.Count + writers.Sum(writer => writer.Count));
+        var entries = new List<UnitManifestEntry>(kept.Count + added.Sum(segment => segment.Count));
         foreach (var unit in kept)
         {
             if (merge[unit.Segment]) continue;
@@ -374,31 +365,16 @@ internal sealed class CompiledUnitPublisher(
             entries.Add(new(UnitStoreFormat.HashOf(segment.Record(unit.Offset).Identity),
                 ordinals[unit.Segment], unit.Offset));
         }
-        var added = ImmutableArray.CreateBuilder<UnitStoreSegment>(writers.Count);
-        foreach (var writer in writers)
+        foreach (var segment in added)
         {
-            var sequence = store.NextSequence + added.Count;
             var ordinal = manifestSegments.Count;
-            manifestSegments.Add(new(sequence, writer.Count, writer.Length));
-            foreach (var (hash, offset) in writer.Entries) entries.Add(new(hash, ordinal, offset));
-            added.Add(new(sequence, writer));
+            manifestSegments.Add(new(segment.Sequence, segment.Count, segment.Length));
+            foreach (var (hash, offset) in segment.Entries) entries.Add(new(hash, ordinal, offset));
         }
-        return new(added.ToImmutable(),
-            UnitManifestFormat.Write(manifestSegments, entries, store.NextSequence + added.Count),
+        return new(added,
+            UnitManifestFormat.Write(manifestSegments, entries, store.NextSequence + added.Length),
             manifestSegments.Select(segment => segment.Sequence).ToHashSet(),
             Summary(entries.Count, manifestSegments.Count));
-    }
-
-    // Adds a unit to the last segment, starting another when that one is at capacity or full; a unit
-    // that fits no segment at all, or that a segment refuses, is not kept.
-    private void Write(List<UnitSegmentWriter> writers, CompiledUnit unit)
-    {
-        if (writers[^1].Count != 0 && writers[^1].Length >= segmentCapacity) writers.Add(new(sectionLimit));
-        if (!writers[^1].Add(unit, out var full) && full && writers[^1].Count != 0)
-        {
-            writers.Add(new(sectionLimit));
-            writers[^1].Add(unit);
-        }
     }
 
     // A plain summary of the compile's reuse.
@@ -414,4 +390,101 @@ internal sealed class CompiledUnitPublisher(
         "changed: " + string.Join(", ", state.ChangedKinds.OrderByDescending(pair => pair.Value)
             .Select(pair => $"{pair.Key} {pair.Value}")) + "\n" +
         string.Concat(state.UnbuildableKeys.Keys.Order(StringComparer.Ordinal).Select(key => key + "\n"));
+}
+
+/// <summary>
+/// The units a compile emits, written into the store's new segments as emission captures them. Emission captures
+/// on one thread in the module's function order, so the segments' bytes repeat from compile to compile, and a
+/// captured unit costs its encoded bytes in a segment that shares strings and query answers across all its units,
+/// not a managed copy (Devolutions' Avalonia sample held 12 GB of captured units for a 5.4 GB store) nor a spool of
+/// its own on disk (small spool segments repeated the shared answers and filled the disk on the three-app repro).
+/// With a sealer, a segment that fills goes to the store's medium as the next one starts, so a compile holds one open
+/// segment whatever its size (the three-app repro's segments held about 15 GB of its emission heap until the commit).
+/// </summary>
+// The segment capacity and the section limit default to the format's; tests make them small.
+internal sealed class EmittedUnitSegments(
+    long segmentCapacity = EmittedUnitSegments.SegmentCapacity,
+    long sectionLimit = UnitSegmentWriter.SectionLimit,
+    IUnitSegmentSealer? sealer = null,
+    string? location = null,
+    int firstSequence = 0)
+{
+    // A compile starts another segment once one reaches this length, so every segment stays well
+    // inside the format's 32-bit offsets and an array's length, however many units it writes (issue 229).
+    internal const long SegmentCapacity = 1L << 30;
+
+    private readonly System.Threading.Lock _gate = new();
+    // Sealed segments, then the open ones (one with a sealer), in sequence order.
+    private readonly List<UnitStoreSegment> _sealed = [];
+    private readonly List<UnitSegmentWriter> _writers = [new(sectionLimit)];
+    private readonly HashSet<string> _identities = new(StringComparer.Ordinal);
+
+    // Units captured, including those no segment kept.
+    internal int Count { get; private set; }
+
+    // The identities of every unit captured.
+    internal HashSet<string> Identities => _identities;
+
+    // The segments still open, the last possibly empty.
+    internal IReadOnlyList<UnitSegmentWriter> Writers => _writers;
+
+    // The segments sealed so far.
+    internal IReadOnlyList<UnitStoreSegment> Sealed => _sealed;
+
+    internal void Add(CompiledUnit unit)
+    {
+        ArgumentNullException.ThrowIfNull(unit);
+        lock (_gate)
+        {
+            Count++;
+            _identities.Add(unit.Identity);
+            Write(unit);
+        }
+    }
+
+    // Adds a unit to the last segment, starting another when that one is at capacity or full; a unit
+    // that fits no segment at all, or that a segment refuses, is not kept.
+    internal void Write(CompiledUnit unit)
+    {
+        lock (_gate)
+        {
+            if (_writers[^1].Count != 0 && _writers[^1].Length >= segmentCapacity) Start();
+            if (!_writers[^1].Add(unit, out var full) && full && _writers[^1].Count != 0)
+            {
+                Start();
+                _writers[^1].Add(unit);
+            }
+        }
+    }
+
+    // Every segment with units, under its sequence counted from the first: the sealed ones, then the open ones.
+    internal ImmutableArray<UnitStoreSegment> Segments(int first)
+    {
+        lock (_gate)
+        {
+            if (sealer is not null && first != firstSequence)
+                throw new InvalidOperationException("Segments were sealed under other sequences than the store's next.");
+            var segments = ImmutableArray.CreateBuilder<UnitStoreSegment>(_sealed.Count + _writers.Count);
+            segments.AddRange(_sealed);
+            foreach (var writer in _writers.Where(writer => writer.Count != 0))
+            {
+                segments.Add(UnitStoreSegment.Of(first + segments.Count, writer));
+            }
+            return segments.ToImmutable();
+        }
+    }
+
+    // Starts another segment; with a sealer, the full one goes to the store's medium now.
+    private void Start()
+    {
+        if (sealer is not null && location is not null)
+        {
+            var full = _writers[^1];
+            var sequence = firstSequence + _sealed.Count;
+            sealer.Seal(location, sequence, full);
+            _sealed.Add(new(sequence, full.Count, full.Length, [.. full.Entries], Writer: null));
+            _writers.Clear();
+        }
+        _writers.Add(new(sectionLimit));
+    }
 }

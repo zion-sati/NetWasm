@@ -5,30 +5,65 @@ using System;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.StructResults;
 
 namespace NetWasm.Compiler.Wasm.Emission;
 
-internal sealed class ManagedMethodFunctionTypeResolver :
+// A value type the classifier returns in results is the function's results, in field order; any other is written to a
+// buffer the caller passes first.
+internal sealed class ManagedMethodFunctionTypeResolver(IStructResultClassifier? structResults = null) :
     IManagedMethodFunctionTypeResolver
 {
     public WasmFunctionType Resolve(MethodDefinitionModel method)
     {
         ArgumentNullException.ThrowIfNull(method);
 
-        var parameters = NormalizeParameterTypes(method.WasmParameterTypes);
-        return method.Signature.ReturnSignatureType.StackKind == CliValueKind.ValueType
-            ? new(parameters.Insert(0, CliValueKind.ManagedAddress), CliValueKind.Void)
-            : new(parameters, method.Signature.ReturnType);
+        return Create(FieldParameters(NormalizeParameterTypes(method.WasmParameterTypes), method.IsStatic, method.Signature),
+            method.Signature);
     }
 
     public WasmFunctionType Resolve(MethodInstanceModel method)
     {
         ArgumentNullException.ThrowIfNull(method);
 
-        var parameters = NormalizeParameterTypes(GetWasmParameterTypes(method));
-        return method.Signature.ReturnSignatureType.StackKind == CliValueKind.ValueType
-            ? new(parameters.Insert(0, CliValueKind.ManagedAddress), CliValueKind.Void)
-            : new(parameters, method.Signature.ReturnType);
+        return Create(FieldParameters(NormalizeParameterTypes(GetWasmParameterTypes(method)), method.Definition.IsStatic,
+            method.Signature), method.Signature);
+    }
+
+    // A struct parameter the classifier passes by its fields takes a parameter per field.
+    private ImmutableArray<CliValueKind> FieldParameters(ImmutableArray<CliValueKind> parameters, bool isStatic,
+        MethodSignatureModel signature)
+    {
+        if (structResults is null || signature.ParameterSignatureTypes.Length + (isStatic ? 0 : 1) != parameters.Length)
+        {
+            return parameters;
+        }
+        var builder = ImmutableArray.CreateBuilder<CliValueKind>(parameters.Length);
+        var first = isStatic ? 0 : 1;
+        for (var index = 0; index < parameters.Length; index++)
+        {
+            if (index >= first && FieldArgument(signature.ParameterSignatureTypes[index - first]) is { } shape)
+            {
+                builder.AddRange(shape.Results);
+            }
+            else
+            {
+                builder.Add(parameters[index]);
+            }
+        }
+        return builder.ToImmutable();
+    }
+
+    // Whether a parameter of the type is passed by its fields.
+    private StructResultShape? FieldArgument(CliTypeIdentity type) =>
+        type.StackKind == CliValueKind.ValueType && !type.ContainsGenericParameters ? structResults?.Classify(type) : null;
+
+    private WasmFunctionType Create(ImmutableArray<CliValueKind> parameters, MethodSignatureModel signature)
+    {
+        if (signature.ReturnSignatureType.StackKind != CliValueKind.ValueType) return new(parameters, signature.ReturnType);
+        return structResults?.Classify(signature.ReturnSignatureType) is { } shape
+            ? new(parameters, shape.Results[0]) { MoreResults = shape.Results[1..] }
+            : new(parameters.Insert(0, CliValueKind.ManagedAddress), CliValueKind.Void);
     }
 
     private static ImmutableArray<CliValueKind> GetWasmParameterTypes(

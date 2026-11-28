@@ -62,7 +62,7 @@ public sealed class UnitFingerprintTests
             new CilOperand.FieldInstance(field), new CilOperand.TypeIdentity(type), new CilOperand.ExactType(type),
             new CilOperand.CallSite(method.Signature), new CilOperand.NumericConversion(32, false, true, false, false),
             new CilOperand.UserString("text"), new CilOperand.ArrayInitializerData(field),
-            new CilOperand.ReadOnlySpanData(field, type, type, 4),
+            new CilOperand.ReadOnlySpanData(field, type, type, 4), new CilOperand.NeverRuns(),
         ];
         var kinds = typeof(CilOperand).GetNestedTypes().Where(nested => nested.IsSubclassOf(typeof(CilOperand)));
 

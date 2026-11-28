@@ -11,37 +11,43 @@ import { liftScalar, lowerScalar } from "./interop-scalar-codec.mjs";
 // including a result outside its type's range, unwinds into the guest, which
 // raises JSException. `activity.active` counts the imports on the stack, as a
 // subscription callback reads it to tell reentrant calls from external ones.
-export function createInteropDirectService({ descriptor, service, activity }) {
-  if (typeof service !== "function" || activity === null || typeof activity !== "object") {
+export function createInteropDirectService({ descriptor, service, activity, errors }) {
+  if (typeof service !== "function" || activity === null || typeof activity !== "object"
+      || errors === null || typeof errors !== "object" || typeof errors.captureThrow !== "function") {
     throw new TypeError("interop direct-service request is invalid");
   }
+  // What the function throws unwinds into the call's catch_all, whose JSException carries it.
+  const fail = cause => {
+    errors.captureThrow(cause);
+    throw cause;
+  };
   const lifts = descriptor.parameters.map(scalarLift);
   const lower = descriptor.result === "void" ? discard : value => lowerScalar(descriptor.result, value);
   switch (lifts.length) {
     case 0:
       return Object.freeze(() => {
         activity.active++;
-        try { return lower(service()); } finally { activity.active--; }
+        try { return lower(service()); } catch (cause) { fail(cause); } finally { activity.active--; }
       });
     case 1: {
       const [first] = lifts;
       return Object.freeze(a => {
         activity.active++;
-        try { return lower(service(first(a))); } finally { activity.active--; }
+        try { return lower(service(first(a))); } catch (cause) { fail(cause); } finally { activity.active--; }
       });
     }
     case 2: {
       const [first, second] = lifts;
       return Object.freeze((a, b) => {
         activity.active++;
-        try { return lower(service(first(a), second(b))); } finally { activity.active--; }
+        try { return lower(service(first(a), second(b))); } catch (cause) { fail(cause); } finally { activity.active--; }
       });
     }
     case 3: {
       const [first, second, third] = lifts;
       return Object.freeze((a, b, c) => {
         activity.active++;
-        try { return lower(service(first(a), second(b), third(c))); } finally { activity.active--; }
+        try { return lower(service(first(a), second(b), third(c))); } catch (cause) { fail(cause); } finally { activity.active--; }
       });
     }
     default:
@@ -50,6 +56,8 @@ export function createInteropDirectService({ descriptor, service, activity }) {
         try {
           for (let index = 0; index < values.length; index++) values[index] = lifts[index](values[index]);
           return lower(service(...values));
+        } catch (cause) {
+          fail(cause);
         } finally { activity.active--; }
       });
   }

@@ -66,7 +66,7 @@ public sealed class MemoizingReachableMethodAnalyzerTests
     }
 
     private static ReachableMethodAnalysis Analysis(ReachableMethodRequest request) =>
-        new(request.Method, null!, [], [], null!);
+        new(request.Method, null!, [], [], null!) { ReachableRegions = [] };
 
     private static MethodInstanceModel Method(string name, int token)
     {

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Analysis;
@@ -18,7 +19,7 @@ internal sealed class SwitchBitTestRewriter : IMethodRewriteRule
 {
     // The mask is one int32.
     internal const int MaximumCases = 32;
-    private const int CaseLength = 5;
+    private const int CaseLength = LoweredSwitchChain.CaseLength;
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -30,13 +31,13 @@ internal sealed class SwitchBitTestRewriter : IMethodRewriteRule
         var changed = false;
         for (var start = 0; start < instructions.Length; start++)
         {
-            var cases = CaseCount(instructions, start);
+            var cases = LoweredSwitchChain.CaseCount(instructions, start);
             if (cases < 3 || cases > MaximumCases || Enters(entries, instructions, start, cases))
             {
                 continue;
             }
             var targets = Enumerable.Range(0, cases)
-                .Select(index => ((CilOperand.BranchTarget)instructions[start + index * CaseLength + 4].Operand).Offset)
+                .Select(index => LoweredSwitchChain.Target(instructions, start, index))
                 .ToArray();
             var distinct = targets.Distinct().ToArray();
             if (distinct.Length > 2)
@@ -104,28 +105,6 @@ internal sealed class SwitchBitTestRewriter : IMethodRewriteRule
             (CilOperation.Branch, new CilOperand.BranchTarget(distinct[1])),
         ];
     }
-
-    // The number of lowered cases starting at the instruction, if a final pop follows them.
-    private static int CaseCount(CilInstruction[] instructions, int start)
-    {
-        var cases = 0;
-        while (IsCase(instructions, start + cases * CaseLength, cases))
-        {
-            cases++;
-        }
-        // A matched case guarantees an instruction after it.
-        return cases > 0 && instructions[start + cases * CaseLength].Operation == CilOperation.Pop ? cases : 0;
-    }
-
-    private static bool IsCase(CilInstruction[] instructions, int at, int value) =>
-        at + CaseLength < instructions.Length &&
-        instructions[at].Operation == CilOperation.Duplicate &&
-        instructions[at + 1] is { Operation: CilOperation.LoadInt32, Operand: CilOperand.ConstantI4 constant } &&
-        constant.Value == value &&
-        instructions[at + 2] is { Operation: CilOperation.BranchIfNotEqual, Operand: CilOperand.BranchTarget next } &&
-        next.Offset == instructions[at + CaseLength].Offset &&
-        instructions[at + 3].Operation == CilOperation.Pop &&
-        instructions[at + 4] is { Operation: CilOperation.Branch, Operand: CilOperand.BranchTarget };
 
     // Whether control can enter the chain anywhere but its first instruction.
     private static bool Enters(Dictionary<int, int> entries, CilInstruction[] instructions, int start, int cases)

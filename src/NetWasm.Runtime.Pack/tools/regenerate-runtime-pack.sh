@@ -88,12 +88,9 @@ for target in wasm32 wasm64; do
   if [[ -z "$only" ]]; then rm -rf "$target_root"; fi
   mkdir -p "$target_root"
 
+  # The pack carries the complete runtime, from which each application's link keeps what its program uses.
   layout="$temporary_root/$target.layout.json"
-  node - "$layout" "$target" <<'NODE'
-const fs = require("node:fs");
-const [layout, target] = process.argv.slice(2);
-fs.writeFileSync(layout, `${JSON.stringify({ schemaVersion: 2, target, applicationStaticDataEnd: 0 }, null, 2)}\n`);
-NODE
+  node "$repo_root/src/NetWasm.Runtime.Pack/tools/write-complete-runtime-layout.mjs" "$layout" "$target"
 
   printf '%s\n' emscripten_notify_memory_growth \
     > "$target_root/allowed-undefined-symbols.txt"

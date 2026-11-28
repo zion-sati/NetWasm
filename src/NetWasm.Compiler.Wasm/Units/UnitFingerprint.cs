@@ -137,8 +137,8 @@ internal ref struct UnitFingerprintBuilder
         // As the structured header carries them. Which references are proven non-null
         // can depend on the rest of the program, as a constructor's this does on its
         // callers, so those offsets count too.
-        Add(body.ExceptionRegions.IsEmpty && body.ArrayBoundsProof is not null);
-        if (body.ExceptionRegions.IsEmpty && body.ArrayBoundsProof is { } proof) Add(proof.NonNullOffsets.Order());
+        Add(body.ArrayBoundsProof is not null);
+        if (body.ArrayBoundsProof is { } proof) Add(proof.NonNullOffsets.Order());
         Add(body.IntegerCheckProof is not null);
         // Whether this is young at entry depends on every caller, and decides which stores are recorded.
         Add(body.YoungThisAtEntry);
@@ -164,6 +164,7 @@ internal ref struct UnitFingerprintBuilder
         Add(instruction.Offset);
         Add(instruction.NextOffset);
         Add(instruction.OriginalOffset ?? -1);
+        Add(instruction.SequencePointOffset ?? -1);
         Add((int)instruction.Operation);
         switch (instruction.Operand)
         {
@@ -227,6 +228,9 @@ internal ref struct UnitFingerprintBuilder
             case CilOperand.ArrayInitializerData data:
                 Add(16); Add(data.Field.CanonicalName); Add(data.Value.AsSpan());
                 break;
+            case CilOperand.NeverRuns:
+                Add(18);
+                break;
             // The last of the closed set of operands (UnitFingerprintOperandTests counts them).
             default:
                 var span = (CilOperand.ReadOnlySpanData)instruction.Operand;
@@ -258,6 +262,8 @@ internal ref struct UnitFingerprintBuilder
             foreach (var root in safepoint.Roots) Add(root);
             Add(safepoint.ConstructorCallRoots.Length);
             foreach (var root in safepoint.ConstructorCallRoots) Add(root);
+            Add(safepoint.Deferrable.Length);
+            foreach (var root in safepoint.Deferrable) Add(root);
         }
         Add(map.AnchorPlan.Anchors.Length);
         foreach (var anchor in map.AnchorPlan.Anchors)
@@ -306,11 +312,19 @@ internal ref struct UnitFingerprintBuilder
         Add(site.IlOffset);
         Add(site.Declaration.CanonicalName);
         Add(site.SharesObjectDispatch);
+        Add(site.PreciseTargets);
         Add(site.Targets.Length);
         foreach (var target in site.Targets)
         {
             Add(target.ReceiverType);
             Add(target.Method.CanonicalName);
+        }
+        // An audit build checks the receiver against the analysis's set, which other methods' code can change.
+        Add(site.AuditedReceivers.IsDefault ? -1 : site.AuditedReceivers.Length);
+        if (!site.AuditedReceivers.IsDefault)
+        {
+            foreach (var receiver in site.AuditedReceivers) Add(receiver);
+            Add(site.AuditMessage ?? string.Empty);
         }
     }
 

@@ -3833,7 +3833,7 @@ namespace System
         public static double Cos(double v) => (double)Math.Cos(v);
         [Intrinsic]
         public static double Sin(double v) => (double)Math.Sin(v);
-        public static (double Sin, double Cos) SinCos(double v) => (Sin(v), Cos(v));
+        public static (double Sin, double Cos) SinCos(double v) => Math.SinCos(v);
         [Intrinsic]
         public static double Tan(double v) => (double)Math.Tan(v);
         [Intrinsic]

@@ -85,7 +85,10 @@ public sealed class AsyncCompilationTests
             "Run"));
 
         var module = System.Text.Encoding.UTF8.GetString(result.ApplicationModule);
-        Assert.Equal(awaits, module.Contains("CommandWorldScheduler::Schedule", StringComparison.Ordinal));
+        Assert.Equal(awaits, module.Contains("CommandWorldScheduler::Post", StringComparison.Ordinal));
+        // A program that sets no delay carries no delay queue (CommandWorldDelays) nor the timed scheduling.
+        Assert.DoesNotContain("CommandWorldDelay", module, StringComparison.Ordinal);
+        Assert.DoesNotContain("CommandWorldScheduler::Schedule", module, StringComparison.Ordinal);
     }
 
     // Issue #128: the unobserved-exception event's arguments exist only for an
@@ -358,20 +361,24 @@ public sealed class AsyncCompilationTests
 
             namespace AsyncCompilerFixture;
 
+            // A struct's async method keeps its state machine (a class's compiles as runtime async).
+            public struct Later
+            {
+                public static async Task<int> CompleteLater(int input)
+                {
+                    await Task.Delay(0);
+                    return input + 1;
+                }
+            }
+
             public static class EntryPoint
             {
                 private static Task<int>? _pending;
 
                 public static int Run(int input)
                 {
-                    _pending = CompleteLater(input);
+                    _pending = Later.CompleteLater(input);
                     return _pending.IsCompleted ? _pending.Result : -1;
-                }
-
-                private static async Task<int> CompleteLater(int input)
-                {
-                    await Task.Delay(0);
-                    return input + 1;
                 }
             }
             """);
@@ -390,9 +397,10 @@ public sealed class AsyncCompilationTests
 
         Assert.NotEmpty(result.ApplicationModule);
         // The await suspends through the builder: AwaitUnsafeOnCompleted, or, once that AggressiveInlining call is
-        // inlined into MoveNext, the completion action it registers.
+        // inlined into MoveNext, the completion action it registers (GetCompletionAction, itself inlined where a struct
+        // method given a field's address is, leaves the box's MoveNextAction, a delegate's target, as a method).
         Assert.Contains(result.Program.MethodInstances.Values,
-            method => method.Definition.Name is "AwaitUnsafeOnCompleted" or "GetCompletionAction");
+            method => method.Definition.Name is "AwaitUnsafeOnCompleted" or "GetCompletionAction" or "MoveNextAction");
         // A delay is an async-lowered wait-for whose subtask joins the event loop's waitable set.
         Assert.Contains(result.Program.WitImportMethods,
             method => method.WitImport is

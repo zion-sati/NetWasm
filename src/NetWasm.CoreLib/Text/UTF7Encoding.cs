@@ -1,16 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
-// NetWasm adaptations: NetWasm's Encoding, Encoder and Decoder have no EncoderNLS/DecoderNLS,
-// EncodingByteBuffer/EncodingCharBuffer or internal pointer-based coding hooks. The upstream
-// GetBytes and GetChars bodies run unchanged over spans with private equivalents of those
-// helpers, and the nested Encoder and Decoder carry EncoderNLS/DecoderNLS's validation, MustFlush
-// and throw-on-overflow rules for every public overload, including the span overloads that
-// NetWasm's base classes implement generically. Decoder fallbacks go through the public
-// DecoderFallbackBuffer contract (upstream's internal counting shortcut in
-// DecoderUTF7FallbackBuffer gives the same counts, so it is not ported). The default fallbacks
-// are passed to the base constructor instead of overriding SetDefaultFallbacks, and EncodingName
-// and WebName are overridden because NetWasm's Encoding has no code-page table.
+// Copied from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce src/libraries/System.Private.CoreLib/src/System/Text/UTF7Encoding.cs
 
 //
 // Don't override IsAlwaysNormalized because it is just a Unicode Transformation and could be confused.
@@ -18,6 +8,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 
 namespace System.Text
 {
@@ -52,10 +43,7 @@ namespace System.Text
 
         [Obsolete(Obsoletions.SystemTextEncodingUTF7Message, DiagnosticId = Obsoletions.SystemTextEncodingUTF7DiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
         public UTF7Encoding(bool allowOptionals)
-            // UTF7 had an odd decoderFallback behavior, and the Encoder fallback
-            // is irrelevant because we encode surrogates individually and never check for unmatched ones
-            // (so nothing can fallback during encoding)
-            : base(UTF7_CODEPAGE, new EncoderReplacementFallback(string.Empty), new DecoderUTF7Fallback()) // Set the data item.
+            : base(UTF7_CODEPAGE) // Set the data item.
         {
             // Allowing optionals?
             _allowOptionals = allowOptionals;
@@ -98,9 +86,15 @@ namespace System.Text
             }
         }
 
-        public override string EncodingName => "Unicode (UTF-7)";
-
-        public override string WebName => "utf-7";
+        // We go ahead and set this because Encoding expects it, however nothing can fall back in UTF7.
+        internal sealed override void SetDefaultFallbacks()
+        {
+            // UTF7 had an odd decoderFallback behavior, and the Encoder fallback
+            // is irrelevant because we encode surrogates individually and never check for unmatched ones
+            // (so nothing can fallback during encoding)
+            this.encoderFallback = new EncoderReplacementFallback(string.Empty);
+            this.decoderFallback = new DecoderUTF7Fallback();
+        }
 
         public override bool Equals([NotNullWhen(true)] object? value)
         {
@@ -133,9 +127,8 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        public override int GetByteCount(char[] chars, int index, int count)
+        public override unsafe int GetByteCount(char[] chars, int index, int count)
         {
-            // Validate input parameters
             ArgumentNullException.ThrowIfNull(chars);
 
             ArgumentOutOfRangeException.ThrowIfNegative(index);
@@ -148,7 +141,9 @@ namespace System.Text
             if (count == 0)
                 return 0;
 
-            return GetByteCountCore(new ReadOnlySpan<char>(chars, index, count), null);
+            // Just call the pointer version
+            fixed (char* pChars = chars)
+                return GetByteCount(pChars + index, count, null);
         }
 
         // All of our public Encodings that don't use EncodingNLS must have this (including EncodingNLS)
@@ -156,12 +151,15 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        public override int GetByteCount(string s)
+        public override unsafe int GetByteCount(string s)
         {
-            // Validate input
-            ArgumentNullException.ThrowIfNull(s);
+            if (s is null)
+            {
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.s);
+            }
 
-            return GetByteCountCore(s.AsSpan(), null);
+            fixed (char* pChars = s)
+                return GetByteCount(pChars, s.Length, null);
         }
 
         // All of our public Encodings that don't use EncodingNLS must have this (including EncodingNLS)
@@ -171,25 +169,21 @@ namespace System.Text
         [CLSCompliant(false)]
         public override unsafe int GetByteCount(char* chars, int count)
         {
-            // Validate Parameters
             ArgumentNullException.ThrowIfNull(chars);
 
             ArgumentOutOfRangeException.ThrowIfNegative(count);
 
-            return GetByteCountCore(new ReadOnlySpan<char>(chars, count), null);
+            // Call it with empty encoder
+            return GetByteCount(chars, count, null);
         }
-
-        // NetWasm: the span overloads use the same cores as the pointer overloads; upstream's
-        // Encoding base class reaches them by pinning the spans.
-        public override int GetByteCount(ReadOnlySpan<char> chars) => GetByteCountCore(chars, null);
 
         // Parent method is safe.
         // All of our public Encodings that don't use EncodingNLS must have this (including EncodingNLS)
         // So if you fix this, fix the others.  Currently those include:
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
 
-        public override int GetBytes(string s, int charIndex, int charCount,
-                                     byte[] bytes, int byteIndex)
+        public override unsafe int GetBytes(string s, int charIndex, int charCount,
+                                            byte[] bytes, int byteIndex)
         {
             ArgumentNullException.ThrowIfNull(s);
             ArgumentNullException.ThrowIfNull(bytes);
@@ -203,7 +197,13 @@ namespace System.Text
             if (byteIndex < 0 || byteIndex > bytes.Length)
                 throw new ArgumentOutOfRangeException(nameof(byteIndex), SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
 
-            return GetBytesCore(s.AsSpan(charIndex, charCount), new Span<byte>(bytes, byteIndex, bytes.Length - byteIndex), counting: false, null);
+            int byteCount = bytes.Length - byteIndex;
+
+            fixed (char* pChars = s)
+            fixed (byte* pBytes = &MemoryMarshal.GetArrayDataReference(bytes))
+            {
+                return GetBytes(pChars + charIndex, charCount, pBytes + byteIndex, byteCount, null);
+            }
         }
 
         // Encodes a range of characters in a character array into a range of bytes
@@ -220,10 +220,9 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        public override int GetBytes(char[] chars, int charIndex, int charCount,
-                                     byte[] bytes, int byteIndex)
+        public override unsafe int GetBytes(char[] chars, int charIndex, int charCount,
+                                            byte[] bytes, int byteIndex)
         {
-            // Validate parameters
             ArgumentNullException.ThrowIfNull(chars);
             ArgumentNullException.ThrowIfNull(bytes);
 
@@ -236,11 +235,19 @@ namespace System.Text
             if (byteIndex < 0 || byteIndex > bytes.Length)
                 throw new ArgumentOutOfRangeException(nameof(byteIndex), SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
 
-            // If nothing to encode return 0
+            // If nothing to encode return 0, avoid fixed problem
             if (charCount == 0)
                 return 0;
 
-            return GetBytesCore(new ReadOnlySpan<char>(chars, charIndex, charCount), new Span<byte>(bytes, byteIndex, bytes.Length - byteIndex), counting: false, null);
+            // Just call pointer version
+            int byteCount = bytes.Length - byteIndex;
+
+            fixed (char* pChars = chars)
+            fixed (byte* pBytes = &MemoryMarshal.GetArrayDataReference(bytes))
+            {
+                // Remember that byteCount is # to decode, not size of array.
+                return GetBytes(pChars + charIndex, charCount, pBytes + byteIndex, byteCount, null);
+            }
         }
 
         // All of our public Encodings that don't use EncodingNLS must have this (including EncodingNLS)
@@ -250,18 +257,14 @@ namespace System.Text
         [CLSCompliant(false)]
         public override unsafe int GetBytes(char* chars, int charCount, byte* bytes, int byteCount)
         {
-            // Validate Parameters
             ArgumentNullException.ThrowIfNull(chars);
             ArgumentNullException.ThrowIfNull(bytes);
 
             ArgumentOutOfRangeException.ThrowIfNegative(charCount);
             ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
 
-            return GetBytesCore(new ReadOnlySpan<char>(chars, charCount), new Span<byte>(bytes, byteCount), counting: false, null);
+            return GetBytes(chars, charCount, bytes, byteCount, null);
         }
-
-        public override int GetBytes(ReadOnlySpan<char> chars, Span<byte> bytes) =>
-            GetBytesCore(chars, bytes, counting: false, null);
 
         // Returns the number of characters produced by decoding a range of bytes
         // in a byte array.
@@ -271,9 +274,8 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        public override int GetCharCount(byte[] bytes, int index, int count)
+        public override unsafe int GetCharCount(byte[] bytes, int index, int count)
         {
-            // Validate Parameters
             ArgumentNullException.ThrowIfNull(bytes);
 
             ArgumentOutOfRangeException.ThrowIfNegative(index);
@@ -286,7 +288,9 @@ namespace System.Text
             if (count == 0)
                 return 0;
 
-            return GetCharCountCore(new ReadOnlySpan<byte>(bytes, index, count), null);
+            // Just call pointer version
+            fixed (byte* pBytes = bytes)
+                return GetCharCount(pBytes + index, count, null);
         }
 
         // All of our public Encodings that don't use EncodingNLS must have this (including EncodingNLS)
@@ -300,20 +304,17 @@ namespace System.Text
 
             ArgumentOutOfRangeException.ThrowIfNegative(count);
 
-            return GetCharCountCore(new ReadOnlySpan<byte>(bytes, count), null);
+            return GetCharCount(bytes, count, null);
         }
-
-        public override int GetCharCount(ReadOnlySpan<byte> bytes) => GetCharCountCore(bytes, null);
 
         // All of our public Encodings that don't use EncodingNLS must have this (including EncodingNLS)
         // So if you fix this, fix the others.  Currently those include:
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        public override int GetChars(byte[] bytes, int byteIndex, int byteCount,
-                                     char[] chars, int charIndex)
+        public override unsafe int GetChars(byte[] bytes, int byteIndex, int byteCount,
+                                            char[] chars, int charIndex)
         {
-            // Validate Parameters
             ArgumentNullException.ThrowIfNull(bytes);
             ArgumentNullException.ThrowIfNull(chars);
 
@@ -330,7 +331,15 @@ namespace System.Text
             if (byteCount == 0)
                 return 0;
 
-            return GetCharsCore(new ReadOnlySpan<byte>(bytes, byteIndex, byteCount), new Span<char>(chars, charIndex, chars.Length - charIndex), counting: false, null);
+            // Just call pointer version
+            int charCount = chars.Length - charIndex;
+
+            fixed (byte* pBytes = bytes)
+            fixed (char* pChars = &MemoryMarshal.GetArrayDataReference(chars))
+            {
+                // Remember that charCount is # to decode, not size of array
+                return GetChars(pBytes + byteIndex, byteCount, pChars + charIndex, charCount, null);
+            }
         }
 
         // All of our public Encodings that don't use EncodingNLS must have this (including EncodingNLS)
@@ -346,11 +355,8 @@ namespace System.Text
             ArgumentOutOfRangeException.ThrowIfNegative(charCount);
             ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
 
-            return GetCharsCore(new ReadOnlySpan<byte>(bytes, byteCount), new Span<char>(chars, charCount), counting: false, null);
+            return GetChars(bytes, byteCount, chars, charCount, null);
         }
-
-        public override int GetChars(ReadOnlySpan<byte> bytes, Span<char> chars) =>
-            GetCharsCore(bytes, chars, counting: false, null);
 
         // Returns a string containing the decoded representation of a range of
         // bytes in a byte array.
@@ -360,9 +366,8 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        public override string GetString(byte[] bytes, int index, int count)
+        public override unsafe string GetString(byte[] bytes, int index, int count)
         {
-            // Validate Parameters
             ArgumentNullException.ThrowIfNull(bytes);
 
             ArgumentOutOfRangeException.ThrowIfNegative(index);
@@ -374,23 +379,32 @@ namespace System.Text
             // Avoid problems with empty input buffer
             if (count == 0) return string.Empty;
 
-            return GetString(new ReadOnlySpan<byte>(bytes, index, count));
+            fixed (byte* pBytes = bytes)
+                return string.CreateStringFromEncoding(
+                    pBytes + index, count, this);
         }
 
         //
         // End of standard methods copied from EncodingNLS.cs
         //
-        private int GetByteCountCore(ReadOnlySpan<char> chars, Encoder? baseEncoder)
+        internal sealed override unsafe int GetByteCount(char* chars, int count, EncoderNLS? baseEncoder)
         {
+            Debug.Assert(chars is not null, "[UTF7Encoding.GetByteCount]chars!=null");
+            Debug.Assert(count >= 0, "[UTF7Encoding.GetByteCount]count >=0");
+
             // Just call GetBytes with bytes is null
-            return GetBytesCore(chars, default, counting: true, baseEncoder);
+            return GetBytes(chars, count, null, 0, baseEncoder);
         }
 
-        private int GetBytesCore(
-            ReadOnlySpan<char> chars, Span<byte> bytes, bool counting, Encoder? baseEncoder)
+        internal sealed override unsafe int GetBytes(
+            char* chars, int charCount, byte* bytes, int byteCount, EncoderNLS? baseEncoder)
         {
+            Debug.Assert(byteCount >= 0, "[UTF7Encoding.GetBytes]byteCount >=0");
+            Debug.Assert(chars is not null, "[UTF7Encoding.GetBytes]chars!=null");
+            Debug.Assert(charCount >= 0, "[UTF7Encoding.GetBytes]charCount >=0");
+
             // Get encoder info
-            Encoder? encoder = baseEncoder;
+            Encoder? encoder = (Encoder?)baseEncoder;
 
             // Default bits & count
             int bits = 0;
@@ -398,7 +412,7 @@ namespace System.Text
 
             // prepare our helpers
             EncodingByteBuffer buffer = new EncodingByteBuffer(
-                this, encoder, bytes, counting, chars);
+                this, encoder, bytes, byteCount, chars, charCount);
 
             if (encoder is not null)
             {
@@ -511,7 +525,7 @@ namespace System.Text
 
             // Do we have an encoder we're allowed to use?
             // bytes is null if counting, so don't use encoder then
-            if (!counting && encoder is not null)
+            if (bytes is not null && encoder is not null)
             {
                 // We already cleared bits & bitcount for mustflush case
                 encoder.bits = bits;
@@ -522,21 +536,28 @@ namespace System.Text
             return buffer.Count;
         }
 
-        private int GetCharCountCore(ReadOnlySpan<byte> bytes, Decoder? baseDecoder)
+        internal sealed override unsafe int GetCharCount(byte* bytes, int count, DecoderNLS? baseDecoder)
         {
+            Debug.Assert(count >= 0, "[UTF7Encoding.GetCharCount]count >=0");
+            Debug.Assert(bytes is not null, "[UTF7Encoding.GetCharCount]bytes!=null");
+
             // Just call GetChars with null char* to do counting
-            return GetCharsCore(bytes, default, counting: true, baseDecoder);
+            return GetChars(bytes, count, null, 0, baseDecoder);
         }
 
-        private int GetCharsCore(
-            ReadOnlySpan<byte> bytes, Span<char> chars, bool counting, Decoder? baseDecoder)
+        internal sealed override unsafe int GetChars(
+            byte* bytes, int byteCount, char* chars, int charCount, DecoderNLS? baseDecoder)
         {
+            Debug.Assert(byteCount >= 0, "[UTF7Encoding.GetChars]byteCount >=0");
+            Debug.Assert(bytes is not null, "[UTF7Encoding.GetChars]bytes!=null");
+            Debug.Assert(charCount >= 0, "[UTF7Encoding.GetChars]charCount >=0");
+
             // Might use a decoder
-            Decoder? decoder = baseDecoder;
+            Decoder? decoder = (Decoder?)baseDecoder;
 
             // Get our output buffer info.
             EncodingCharBuffer buffer = new EncodingCharBuffer(
-                this, decoder, chars, counting, bytes);
+                this, decoder, chars, charCount, bytes, byteCount);
 
             // Get decoder info
             int bits = 0;
@@ -667,7 +688,7 @@ namespace System.Text
             }
 
             // Stick stuff in the decoder if we can (chars is null if counting, so don't store decoder)
-            if (!counting && decoder is not null)
+            if (chars is not null && decoder is not null)
             {
                 // MustFlush?  (Could've been cleared by ThrowCharsOverflow if Convert & didn't reach end of buffer)
                 if (decoder.MustFlush)
@@ -742,61 +763,10 @@ namespace System.Text
             return charCount;
         }
 
-        // NetWasm: Encoding.ThrowBytesOverflow(EncoderNLS, bool) for this codec.
-        private void ThrowBytesOverflow(Encoder? encoder, bool nothingEncoded)
-        {
-            if (encoder is null || encoder._throwOnOverflow || nothingEncoded)
-            {
-                encoder?.FallbackBuffer.Reset();
-
-                // Special message to include fallback type in case fallback's GetMaxCharCount is broken
-                // This happens if user has implemented an encoder fallback with a broken GetMaxCharCount
-                ThrowBytesOverflow();
-            }
-
-            // If we didn't throw, we are in convert and have to remember our flushing
-            encoder.ClearMustFlush();
-        }
-
-        [DoesNotReturn]
-        private void ThrowBytesOverflow() =>
-            // Special message to include fallback type in case fallback's GetMaxCharCount is broken
-            // This happens if user has implemented an encoder fallback with a broken GetMaxCharCount
-            throw new ArgumentException(SR.Format(SR.Argument_EncodingConversionOverflowBytes, EncodingName, EncoderFallback.GetType()), "bytes");
-
-        // NetWasm: Encoding.ThrowCharsOverflow(DecoderNLS, bool) for this codec.
-        private void ThrowCharsOverflow(Decoder? decoder, bool nothingDecoded)
-        {
-            if (decoder is null || decoder._throwOnOverflow || nothingDecoded)
-            {
-                decoder?.FallbackBuffer.Reset();
-
-                // Special message to include fallback type in case fallback's GetMaxCharCount is broken
-                // This happens if user has implemented a decoder fallback with a broken GetMaxCharCount
-                ThrowCharsOverflow();
-            }
-
-            // If we didn't throw, we are in convert and have to remember our flushing
-            decoder.ClearMustFlush();
-        }
-
-        [DoesNotReturn]
-        private void ThrowCharsOverflow() =>
-            // Special message to include fallback type in case fallback's GetMaxCharCount is broken
-            // This happens if user has implemented a decoder fallback with a broken GetMaxCharCount
-            throw new ArgumentException(SR.Format(SR.Argument_EncodingConversionOverflowChars, EncodingName, DecoderFallback.GetType()), "chars");
-
         // Of all the amazing things... This MUST be Decoder so that our com name
         // for System.Text.Decoder doesn't change
-        // NetWasm: derives from System.Text.Decoder and carries DecoderNLS's validation, MustFlush
-        // and throw-on-overflow handling.
-        private sealed class Decoder : Text.Decoder
+        private sealed class Decoder : DecoderNLS
         {
-            private readonly UTF7Encoding _utf7Encoding;
-            private bool _mustFlush;
-            internal bool _throwOnOverflow;
-            internal int _bytesUsed;
-
             /*private*/
             internal int bits;
             /*private*/
@@ -804,12 +774,9 @@ namespace System.Text
             /*private*/
             internal bool firstByte;
 
-            public Decoder(UTF7Encoding encoding)
+            public Decoder(UTF7Encoding encoding) : base(encoding)
             {
-                _utf7Encoding = encoding;
-                Initialize(encoding);
-                Fallback = encoding.DecoderFallback;
-                this.Reset();
+                // base calls reset
             }
 
             public override void Reset()
@@ -817,355 +784,39 @@ namespace System.Text
                 this.bits = 0;
                 this.bitCount = -1;
                 this.firstByte = false;
-                base.Reset();
+                _fallbackBuffer?.Reset();
             }
-
-            public override int GetCharCount(byte[] bytes, int index, int count)
-            {
-                return GetCharCount(bytes, index, count, false);
-            }
-
-            public override int GetCharCount(byte[] bytes, int index, int count, bool flush)
-            {
-                ArgumentNullException.ThrowIfNull(bytes);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(index);
-                ArgumentOutOfRangeException.ThrowIfNegative(count);
-
-                if (bytes.Length - index < count)
-                    throw new ArgumentOutOfRangeException(nameof(bytes),
-                        SR.ArgumentOutOfRange_IndexCountBuffer);
-
-                return CharCount(new ReadOnlySpan<byte>(bytes, index, count), flush);
-            }
-
-            public override unsafe int GetCharCount(byte* bytes, int count, bool flush)
-            {
-                ArgumentNullException.ThrowIfNull(bytes);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(count);
-
-                return CharCount(new ReadOnlySpan<byte>(bytes, count), flush);
-            }
-
-            public override int GetCharCount(ReadOnlySpan<byte> bytes, bool flush) => CharCount(bytes, flush);
-
-            private int CharCount(ReadOnlySpan<byte> bytes, bool flush)
-            {
-                // Remember the flush
-                _mustFlush = flush;
-                _throwOnOverflow = true;
-
-                return _utf7Encoding.GetCharCountCore(bytes, this);
-            }
-
-            public override int GetChars(byte[] bytes, int byteIndex, int byteCount,
-                                         char[] chars, int charIndex)
-            {
-                return GetChars(bytes, byteIndex, byteCount, chars, charIndex, false);
-            }
-
-            public override int GetChars(byte[] bytes, int byteIndex, int byteCount,
-                                         char[] chars, int charIndex, bool flush)
-            {
-                ArgumentNullException.ThrowIfNull(bytes);
-                ArgumentNullException.ThrowIfNull(chars);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(byteIndex);
-                ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
-
-                if (bytes.Length - byteIndex < byteCount)
-                    throw new ArgumentOutOfRangeException(nameof(bytes),
-                        SR.ArgumentOutOfRange_IndexCountBuffer);
-
-                if (charIndex < 0 || charIndex > chars.Length)
-                    throw new ArgumentOutOfRangeException(nameof(charIndex),
-                        SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
-
-                return Chars(new ReadOnlySpan<byte>(bytes, byteIndex, byteCount),
-                             new Span<char>(chars, charIndex, chars.Length - charIndex), flush);
-            }
-
-            public override unsafe int GetChars(byte* bytes, int byteCount,
-                                                char* chars, int charCount, bool flush)
-            {
-                ArgumentNullException.ThrowIfNull(bytes);
-                ArgumentNullException.ThrowIfNull(chars);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
-                ArgumentOutOfRangeException.ThrowIfNegative(charCount);
-
-                return Chars(new ReadOnlySpan<byte>(bytes, byteCount), new Span<char>(chars, charCount), flush);
-            }
-
-            public override int GetChars(ReadOnlySpan<byte> bytes, Span<char> chars, bool flush) => Chars(bytes, chars, flush);
-
-            private int Chars(ReadOnlySpan<byte> bytes, Span<char> chars, bool flush)
-            {
-                // Remember our flush
-                _mustFlush = flush;
-                _throwOnOverflow = true;
-
-                return _utf7Encoding.GetCharsCore(bytes, chars, counting: false, this);
-            }
-
-            public override void Convert(byte[] bytes, int byteIndex, int byteCount,
-                                         char[] chars, int charIndex, int charCount, bool flush,
-                                         out int bytesUsed, out int charsUsed, out bool completed)
-            {
-                ArgumentNullException.ThrowIfNull(bytes);
-                ArgumentNullException.ThrowIfNull(chars);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(byteIndex);
-                ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(charIndex);
-                ArgumentOutOfRangeException.ThrowIfNegative(charCount);
-
-                if (bytes.Length - byteIndex < byteCount)
-                    throw new ArgumentOutOfRangeException(nameof(bytes),
-                          SR.ArgumentOutOfRange_IndexCountBuffer);
-
-                if (chars.Length - charIndex < charCount)
-                    throw new ArgumentOutOfRangeException(nameof(chars),
-                          SR.ArgumentOutOfRange_IndexCountBuffer);
-
-                ConvertCore(new ReadOnlySpan<byte>(bytes, byteIndex, byteCount), new Span<char>(chars, charIndex, charCount), flush,
-                    out bytesUsed, out charsUsed, out completed);
-            }
-
-            public override unsafe void Convert(byte* bytes, int byteCount,
-                                                char* chars, int charCount, bool flush,
-                                                out int bytesUsed, out int charsUsed, out bool completed)
-            {
-                ArgumentNullException.ThrowIfNull(bytes);
-                ArgumentNullException.ThrowIfNull(chars);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
-                ArgumentOutOfRangeException.ThrowIfNegative(charCount);
-
-                ConvertCore(new ReadOnlySpan<byte>(bytes, byteCount), new Span<char>(chars, charCount), flush,
-                    out bytesUsed, out charsUsed, out completed);
-            }
-
-            public override void Convert(ReadOnlySpan<byte> bytes, Span<char> chars, bool flush,
-                                         out int bytesUsed, out int charsUsed, out bool completed) =>
-                ConvertCore(bytes, chars, flush, out bytesUsed, out charsUsed, out completed);
-
-            private void ConvertCore(ReadOnlySpan<byte> bytes, Span<char> chars, bool flush,
-                                     out int bytesUsed, out int charsUsed, out bool completed)
-            {
-                // We don't want to throw
-                _mustFlush = flush;
-                _throwOnOverflow = false;
-                _bytesUsed = 0;
-
-                // Do conversion
-                charsUsed = _utf7Encoding.GetCharsCore(bytes, chars, counting: false, this);
-                bytesUsed = _bytesUsed;
-
-                // It's completed if they've used what they wanted AND if they didn't want flush or if we are flushed
-                // Its also completed if we've used all the data and there's no fallback data left
-                completed = (bytesUsed == bytes.Length)
-                    && (!flush || !this.HasState)
-                    && FallbackBuffer.Remaining == 0;
-            }
-
-            internal bool MustFlush => _mustFlush;
 
             // Anything left in our encoder?
-            internal bool HasState =>
+            internal override bool HasState =>
                 // NOTE: This forces the last -, which some encoder might not encode.  If we
                 // don't see it we don't think we're done reading.
                 this.bitCount != -1;
-
-            internal void ClearMustFlush()
-            {
-                _mustFlush = false;
-            }
         }
 
         // Of all the amazing things... This MUST be Encoder so that our com name
         // for System.Text.Encoder doesn't change
-        // NetWasm: derives from System.Text.Encoder and carries EncoderNLS's validation, MustFlush
-        // and throw-on-overflow handling.
-        private sealed class Encoder : Text.Encoder
+        private sealed class Encoder : EncoderNLS
         {
-            private readonly UTF7Encoding _utf7Encoding;
-            private bool _mustFlush;
-            internal bool _throwOnOverflow;
-            internal int _charsUsed;
-
             /*private*/
             internal int bits;
             /*private*/
             internal int bitCount;
 
-            public Encoder(UTF7Encoding encoding)
+            public Encoder(UTF7Encoding encoding) : base(encoding)
             {
-                _utf7Encoding = encoding;
-                Initialize(encoding);
-                Fallback = encoding.EncoderFallback;
-                this.Reset();
+                // base calls reset
             }
 
             public override void Reset()
             {
                 this.bitCount = -1;
                 this.bits = 0;
-                base.Reset();
+                _fallbackBuffer?.Reset();
             }
-
-            public override int GetByteCount(char[] chars, int index, int count, bool flush)
-            {
-                ArgumentNullException.ThrowIfNull(chars);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(index);
-                ArgumentOutOfRangeException.ThrowIfNegative(count);
-
-                if (chars.Length - index < count)
-                    throw new ArgumentOutOfRangeException(nameof(chars),
-                          SR.ArgumentOutOfRange_IndexCountBuffer);
-
-                return ByteCount(new ReadOnlySpan<char>(chars, index, count), flush);
-            }
-
-            public override unsafe int GetByteCount(char* chars, int count, bool flush)
-            {
-                ArgumentNullException.ThrowIfNull(chars);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(count);
-
-                return ByteCount(new ReadOnlySpan<char>(chars, count), flush);
-            }
-
-            public override int GetByteCount(ReadOnlySpan<char> chars, bool flush) => ByteCount(chars, flush);
-
-            private int ByteCount(ReadOnlySpan<char> chars, bool flush)
-            {
-                _mustFlush = flush;
-                _throwOnOverflow = true;
-
-                return _utf7Encoding.GetByteCountCore(chars, this);
-            }
-
-            public override int GetBytes(char[] chars, int charIndex, int charCount,
-                                         byte[] bytes, int byteIndex, bool flush)
-            {
-                ArgumentNullException.ThrowIfNull(chars);
-                ArgumentNullException.ThrowIfNull(bytes);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(charIndex);
-                ArgumentOutOfRangeException.ThrowIfNegative(charCount);
-
-                if (chars.Length - charIndex < charCount)
-                    throw new ArgumentOutOfRangeException(nameof(chars),
-                          SR.ArgumentOutOfRange_IndexCountBuffer);
-
-                if (byteIndex < 0 || byteIndex > bytes.Length)
-                    throw new ArgumentOutOfRangeException(nameof(byteIndex),
-                         SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
-
-                return Bytes(new ReadOnlySpan<char>(chars, charIndex, charCount),
-                             new Span<byte>(bytes, byteIndex, bytes.Length - byteIndex), flush);
-            }
-
-            public override unsafe int GetBytes(char* chars, int charCount, byte* bytes, int byteCount, bool flush)
-            {
-                ArgumentNullException.ThrowIfNull(chars);
-                ArgumentNullException.ThrowIfNull(bytes);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
-                ArgumentOutOfRangeException.ThrowIfNegative(charCount);
-
-                return Bytes(new ReadOnlySpan<char>(chars, charCount), new Span<byte>(bytes, byteCount), flush);
-            }
-
-            public override int GetBytes(ReadOnlySpan<char> chars, Span<byte> bytes, bool flush) => Bytes(chars, bytes, flush);
-
-            private int Bytes(ReadOnlySpan<char> chars, Span<byte> bytes, bool flush)
-            {
-                _mustFlush = flush;
-                _throwOnOverflow = true;
-
-                return _utf7Encoding.GetBytesCore(chars, bytes, counting: false, this);
-            }
-
-            // This method is used when your output buffer might not be large enough for the entire result.
-            // Just call the pointer version.  (This gets bytes)
-            public override void Convert(char[] chars, int charIndex, int charCount,
-                                         byte[] bytes, int byteIndex, int byteCount, bool flush,
-                                         out int charsUsed, out int bytesUsed, out bool completed)
-            {
-                ArgumentNullException.ThrowIfNull(chars);
-                ArgumentNullException.ThrowIfNull(bytes);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(charIndex);
-                ArgumentOutOfRangeException.ThrowIfNegative(charCount);
-                ArgumentOutOfRangeException.ThrowIfNegative(byteIndex);
-                ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
-
-                if (chars.Length - charIndex < charCount)
-                    throw new ArgumentOutOfRangeException(nameof(chars),
-                          SR.ArgumentOutOfRange_IndexCountBuffer);
-
-                if (bytes.Length - byteIndex < byteCount)
-                    throw new ArgumentOutOfRangeException(nameof(bytes),
-                          SR.ArgumentOutOfRange_IndexCountBuffer);
-
-                ConvertCore(new ReadOnlySpan<char>(chars, charIndex, charCount), new Span<byte>(bytes, byteIndex, byteCount), flush,
-                    out charsUsed, out bytesUsed, out completed);
-            }
-
-            // This is the version that uses pointers.  We call the base encoding worker function
-            // after setting our appropriate internal variables.  This is getting bytes
-            public override unsafe void Convert(char* chars, int charCount,
-                                                byte* bytes, int byteCount, bool flush,
-                                                out int charsUsed, out int bytesUsed, out bool completed)
-            {
-                ArgumentNullException.ThrowIfNull(chars);
-                ArgumentNullException.ThrowIfNull(bytes);
-
-                ArgumentOutOfRangeException.ThrowIfNegative(charCount);
-                ArgumentOutOfRangeException.ThrowIfNegative(byteCount);
-
-                ConvertCore(new ReadOnlySpan<char>(chars, charCount), new Span<byte>(bytes, byteCount), flush,
-                    out charsUsed, out bytesUsed, out completed);
-            }
-
-            public override void Convert(ReadOnlySpan<char> chars, Span<byte> bytes, bool flush,
-                                         out int charsUsed, out int bytesUsed, out bool completed) =>
-                ConvertCore(chars, bytes, flush, out charsUsed, out bytesUsed, out completed);
-
-            private void ConvertCore(ReadOnlySpan<char> chars, Span<byte> bytes, bool flush,
-                                     out int charsUsed, out int bytesUsed, out bool completed)
-            {
-                // We don't want to throw
-                _mustFlush = flush;
-                _throwOnOverflow = false;
-                _charsUsed = 0;
-
-                // Do conversion
-                bytesUsed = _utf7Encoding.GetBytesCore(chars, bytes, counting: false, this);
-                charsUsed = _charsUsed;
-
-                // Its completed if they've used what they wanted AND if they didn't want flush or if we are flushed
-                completed = (charsUsed == chars.Length)
-                    && (!flush || !this.HasState)
-                    && FallbackBuffer.Remaining == 0;
-
-                // Our data thingy are now full, we can return
-            }
-
-            internal bool MustFlush => _mustFlush;
 
             // Anything left in our encoder?
-            internal bool HasState => this.bits != 0 || this.bitCount != -1;
-
-            internal void ClearMustFlush()
-            {
-                _mustFlush = false;
-            }
+            internal override bool HasState => this.bits != 0 || this.bitCount != -1;
         }
 
         // Preexisting UTF7 behavior for bad bytes was just to spit out the byte as the next char
@@ -1237,304 +888,27 @@ namespace System.Text
             public override int Remaining => (iCount > 0) ? iCount : 0;
 
             // Clear the buffer
-            public override void Reset()
+            public override unsafe void Reset()
             {
                 iCount = -1;
-            }
-        }
-
-        // NetWasm: the parts of upstream's internal EncodingByteBuffer that UTF-7 uses, over spans.
-        // UTF-7 never falls back while encoding, so the encoder's fallback buffer is not consulted.
-        private ref struct EncodingByteBuffer
-        {
-            private readonly UTF7Encoding _enc;
-            private readonly Encoder? _encoder;
-            private readonly Span<byte> _bytes;
-            private readonly bool _counting;
-            private readonly ReadOnlySpan<char> _chars;
-            private int _byteIndex;
-            private int _charIndex;
-            private int _byteCountResult;
-
-            internal EncodingByteBuffer(UTF7Encoding inEncoding, Encoder? inEncoder,
-                        Span<byte> inByteStart, bool counting, ReadOnlySpan<char> inCharStart)
-            {
-                _enc = inEncoding;
-                _encoder = inEncoder;
-                _bytes = inByteStart;
-                _counting = counting;
-                _chars = inCharStart;
-                _byteIndex = 0;
-                _charIndex = 0;
-                _byteCountResult = 0;
+                byteStart = null;
             }
 
-            internal bool AddByte(byte b, int moreBytesExpected)
+            // This version just counts the fallback and doesn't actually copy anything.
+            internal override unsafe int InternalFallback(byte[] bytes, byte* pBytes)
+            // Right now this has both bytes and bytes[], since we might have extra bytes, hence the
+            // array, and we might need the index, hence the byte*
             {
-                Debug.Assert(moreBytesExpected >= 0, "[EncodingByteBuffer.AddByte]expected non-negative moreBytesExpected");
-                if (!_counting)
+                // We expect no previous fallback in our buffer
+                Debug.Assert(iCount < 0, "[DecoderUTF7FallbackBuffer.InternalFallback] Can't have recursive fallbacks");
+                if (bytes.Length != 1)
                 {
-                    if (_byteIndex >= _bytes.Length - moreBytesExpected)
-                    {
-                        // Throw maybe.  Check which buffer to back up (only matters if Converting)
-                        this.MovePrevious(true);            // Throw if necessary
-                        return false;                       // No throw, but no store either
-                    }
-
-                    _bytes[_byteIndex++] = b;
-                }
-                _byteCountResult++;
-                return true;
-            }
-
-            internal bool AddByte(byte b1)
-            {
-                return AddByte(b1, 0);
-            }
-
-            internal bool AddByte(byte b1, byte b2)
-            {
-                return AddByte(b1, b2, 0);
-            }
-
-            internal bool AddByte(byte b1, byte b2, int moreBytesExpected)
-            {
-                return AddByte(b1, 1 + moreBytesExpected) && AddByte(b2, moreBytesExpected);
-            }
-
-            internal void MovePrevious(bool bThrow)
-            {
-                if (_charIndex > 0)
-                    _charIndex--;
-
-                if (bThrow)
-                    _enc.ThrowBytesOverflow(_encoder, _byteIndex == 0);
-            }
-
-            internal bool MoreData => _charIndex < _chars.Length;
-
-            internal char GetNextChar()
-            {
-                char cReturn = (char)0;
-                if (_charIndex < _chars.Length)
-                    cReturn = _chars[_charIndex++];
-
-                return cReturn;
-            }
-
-            internal int CharsUsed => _charIndex;
-
-            internal int Count => _byteCountResult;
-        }
-
-        // NetWasm: the parts of upstream's internal EncodingCharBuffer that UTF-7 uses, over spans,
-        // with DecoderFallbackBuffer.InternalFallback expressed through the public fallback contract.
-        private ref struct EncodingCharBuffer
-        {
-            private readonly UTF7Encoding _enc;
-            private readonly Decoder? _decoder;
-            private readonly Span<char> _chars;
-            private readonly bool _counting;
-            private readonly ReadOnlySpan<byte> _bytes;
-            private int _charIndex;
-            private int _byteIndex;
-            private int _charCountResult;
-            private readonly DecoderFallbackBuffer _fallbackBuffer;
-
-            internal EncodingCharBuffer(UTF7Encoding enc, Decoder? decoder, Span<char> charStart, bool counting,
-                                        ReadOnlySpan<byte> byteStart)
-            {
-                _enc = enc;
-                _decoder = decoder;
-
-                _chars = charStart;
-                _counting = counting;
-                _bytes = byteStart;
-                _charIndex = 0;
-                _byteIndex = 0;
-                _charCountResult = 0;
-
-                if (decoder is null)
-                    _fallbackBuffer = enc.DecoderFallback.CreateFallbackBuffer();
-                else
-                    _fallbackBuffer = decoder.FallbackBuffer;
-
-                // If we're getting chars or getting char count we don't expect to have
-                // to remember fallbacks between calls (so it should be empty)
-                Debug.Assert(_fallbackBuffer.Remaining == 0,
-                    "[Encoding.EncodingCharBuffer.EncodingCharBuffer]Expected empty fallback buffer for getchars/charcount");
-            }
-
-            internal bool AddChar(char ch, int numBytes)
-            {
-                if (!_counting)
-                {
-                    if (_charIndex >= _chars.Length)
-                    {
-                        // Throw maybe
-                        _byteIndex -= numBytes;                                        // Didn't encode these bytes
-                        _enc.ThrowCharsOverflow(_decoder, _byteIndex <= 0);    // Throw?
-                        return false;                                           // No throw, but no store either
-                    }
-
-                    _chars[_charIndex++] = ch;
-                }
-                _charCountResult++;
-                return true;
-            }
-
-            internal bool AddChar(char ch)
-            {
-                return AddChar(ch, 1);
-            }
-
-            internal void AdjustBytes(int count)
-            {
-                _byteIndex += count;
-            }
-
-            internal bool MoreData => _byteIndex < _bytes.Length;
-
-            internal byte GetNextByte()
-            {
-                if (_byteIndex >= _bytes.Length)
-                    return 0;
-                return _bytes[_byteIndex++];
-            }
-
-            internal int BytesUsed => _byteIndex;
-
-            internal bool Fallback(byte fallbackByte)
-            {
-                // Build our buffer
-                byte[] byteBuffer = new byte[] { fallbackByte };
-
-                // Do the fallback and add the data.
-                return Fallback(byteBuffer);
-            }
-
-            internal bool Fallback(byte[] byteBuffer)
-            {
-                // Do the fallback and add the data.
-                if (!_counting)
-                {
-                    int charStart = _charIndex;
-                    if (!InternalFallback(byteBuffer, ref _charIndex))
-                    {
-                        // Throw maybe
-                        _byteIndex -= byteBuffer.Length;                             // Didn't use how many ever bytes we're falling back
-                        _fallbackBuffer.Reset();                                     // We didn't use this fallback.
-                        _enc.ThrowCharsOverflow(_decoder, _charIndex == 0);          // Throw?
-                        return false;                                           // No throw, but no store either
-                    }
-                    _charCountResult += _charIndex - charStart;
-                }
-                else
-                {
-                    _charCountResult += InternalFallback(byteBuffer);
+                    throw new ArgumentException(SR.Argument_InvalidCharSequenceNoIndex);
                 }
 
-                return true;
+                // Can't fallback a byte 0, so return for that case, 1 otherwise.
+                return bytes[0] == 0 ? 0 : 1;
             }
-
-            // DecoderFallbackBuffer.InternalFallback(byte[], byte*, ref char*): copy the fallback
-            // characters to the output, or report that they do not fit.
-            private bool InternalFallback(byte[] bytes, ref int chars)
-            {
-                // See if there's a fallback character and we have an output buffer then copy our string.
-                if (_fallbackBuffer.Fallback(bytes, _byteIndex - bytes.Length))
-                {
-                    // Copy the chars to our output
-                    char ch;
-                    int charTemp = chars;
-                    bool bHighSurrogate = false;
-                    while ((ch = _fallbackBuffer.GetNextChar()) != 0)
-                    {
-                        // Make sure no mixed up surrogates
-                        if (char.IsSurrogate(ch))
-                        {
-                            if (char.IsHighSurrogate(ch))
-                            {
-                                // High Surrogate
-                                if (bHighSurrogate)
-                                    throw new ArgumentException(SR.Argument_InvalidCharSequenceNoIndex);
-                                bHighSurrogate = true;
-                            }
-                            else
-                            {
-                                // Low surrogate
-                                if (!bHighSurrogate)
-                                    throw new ArgumentException(SR.Argument_InvalidCharSequenceNoIndex);
-                                bHighSurrogate = false;
-                            }
-                        }
-
-                        if (charTemp >= _chars.Length)
-                        {
-                            // No buffer space
-                            return false;
-                        }
-
-                        _chars[charTemp++] = ch;
-                    }
-
-                    // Need to make sure that bHighSurrogate isn't true
-                    if (bHighSurrogate)
-                        throw new ArgumentException(SR.Argument_InvalidCharSequenceNoIndex);
-
-                    // Now we aren't going to be false, so its OK to update chars
-                    chars = charTemp;
-                }
-
-                return true;
-            }
-
-            // DecoderFallbackBuffer.InternalFallback(byte[], byte*): count the fallback characters.
-            private int InternalFallback(byte[] bytes)
-            {
-                // See if there's a fallback character and we have an output buffer then copy our string.
-                if (_fallbackBuffer.Fallback(bytes, _byteIndex - bytes.Length))
-                {
-                    int count = 0;
-
-                    char ch;
-                    bool bHighSurrogate = false;
-                    while ((ch = _fallbackBuffer.GetNextChar()) != 0)
-                    {
-                        // Make sure no mixed up surrogates
-                        if (char.IsSurrogate(ch))
-                        {
-                            if (char.IsHighSurrogate(ch))
-                            {
-                                // High Surrogate
-                                if (bHighSurrogate)
-                                    throw new ArgumentException(SR.Argument_InvalidCharSequenceNoIndex);
-                                bHighSurrogate = true;
-                            }
-                            else
-                            {
-                                // Low surrogate
-                                if (!bHighSurrogate)
-                                    throw new ArgumentException(SR.Argument_InvalidCharSequenceNoIndex);
-                                bHighSurrogate = false;
-                            }
-                        }
-
-                        count++;
-                    }
-
-                    // Need to make sure that bHighSurrogate isn't true
-                    if (bHighSurrogate)
-                        throw new ArgumentException(SR.Argument_InvalidCharSequenceNoIndex);
-
-                    return count;
-                }
-
-                // If no fallback return 0
-                return 0;
-            }
-
-            internal int Count => _charCountResult;
         }
     }
 }

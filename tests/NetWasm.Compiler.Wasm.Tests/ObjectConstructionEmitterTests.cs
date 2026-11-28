@@ -628,7 +628,7 @@ public sealed class ObjectConstructionEmitterTests
             new NativeIntegerConstructionEmitter(layouts, conversions),
             initialization ?? new StaticInitializationEmitter(guardResolver, addresses),
             guardResolver,
-            delegateTargets ?? new FixedDelegateTargets(false));
+            delegateTargets ?? new FixedDelegateTargets(false), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory());
     }
 
     private sealed class FixedDelegateTargets(bool selected) : IDelegateTargetCheckSelector

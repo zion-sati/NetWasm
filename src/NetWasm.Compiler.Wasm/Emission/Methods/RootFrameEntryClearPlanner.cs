@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.ControlFlow.Structured;
@@ -19,7 +20,7 @@ internal interface IRootFrameEntryClearPlanner
 // cannot prove still null. Zeroing the frame on entry makes every slot known null there, so those
 // stores remain only where a slot's value dies. The method zeroes its frame when that removes more
 // stores than the zeroing writes (counting the entry's own null stores it replaces: authoritative
-// locals and the exception slots). A frame entered inside a terminal arm is not zeroed here.
+// locals'). A frame entered inside a terminal arm is not zeroed here.
 internal sealed class RootFrameEntryClearPlanner(IRootClearElisionPlanner clears, ITargetLayout layouts) :
     IRootFrameEntryClearPlanner
 {
@@ -32,13 +33,19 @@ internal sealed class RootFrameEntryClearPlanner(IRootClearElisionPlanner clears
             return false;
         var unzeroed = NullStores(context, clears.Plan(method, context with { RootFrameStartsZeroed = false }));
         var zeroed = NullStores(context, clears.Plan(method, context with { RootFrameStartsZeroed = true }));
-        var replaced = context.AuthoritativeRootSlots.Keys.Count(source => source.Kind == RootSourceKind.Local) +
-            (context.ExceptionRootSlots.Count == 0 ? 0 : 1);
-        var zeroing = FrameRangeZeroing.Writes(checked(context.RootSlotCount * layouts.Target.ObjectReferenceSize));
+        var replaced = context.AuthoritativeRootSlots.Keys.Count(source => source.Kind == RootSourceKind.Local);
+        var zeroing = FrameSlotZeroing.Writes(layouts.Target, context.RootSlotCount, ArgumentSlots(context));
         return unzeroed - zeroed + replaced > zeroing;
     }
 
-    // The null stores the method's safepoints emit under these clear elisions.
+    // The slots an entry fills with authoritative arguments, which its zeroing skips.
+    internal static IReadOnlySet<int> ArgumentSlots(MethodEmissionContext context) => context.AuthoritativeRootSlots
+        .Where(static pair => pair.Key.Kind != RootSourceKind.Local)
+        .Select(static pair => pair.Value)
+        .ToHashSet();
+
+    // The null stores the method's safepoints emit under these clear elisions, and the stores of deferrable roots they
+    // leave unpublished only where a slot is known null.
     private static int NullStores(
         MethodEmissionContext context,
         ImmutableDictionary<(int Offset, bool ConstructorCall), ImmutableHashSet<int>> elisions)
@@ -48,6 +55,9 @@ internal sealed class RootFrameEntryClearPlanner(IRootClearElisionPlanner clears
         foreach (var (offset, point) in roots.Safepoints)
         {
             stores += Inactive(point.Roots, (offset, false));
+            elisions.TryGetValue((offset, false), out var knownZero);
+            var deferred = DeferredRoots.Of(roots, point, knownZero);
+            stores += point.Deferrable.Count(source => point.Roots.Contains(source) && !deferred.Contains(source));
             if (!point.ConstructorCallRoots.IsEmpty) stores += Inactive(point.ConstructorCallRoots, (offset, true));
         }
         return stores;

@@ -11,9 +11,10 @@ export function observeManagedAsyncExport({
   schedule = globalThis.setTimeout.bind(globalThis),
   cancelScheduled = globalThis.clearTimeout.bind(globalThis),
   registerAbort = () => () => {},
+  takeExportFailure = () => null,
 }) {
   if (typeof name !== "string" || name.length === 0
-      || [readStatus, readResult, complete, schedule, cancelScheduled, registerAbort]
+      || [readStatus, readResult, complete, schedule, cancelScheduled, registerAbort, takeExportFailure]
         .some(action => typeof action !== "function")) {
     throw new TypeError("managed async export observation actions are invalid");
   }
@@ -43,6 +44,9 @@ export function observeManagedAsyncExport({
       try {
         const managed = await completion;
         if (captureFailure && managed != null) value = new NetWasmManagedError(name, { managed });
+        // A fault from a JavaScript error rejects with that error, as on .NET's browser runtime.
+        const offered = takeExportFailure();
+        if (captureFailure && offered !== null) value = offered.value;
       } catch (cause) {
         failures.push(cause);
       }

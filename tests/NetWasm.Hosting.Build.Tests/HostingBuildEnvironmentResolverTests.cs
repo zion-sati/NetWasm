@@ -269,21 +269,6 @@ public sealed class HostingBuildEnvironmentResolverTests
     }
 
     [Fact]
-    public void ResolveRunsTheToolchainsWasmToolsWhenThePackageCarriesNone()
-    {
-        var chooser = new RecordingHostToolsChooser();
-        IHostingBuildEnvironmentResolver resolver = new HostingBuildEnvironmentResolver(
-            new RecordingExecutableResolver(), new PackagedProbe(),
-            new RecordingValidatorResolver(), new RecordingPackagePathResolver(),
-            new RecordingHostToolsPackageResolver(carriesWasmTools: false), chooser);
-
-        var result = resolver.Resolve(PackagedRequest());
-
-        Assert.Null(result.NativeWasmTools);
-        Assert.DoesNotContain(chooser.Requests, request => request.ToolId == HostToolIds.WasmTools);
-    }
-
-    [Fact]
     public void ResolveRejectsUnexpectedPackagedVersionBeforeToolchainResolution()
     {
         var probe = new PackagedProbe(nodeVersion: new Version(26, 8, 0));
@@ -307,7 +292,7 @@ public sealed class HostingBuildEnvironmentResolverTests
         "0.2.5-preview.1",
         "osx-arm64");
 
-    private sealed class RecordingHostToolsPackageResolver(bool carriesWasmTools = true) : IHostToolsPackageResolver
+    private sealed class RecordingHostToolsPackageResolver : IHostToolsPackageResolver
     {
         public HostToolsPackageRequest? Request { get; private set; }
 
@@ -320,15 +305,12 @@ public sealed class HostingBuildEnvironmentResolverTests
                 ["wasm-ld"] = Path.Combine(Root, "host-tools", "wasm-ld"),
                 ["wasm-opt"] = Path.Combine(Root, "host-tools", "wasm-opt"),
                 ["nwc"] = Path.Combine(Root, "host-tools", "nwc"),
+                ["wasm-tools"] = Path.Combine(Root, "host-tools", "wasm-tools"),
             };
-            if (carriesWasmTools)
-            {
-                roles["wasm-tools"] = Path.Combine(Root, "host-tools", "wasm-tools");
-            }
             return new(request.PackageId, request.PackageVersion, request.HostRid,
                 "26.7.0", "24.0.0", "132", roles.ToImmutableDictionary(StringComparer.Ordinal))
             {
-                WasmToolsVersion = carriesWasmTools ? "1.256.0" : null,
+                WasmToolsVersion = "1.256.0",
             };
         }
     }

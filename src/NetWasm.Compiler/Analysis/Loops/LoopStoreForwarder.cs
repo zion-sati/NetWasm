@@ -38,12 +38,14 @@ internal sealed class LoopStoreForwarder(
     ITypedStackValidator stacks,
     IControlFlowNaturalLoopAnalyzer loops,
     IRuntimeIntrinsicRegistry intrinsics,
+    IStackDepthFitter depths,
     bool enabled) : ILoopStoreForwarder
 {
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
     private readonly ITypedStackValidator _stacks = stacks ?? throw new ArgumentNullException(nameof(stacks));
     private readonly IControlFlowNaturalLoopAnalyzer _loops = loops ?? throw new ArgumentNullException(nameof(loops));
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ?? throw new ArgumentNullException(nameof(intrinsics));
+    private readonly IStackDepthFitter _depths = depths ?? throw new ArgumentNullException(nameof(depths));
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -80,11 +82,30 @@ internal sealed class LoopStoreForwarder(
             {
                 continue;
             }
-            var preheader = graph.GetBlock(entries[0]).Instructions.Select(instruction => indices[instruction.Offset]).ToArray();
-            if (facts.EntryAccess(preheader, location) is not { } entry) continue;
+            if (EntryAccess(graph, facts, indices, loop, entries[0], location) is not { } entry) continue;
             forwards.Add(new(location, entry, [.. accesses.Where(access => access.Location == location)]));
         }
-        return forwards.Count == 0 ? body : Splice(body, forwards);
+        // The dup that keeps a stored value takes the stack one past the store's depth, which can be the method's
+        // deepest, as `a[0] = t;` is without Roslyn's optimizations.
+        return forwards.Count == 0 ? body : _depths.Fit(Splice(body, forwards));
+    }
+
+    // The last access to the element before the loop: in the block before it, or, past a block start nothing else
+    // reaches, in the one block before that, as a loop's versioning test puts blocks between the loop and the code
+    // before it that only compute and branch.
+    private static Access? EntryAccess(
+        ControlFlowGraph graph, MethodFacts facts, Dictionary<int, int> indices, ImmutableHashSet<int> loop, int preheader,
+        Location location)
+    {
+        var seen = new HashSet<int>();
+        for (var block = preheader; seen.Add(block);)
+        {
+            var code = graph.GetBlock(block).Instructions.Select(instruction => indices[instruction.Offset]).ToArray();
+            if (facts.EntryAccess(code, location, out var clean) is { } entry) return entry;
+            if (!clean || graph.Predecessors[block] is not [var single] || loop.Contains(single)) return null;
+            block = single;
+        }
+        return null;
     }
 
     private static CilMethodBody Splice(CilMethodBody body, List<Forward> forwards)
@@ -194,6 +215,7 @@ internal sealed class LoopStoreForwarder(
             RuntimeIntrinsic.UnsafeAdd, RuntimeIntrinsic.UnsafeAs, RuntimeIntrinsic.UnsafeAsRef,
             RuntimeIntrinsic.UnsafeAsRefManaged, RuntimeIntrinsic.UnsafeNullRef, RuntimeIntrinsic.UnsafeIsAddressGreaterThan,
             RuntimeIntrinsic.UnsafeSizeOf, RuntimeIntrinsic.UnsafeByteOffset, RuntimeIntrinsic.UnsafeAddByteOffset,
+            RuntimeIntrinsic.NonZeroAddress,
         ];
 
         private readonly ImmutableArray<CilInstruction> _instructions;
@@ -281,10 +303,11 @@ internal sealed class LoopStoreForwarder(
             return accesses;
         }
 
-        // The last access to the element in the block before the loop, with
-        // nothing after it that writes memory or the element's base or index.
-        public Access? EntryAccess(int[] preheader, Location location)
+        // The last access to the element in a block before the loop, with nothing after it that writes memory or the
+        // element's base or index; clean when there is none and nothing in the block stopped the search.
+        public Access? EntryAccess(int[] preheader, Location location, out bool clean)
         {
+            clean = false;
             for (var position = preheader.Length - 1; position >= 0; position--)
             {
                 var index = preheader[position];
@@ -303,6 +326,7 @@ internal sealed class LoopStoreForwarder(
                     return null;
                 }
             }
+            clean = true;
             return null;
         }
 

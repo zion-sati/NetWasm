@@ -15,6 +15,7 @@ internal sealed class MethodBodyProofChain(
     IArrayBoundsCheckEliminator arrayBounds,
     IRepeatedArrayAccessEliminator repeatedAccesses,
     IConstructedObjectNullCheckEliminator constructedObjects,
+    IByRefNullCheckEliminator byRefNullChecks,
     IIntegerCheckEliminator integerChecks) : IMethodBodyProver
 {
     private readonly IArrayBoundsCheckEliminator _arrayBounds = arrayBounds ?? throw new ArgumentNullException(nameof(arrayBounds));
@@ -22,11 +23,14 @@ internal sealed class MethodBodyProofChain(
         throw new ArgumentNullException(nameof(repeatedAccesses));
     private readonly IConstructedObjectNullCheckEliminator _constructedObjects = constructedObjects ??
         throw new ArgumentNullException(nameof(constructedObjects));
+    private readonly IByRefNullCheckEliminator _byRefNullChecks = byRefNullChecks ??
+        throw new ArgumentNullException(nameof(byRefNullChecks));
     private readonly IIntegerCheckEliminator _integerChecks = integerChecks ?? throw new ArgumentNullException(nameof(integerChecks));
 
     public CilMethodBody Prove(CilMethodBody body)
     {
         ArgumentNullException.ThrowIfNull(body);
-        return _integerChecks.Rewrite(_constructedObjects.Rewrite(_repeatedAccesses.Rewrite(_arrayBounds.Rewrite(body))));
+        return _integerChecks.Rewrite(_byRefNullChecks.Rewrite(_constructedObjects.Rewrite(_repeatedAccesses.Rewrite(
+            _arrayBounds.Rewrite(body)))));
     }
 }

@@ -12,7 +12,8 @@ internal sealed class RoslynCorpusCompiler(
     IQualifiedProcessRunner processes,
     IOracleModePolicyRegistry oracleModes,
     ICorpusSourceNamesVerifier sourceNames,
-    ICorpusSourceArtifactWriter sources) :
+    ICorpusSourceArtifactWriter sources,
+    CorpusRuntimeAsyncOverride? runtimeAsync = null) :
     IRoslynCorpusCompiler
 {
     public CorpusCompilation Compile(
@@ -46,7 +47,10 @@ internal sealed class RoslynCorpusCompiler(
             sourceArtifacts.Add(sources.Write(source, outputDirectory));
         }
         var sourcePaths = sourceArtifacts.Select(source => source.Path).ToImmutableArray();
-        var desktop = CompileDesktop(fixture, profile, sourcePaths, outputDirectory);
+        // A mode that runs one assembly on both sides takes runtime async on both when it is requested, so NetWasm's
+        // side still runs the lowering, against desktop .NET's runtime async on the same IL.
+        var desktop = CompileDesktop(fixture, profile, sourcePaths, outputDirectory,
+            oracleMode.SharesPortableExecutable && runtimeAsync?.Enabled == true);
         var netWasm = oracleMode.SharesPortableExecutable
             ? desktop
             : CompileNetWasm(fixture, profile, sourcePaths, outputDirectory);
@@ -67,7 +71,8 @@ internal sealed class RoslynCorpusCompiler(
         CorpusFixture fixture,
         CilProfile profile,
         ImmutableArray<string> sourcePaths,
-        string outputDirectory)
+        string outputDirectory,
+        bool runtimeAsync)
     {
         var references = Directory.EnumerateFiles(
                 environment.DesktopReferenceDirectory, "*.dll")
@@ -80,7 +85,8 @@ internal sealed class RoslynCorpusCompiler(
             sourcePaths,
             outputDirectory,
             fixture.Name + ".Desktop",
-            references);
+            references,
+            runtimeAsync);
     }
 
     private CorpusArtifact CompileNetWasm(
@@ -112,7 +118,8 @@ internal sealed class RoslynCorpusCompiler(
             sourcePaths,
             outputDirectory,
             fixture.Name + ".NetWasm",
-            references.ToImmutable());
+            references.ToImmutable(),
+            runtimeAsync?.Enabled == true);
     }
 
     private CorpusArtifact Compile(
@@ -121,7 +128,8 @@ internal sealed class RoslynCorpusCompiler(
         ImmutableArray<string> sourcePaths,
         string outputDirectory,
         string assemblyName,
-        ImmutableArray<string> references)
+        ImmutableArray<string> references,
+        bool runtimeAsync)
     {
         var assemblyPath = Path.Combine(outputDirectory, assemblyName + ".dll");
         var pdbPath = Path.Combine(outputDirectory, assemblyName + ".pdb");
@@ -140,6 +148,10 @@ internal sealed class RoslynCorpusCompiler(
             "-pathmap:" + outputDirectory + "=/corpus",
             "-out:" + assemblyPath,
             "-pdb:" + pdbPath);
+        if (runtimeAsync)
+        {
+            options = options.Add("-features:runtime-async=on");
+        }
         var arguments = ImmutableArray.CreateBuilder<string>();
         arguments.Add(environment.RoslynCompilerPath);
         foreach (var option in options)

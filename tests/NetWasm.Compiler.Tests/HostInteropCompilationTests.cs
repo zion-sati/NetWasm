@@ -47,7 +47,7 @@ public sealed class HostInteropCompilationTests
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
 
         Assert.Collection(
-            result.InteropManifest.Imports,
+            CompilerTestSupport.ProgramImports(result.InteropManifest.Imports),
             import =>
             {
                 Assert.Equal("task_value", import.Name);
@@ -409,7 +409,7 @@ public sealed class HostInteropCompilationTests
     }
 
     // CoreLib's conversions stay out of a program whose boundaries pass only what
-    // crosses as it is, including one whose failed import throws JSException.
+    // crosses as it is. A failed import's JSException takes only the error the host holds for it.
     [Fact]
     public void CompilerLeavesJavaScriptValueConversionsOutOfProgramsThatPassNone()
     {
@@ -450,7 +450,7 @@ public sealed class HostInteropCompilationTests
             WasmTarget.Wasm32) with
         { UseJavaScriptExportBoundary = true });
 
-        Assert.DoesNotContain(result.InteropManifest.Imports, import => import.Module == RuntimeAbi.HostModule);
+        Assert.DoesNotContain(CompilerTestSupport.ProgramImports(result.InteropManifest.Imports), import => import.Module == RuntimeAbi.HostModule);
     }
 
     // Mono's [JSMarshalAs<T>] markers are optional: a long marked JSType.Number
@@ -601,7 +601,7 @@ public sealed class HostInteropCompilationTests
 
         var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", []));
 
-        var imports = result.InteropManifest.Imports.ToDictionary(import => import.Name);
+        var imports = CompilerTestSupport.ProgramImports(result.InteropManifest.Imports).ToDictionary(import => import.Name);
         Assert.Equal(["add", "label"], imports.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(["i52"], imports["label"].Parameters.ToArray());
         Assert.Equal("string", imports["label"].Result);
@@ -954,7 +954,7 @@ public sealed class HostInteropCompilationTests
             "Run",
             []));
 
-        var import = Assert.Single(result.InteropManifest.Imports);
+        var import = Assert.Single(CompilerTestSupport.ProgramImports(result.InteropManifest.Imports));
         Assert.Equal("promise", import.Result);
         Assert.True(import.Parameters.AsSpan().SequenceEqual(
             ["i32", "callback", "callback"]));
@@ -1119,8 +1119,9 @@ public sealed class HostInteropCompilationTests
             [],
             WasmTarget.Wasm64));
 
-        Assert.Equal(4, result.InteropManifest.Imports.Length);
-        var import = result.InteropManifest.Imports[0];
+        var programImports = CompilerTestSupport.ProgramImports(result.InteropManifest.Imports).ToArray();
+        Assert.Equal(4, programImports.Length);
+        var import = programImports[0];
         Assert.Equal("wasm64", result.InteropManifest.Target);
         Assert.Equal(0, result.InteropManifest.StatusAbi.SuccessStatus);
         Assert.Equal(1, result.InteropManifest.StatusAbi.HostFailureStatus);
@@ -1140,7 +1141,7 @@ public sealed class HostInteropCompilationTests
             candidate.Module == import.Module && candidate.Name == import.Name);
         Assert.Equal([CliValueKind.I4, CliValueKind.I4], physicalImport.Type.Parameters.ToArray());
         Assert.Equal(CliValueKind.I4, physicalImport.Type.Result);
-        var echoImport = result.InteropManifest.Imports[1];
+        var echoImport = programImports[1];
         Assert.Equal(JavaScriptDirectImport.StatusCall, echoImport.Call);
         var echoPhysical = result.FunctionImports.Single(candidate =>
             candidate.Module == echoImport.Module && candidate.Name == echoImport.Name);
@@ -1149,11 +1150,11 @@ public sealed class HostInteropCompilationTests
         Assert.Equal("echo", echoImport.Name);
         Assert.Equal("string", Assert.Single(echoImport.Parameters));
         Assert.Equal("string", echoImport.Result);
-        var receiveImport = result.InteropManifest.Imports[2];
+        var receiveImport = programImports[2];
         Assert.Equal("receive", receiveImport.Name);
         Assert.Equal("void", receiveImport.Result);
         Assert.Equal("string", Assert.Single(receiveImport.Parameters));
-        var reportImport = result.InteropManifest.Imports[3];
+        var reportImport = programImports[3];
         Assert.Equal("report", reportImport.Name);
         Assert.Equal("void", reportImport.Result);
         Assert.Equal(JavaScriptDirectImport.DirectCall, reportImport.Call);
@@ -1813,7 +1814,7 @@ public sealed class HostInteropCompilationTests
             "EntryPoint",
             "Run"));
 
-        var import = Assert.Single(result.InteropManifest.Imports);
+        var import = Assert.Single(CompilerTestSupport.ProgramImports(result.InteropManifest.Imports));
         Assert.Equal(("netwasm.host.v1", "globalThis.Math.max"), (import.Module, import.Name));
     }
 
@@ -1928,7 +1929,7 @@ public sealed class HostInteropCompilationTests
             "Run",
             []));
 
-        var import = Assert.Single(result.InteropManifest.Imports);
+        var import = Assert.Single(CompilerTestSupport.ProgramImports(result.InteropManifest.Imports));
         Assert.Equal("callback", Assert.Single(import.Parameters));
         Assert.Equal("subscription", import.Result);
         var callback = Assert.Single(result.InteropManifest.Callbacks);
@@ -2026,8 +2027,8 @@ public sealed class HostInteropCompilationTests
             [],
             WasmTarget.Wasm64));
 
-        var wasm32Import = Assert.Single(wasm32.InteropManifest.Imports);
-        var wasm64Import = Assert.Single(wasm64.InteropManifest.Imports);
+        var wasm32Import = Assert.Single(CompilerTestSupport.ProgramImports(wasm32.InteropManifest.Imports));
+        var wasm64Import = Assert.Single(CompilerTestSupport.ProgramImports(wasm64.InteropManifest.Imports));
         Assert.Equal("i32", Assert.Single(wasm32Import.Parameters));
         Assert.Equal("i32", wasm32Import.Result);
         Assert.Equal("i64", Assert.Single(wasm64Import.Parameters));

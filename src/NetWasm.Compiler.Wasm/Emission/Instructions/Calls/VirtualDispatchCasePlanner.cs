@@ -14,10 +14,13 @@ internal sealed record VirtualDispatchCase(DispatchTargetModel Target, int LowTy
 
 internal interface IVirtualDispatchCasePlanner
 {
-    // The checked targets as cases ordered by type id, given every receiver the site can have.
+    // The checked targets as cases ordered by type id, given the site's receivers: every receiver it can have when
+    // exhaustive (its targets by type); otherwise the receivers the flow found, and an id outside them is a receiver
+    // the flow missed, which no run may take.
     ImmutableArray<VirtualDispatchCase> Plan(
         ImmutableArray<DispatchTargetModel> checkedTargets,
-        ImmutableArray<DispatchTargetModel> receivers);
+        ImmutableArray<DispatchTargetModel> receivers,
+        bool exhaustive);
 }
 
 // Targets whose code is the same share a case, so a dispatch emits that code once for each run
@@ -38,7 +41,8 @@ internal sealed class VirtualDispatchCasePlanner(
 
     public ImmutableArray<VirtualDispatchCase> Plan(
         ImmutableArray<DispatchTargetModel> checkedTargets,
-        ImmutableArray<DispatchTargetModel> receivers)
+        ImmutableArray<DispatchTargetModel> receivers,
+        bool exhaustive)
     {
         var occupied = receivers.Select(TypeId).Distinct().Order().ToArray();
         var cases = new List<VirtualDispatchCase>();
@@ -52,7 +56,9 @@ internal sealed class VirtualDispatchCasePlanner(
             var high = first.Id;
             foreach (var member in members.Skip(1))
             {
-                if (occupied[Array.BinarySearch(occupied, high) + 1] != member.Id)
+                // A run spans ids no receiver has only where the receivers are every one the site can have; otherwise
+                // a missed receiver's id must reach the fallback, which throws.
+                if (exhaustive ? occupied[Array.BinarySearch(occupied, high) + 1] != member.Id : member.Id != high + 1)
                 {
                     cases.Add(new(first.Target, first.Id, high));
                     first = member;

@@ -93,7 +93,7 @@ public sealed class UnitFingerprintOperandTests
     public void TheFingerprintNamesEveryOperandKind() =>
         Assert.Equal(
             ["ArrayInitializerData", "BranchTarget", "CallSite", "ConstantF4", "ConstantF8", "ConstantI4", "ConstantI8", "Entity",
-                "ExactType", "FieldInstance", "Index", "MethodInstance", "None", "NumericConversion", "ReadOnlySpanData",
+                "ExactType", "FieldInstance", "Index", "MethodInstance", "NeverRuns", "None", "NumericConversion", "ReadOnlySpanData",
                 "SwitchTargets", "TypeIdentity", "UserString"],
             typeof(CilOperand).GetNestedTypes().Where(type => type.IsSubclassOf(typeof(CilOperand)) && !type.IsAbstract)
                 .Select(type => type.Name).Order(StringComparer.Ordinal));

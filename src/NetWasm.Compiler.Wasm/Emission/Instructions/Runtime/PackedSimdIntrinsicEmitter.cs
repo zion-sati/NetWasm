@@ -88,6 +88,22 @@ internal sealed class PackedSimdIntrinsicEmitter(
                 LaneMask(request, code, 2, laneBytes);
                 Simd(code, V128BitSelect);
                 break;
+            case PackedSimdShape.Shuffle:
+                // An index below 16 picks a lane of the first vector, 16 to 31 one of the second, and any other
+                // index zero, as i8x16.shuffle does: a swizzle zeroes a lane whose index is 16 or more, and the
+                // second swizzle reads the indices less 16, wrapping the first vector's to 240 and above.
+                Get(code, Argument(request, 0));
+                Get(code, Argument(request, 2));
+                Simd(code, I8x16Swizzle);
+                Get(code, Argument(request, 1));
+                Get(code, Argument(request, 2));
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.SimdPrefixed,
+                    WasmInstructionOperand.FromBytes([(byte)V128Constant, .. Enumerable.Repeat((byte)16, 16)])));
+                Simd(code, I8x16Subtract);
+                Simd(code, I8x16Swizzle);
+                Simd(code, V128Or);
+                break;
             case PackedSimdShape.StoreLane:
                 CheckLane(request, code, 2, laneBytes);
                 Get(code, Argument(request, 0));

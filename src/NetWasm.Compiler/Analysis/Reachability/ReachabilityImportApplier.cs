@@ -17,8 +17,12 @@ using NetWasm.Compiler.Analysis.Delegates;
 namespace NetWasm.Compiler.Analysis.Reachability;
 
 internal sealed class ReachabilityImportApplier(
-    ITypeIdentityResolver typeIdentities) : IReachabilityImportApplier
+    ITypeIdentityResolver typeIdentities,
+    IJavaScriptExportBoundaryRecorder exportFailures) : IReachabilityImportApplier
 {
+    private readonly IJavaScriptExportBoundaryRecorder _exportFailures = exportFailures ??
+        throw new ArgumentNullException(nameof(exportFailures));
+
     private readonly ITypeIdentityResolver _typeIdentities = typeIdentities ??
         throw new ArgumentNullException(nameof(typeIdentities));
 
@@ -47,7 +51,7 @@ internal sealed class ReachabilityImportApplier(
         }
         foreach (var method in analysis.EnqueuedMethods)
         {
-            session.EnqueueInstance(method);
+            session.EnqueueGenerated(method);
         }
         foreach (var requirement in analysis.Exceptions)
         {
@@ -76,6 +80,10 @@ internal sealed class ReachabilityImportApplier(
         foreach (var (name, conversion) in analysis.Conversions)
         {
             session.State.JavaScriptConversions.TryAdd(name, conversion);
+        }
+        if (analysis.JavaScriptExportBoundary)
+        {
+            _exportFailures.Record(session);
         }
     }
 }

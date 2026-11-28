@@ -7,14 +7,14 @@ namespace System.Runtime.InteropServices.Output;
 // suspend the program, so it finishes the write after the export returns, settling the write's
 // future itself: the program drops both ends without reading the future, where waiting would
 // throw (issue 224's exit wait).
-internal sealed class WasiOutputStreamNonblockingCloser : IWasiOutputStreamCloser
+internal sealed class WasiOutputStreamNonblockingCloser<TStream> : IWasiOutputStreamCloser<TStream>
 {
-    private readonly IWasiByteStreamWritableDropInvoker _dropWritable;
-    private readonly IWasiResultFutureDropInvoker _dropResult;
+    private readonly IWasiByteStreamWritableDropInvoker<TStream> _dropWritable;
+    private readonly IWasiResultFutureDropInvoker<TStream> _dropResult;
 
     internal WasiOutputStreamNonblockingCloser(
-        IWasiByteStreamWritableDropInvoker dropWritable,
-        IWasiResultFutureDropInvoker dropResult)
+        IWasiByteStreamWritableDropInvoker<TStream> dropWritable,
+        IWasiResultFutureDropInvoker<TStream> dropResult)
     {
         _dropWritable = dropWritable ?? throw new ArgumentNullException();
         _dropResult = dropResult ?? throw new ArgumentNullException();

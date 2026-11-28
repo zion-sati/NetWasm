@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using NetWasm.Compiler.ComponentModel.Debugging;
 
 namespace NetWasm.Compiler.ComponentModel;
 
@@ -15,7 +16,8 @@ public sealed class ComponentPackageExecution(
     IComponentPackageOperationRunner operations,
     IComponentCoreModuleLinker coreModules,
     IFileMover files,
-    IPlainCoreModuleImportValidator plainCoreModuleImports) : IComponentPackageExecution
+    IPlainCoreModuleImportValidator plainCoreModuleImports,
+    IWasmDebugInformationWriter debugSections) : IComponentPackageExecution
 {
     private readonly IComponentPackageOperationRunner _operations = operations ??
         throw new ArgumentNullException(nameof(operations));
@@ -25,6 +27,7 @@ public sealed class ComponentPackageExecution(
         throw new ArgumentNullException(nameof(files));
     private readonly IPlainCoreModuleImportValidator _plainCoreModuleImports = plainCoreModuleImports ??
         throw new ArgumentNullException(nameof(plainCoreModuleImports));
+    private readonly IWasmDebugInformationWriter _debugSections = debugSections ?? throw new ArgumentNullException(nameof(debugSections));
 
     public void Run(ComponentPackageRequest request, ComponentPackageWorkspace workspace)
     {
@@ -41,13 +44,15 @@ public sealed class ComponentPackageExecution(
                 request.ManagedExecutableEntryPoint,
                 request.Optimization,
                 request.StructuredDiagnostics)
-            { OptimizationOverrides = request.OptimizationOverrides });
+            { OptimizationOverrides = request.OptimizationOverrides, DebugInformation = request.DebugInformation });
             componentCoreModule = workspace.LinkedModulePath;
+            if (request.DebugInformation is { } debugInformation)
+                _debugSections.Write(componentCoreModule, debugInformation);
         }
         if (request.PlainCoreModule)
         {
             _operations.Run(
-                ["strip", "--all", componentCoreModule, "--output", workspace.ComponentPath],
+                [.. Strip(request), componentCoreModule, "--output", workspace.ComponentPath],
                 "strip core module metadata");
             _operations.Run(["validate", workspace.ComponentPath, "--features", "all"],
                 "validate core module");
@@ -72,11 +77,21 @@ public sealed class ComponentPackageExecution(
                 "--output", workspace.UnstrippedComponentPath],
             "create component");
         _operations.Run(
-            ["strip", "--all", workspace.UnstrippedComponentPath,
-                "--output", workspace.ComponentPath],
+            [.. Strip(request), workspace.UnstrippedComponentPath, "--output", workspace.ComponentPath],
             "strip component metadata");
         _operations.Run(["validate", workspace.ComponentPath, "--features", "all"],
             "validate component");
         _files.Move(workspace.ComponentPath, request.OutputPath);
     }
+
+    // A product module keeps no custom section. With debug information the name section and the DWARF sections stay,
+    // which a debugger and Wasmtime's trap backtraces read, and the rest goes: wasm-tools strip deletes the sections
+    // whose names match --delete (and only those), and its regular expressions have no negative lookahead, so the
+    // pattern spells out every name that is neither "name" nor starts with ".debug_".
+    public const string NonDebugSections =
+        @"^(?s:|[^.n].*|n|n[^a].*|na|na[^m].*|nam|nam[^e].*|name.+|\.|\.[^d].*|\.d|\.d[^e].*|\.de|\.de[^b].*|" +
+        @"\.deb|\.deb[^u].*|\.debu|\.debu[^g].*|\.debug|\.debug[^_].*)$";
+
+    private static string[] Strip(ComponentPackageRequest request) =>
+        request.DebugInformation is null ? ["strip", "--all"] : ["strip", "--delete", NonDebugSections];
 }

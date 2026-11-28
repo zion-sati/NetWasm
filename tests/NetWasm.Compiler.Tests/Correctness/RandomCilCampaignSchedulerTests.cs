@@ -26,7 +26,10 @@ public sealed class RandomCilCampaignSchedulerTests
                     Interlocked.Increment(ref executions[index]);
                     var current = Interlocked.Increment(ref active);
                     UpdateMaximum(ref maximumActive, current);
-                    release.Wait(TimeSpan.FromSeconds(5), CancellationToken.None);
+                    // Each worker holds a pool thread until all four have started. In a test process busy with
+                    // other compiles the pool may add the fourth thread only after seconds, so the wait outlasts
+                    // that; the release comes as soon as four are active.
+                    release.Wait(TimeSpan.FromSeconds(60), CancellationToken.None);
                     Interlocked.Decrement(ref active);
                 },
                 _ => throw new InvalidOperationException("not expected")))
@@ -35,7 +38,7 @@ public sealed class RandomCilCampaignSchedulerTests
         var run = subject.RunAsync(cases, TestContext.Current.CancellationToken);
         Assert.True(SpinWait.SpinUntil(
             () => Volatile.Read(ref maximumActive) == 4,
-            TimeSpan.FromSeconds(5)));
+            TimeSpan.FromSeconds(60)));
         release.Set();
         var results = await run;
 

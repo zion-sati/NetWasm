@@ -451,6 +451,7 @@ public sealed class NativeManagedExecutionIntegrationTests
                     target,
                     applicationStaticDataEnd = compilation.StaticDataEnd,
                     managedExecutableEntryPoint = (object?)null,
+                    importModules = Array.Empty<string>(),
                     runtimeFeatures = compilation.RuntimeFeatures,
                     nativeImports = compilation.NativeImports,
                     nativeCallbackSupport = new
@@ -469,6 +470,7 @@ public sealed class NativeManagedExecutionIntegrationTests
                     target,
                     applicationStaticDataEnd = compilation.StaticDataEnd,
                     managedExecutableEntryPoint = (object?)null,
+                    importModules = Array.Empty<string>(),
                     runtimeFeatures = compilation.RuntimeFeatures,
                     nativeImports = compilation.NativeImports,
                 };

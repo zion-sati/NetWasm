@@ -32,17 +32,18 @@ public sealed class RuntimeIntrinsicRegistryTests
             Assert.False(((IRuntimeIntrinsicRegistry)new RuntimeIntrinsicRegistry(symbols, [invalid])).TryGetIntrinsic(invalid.Key, out _));
     }
 
-    [Fact]
-    public void RectangularArrayCreationRequiresTheExactInternalAllocationContract()
+    [Theory]
+    [InlineData("InternalCreateRectangularInstance", RuntimeIntrinsic.ArrayCreateRectangularInstance)]
+    [InlineData("InternalCreateBoundedInstance", RuntimeIntrinsic.ArrayCreateBoundedInstance)]
+    public void RectangularArrayCreationRequiresTheExactInternalAllocationContract(string name, RuntimeIntrinsic expected)
     {
         var assembly = new AssemblyIdentity("in-memory");
         var type = new EntityKey(assembly, 1);
-        var method = new MethodDefinitionModel(new(assembly, 2), type, "InternalCreateRectangularInstance", true,
+        var method = new MethodDefinitionModel(new(assembly, 2), type, name, true,
             MethodSignatureModel.Create(CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.I4,
                 CliValueKind.NativeInt, CliValueKind.I4), 0);
         var symbols = new DictionarySymbolFormatter((type, "System.Array"));
-        AssertIntrinsic(new RuntimeIntrinsicRegistry(symbols, [method]), method.Key,
-            RuntimeIntrinsic.ArrayCreateRectangularInstance);
+        AssertIntrinsic(new RuntimeIntrinsicRegistry(symbols, [method]), method.Key, expected);
         foreach (var invalid in new[]
         {
             method with { IsStatic = false },
@@ -645,6 +646,29 @@ public sealed class RuntimeIntrinsicRegistryTests
                 [method]),
             method.Key,
             expected);
+    }
+
+    // Loop versioning's mark on an address its test covered.
+    [Fact]
+    public void RegistryRecognizesTheNonZeroAddressMark()
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var declaringType = new EntityKey(assembly, 9);
+        var method = new MethodDefinitionModel(
+            new EntityKey(assembly, 10),
+            declaringType,
+            "Of",
+            true,
+            MethodSignatureModel.Create(CliValueKind.ManagedAddress, CliValueKind.ManagedAddress),
+            1);
+
+        AssertIntrinsic(
+            new RuntimeIntrinsicRegistry(
+                new DictionarySymbolFormatter((declaringType,
+                    "System.Runtime.CompilerServices.NonZeroAddress")),
+                [method]),
+            method.Key,
+            RuntimeIntrinsic.NonZeroAddress);
     }
 
     [Fact]

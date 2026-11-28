@@ -47,6 +47,7 @@ internal sealed class StructuredExceptionGroupProjector(
                     : _controlFlow.Project(clause.FilterBody, method, definitions, groupIds, group))
             {
                 CatchTypeIdentity = clause.Region.CatchTypeIdentity,
+                PassThroughLocal = clause.Region.PassThroughLocal,
                 HandlerBlock = new(method.ValidatedGraph.Graph
                     .GetBlockAtOffset(clause.Region.HandlerOffset).Index),
                 FilterBlock = clause.Region.FilterOffset is int filterOffset
@@ -59,11 +60,35 @@ internal sealed class StructuredExceptionGroupProjector(
                 : _controlFlow.Project(group.ContinuationDispatcher, method, definitions, groupIds, parent),
             group.ContinuationJoinBlock is int join ? new(join) : null)
         {
-            ProtectedBlocks = [.. definitions.Values
-                .Where(block => block.StartOffset >= group.TryOffset &&
-                    block.StartOffset < group.TryOffset + group.TryLength)
-                .OrderBy(block => block.Id.Value)
-                .Select(block => block.Id)],
+            ProtectedBlocks = ProtectedBlocks(definitions, group.TryOffset, group.TryOffset + group.TryLength),
         };
+    }
+
+    // The method's block definitions by start, built once per method's definitions (every group of the method shares
+    // them), so a group's protected blocks are a binary search, not a scan of the method per group.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
+        ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>, StructuredBlockDefinition[]> s_byStart = new();
+
+    private static ImmutableArray<StructuredBlockId> ProtectedBlocks(
+        ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition> definitions,
+        int start,
+        int end)
+    {
+        var byStart = s_byStart.GetValue(definitions,
+            all => [.. all.Values.OrderBy(block => block.StartOffset).ThenBy(block => block.Id.Value)]);
+        var low = 0;
+        var high = byStart.Length;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (byStart[middle].StartOffset < start) low = middle + 1;
+            else high = middle;
+        }
+        var blocks = new List<StructuredBlockId>();
+        for (var index = low; index < byStart.Length && byStart[index].StartOffset < end; index++)
+        {
+            blocks.Add(byStart[index].Id);
+        }
+        return [.. blocks.OrderBy(id => id.Value)];
     }
 }

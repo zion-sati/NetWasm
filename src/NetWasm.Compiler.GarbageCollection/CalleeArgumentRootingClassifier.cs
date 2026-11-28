@@ -68,13 +68,15 @@ public sealed class CalleeArgumentRootingClassifier(
             : 0;
     }
 
+    // A runtime-async method's separate body is lowered CIL compiled as any body is, though it has no physical one.
     private bool RootsItsArguments(
         MethodDefinitionModel method,
         MethodInstanceModel? instance,
         RootDecisionRequest request) =>
+        (method.HasBody || method.RuntimeAsyncBodyOf is not null) &&
         method is
         {
-            HasBody: true, UnsafeAccessor: null, IsDelegateAsynchronousCall: false,
+            UnsafeAccessor: null, IsDelegateAsynchronousCall: false,
             JSImport: null, NativeImport: null, WitImport: null
         } &&
         !(instance is null ? _runtimeSafepoints.Classify(method, _types) : _runtimeSafepoints.Classify(instance)) &&
@@ -82,10 +84,11 @@ public sealed class CalleeArgumentRootingClassifier(
             TypeInitializerAllocation.IsAllocating(_types, _methods, method.DeclaringType, instance?.DeclaringType,
                 request.AllocatingMethods, request.AllocatingConstructedMethods));
 
+    // The block by its index (a graph numbers its blocks by position): a search of every block for each call made a
+    // method with N calls cost N squared.
     private static bool IsConstrained(RootDecisionRequest request)
     {
-        var instructions = request.Method.ControlFlow.Graph.Blocks
-            .First(block => block.Index == request.Block).Instructions;
+        var instructions = request.Method.ControlFlow.Graph.GetBlock(request.Block).Instructions;
         var index = instructions.IndexOf(request.Instruction);
         return index > 0 && instructions[index - 1].Operation == CilOperation.Constrained;
     }

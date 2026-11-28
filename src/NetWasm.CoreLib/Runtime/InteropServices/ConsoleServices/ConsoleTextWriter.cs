@@ -3,7 +3,6 @@
 
 using System.IO;
 using System.Text;
-using System.Text.Unicode;
 
 namespace System.Runtime.InteropServices.ConsoleServices;
 
@@ -11,9 +10,9 @@ namespace System.Runtime.InteropServices.ConsoleServices;
 // and NumberFormatInfo.CurrentInfo mirrors that culture's NumberFormatInfo (see
 // CultureInfo.OnCurrentCultureChanged), so the text is the same as TextWriter's
 // value.ToString(FormatProvider) without making CultureInfo reachable from console output.
-// Text is encoded as Encoding.UTF8 encodes it, an unpaired surrogate becoming U+FFFD, without
-// constructing an Encoding: at most three bytes for each UTF-16 code unit, and a long text in
-// pieces of whole characters.
+// Text is encoded as Encoding.UTF8 encodes it, an unpaired surrogate becoming U+FFFD, by
+// ConsoleUtf8Encoder without constructing an Encoding: at most three bytes for each UTF-16 code
+// unit, and a long text in pieces of whole characters.
 internal abstract class ConsoleTextWriter : TextWriter
 {
     private const int MaximumCharsPerWrite = 4096;
@@ -40,9 +39,8 @@ internal abstract class ConsoleTextWriter : TextWriter
         var buffer = new byte[Math.Min(value.Length, MaximumCharsPerWrite) * 3];
         for (var offset = 0; offset < value.Length;)
         {
-            Utf8.FromUtf16(value.AsSpan(offset), buffer, out var charsRead, out var bytesWritten);
+            offset += ConsoleUtf8Encoder.Encode(value.AsSpan(offset), buffer, out var bytesWritten);
             WriteToStream(buffer.AsSpan(0, bytesWritten));
-            offset += charsRead;
         }
     }
 

@@ -66,17 +66,19 @@ internal sealed class ManagedMethodInliner(
                     RemapCallerBranch: true));
                 continue;
             }
-            // A constrained call passes its receiver by address.
+            // A constrained call passes its receiver by address. A call a runtime-async virtual request precedes stays
+            // the call the request is for.
             ManagedInliningPlan? plan = null;
             if (instruction.Operation is CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject &&
-                !(callerIndex > 0 && body.Instructions[callerIndex - 1].Operation == CilOperation.Constrained))
+                !(callerIndex > 0 && (body.Instructions[callerIndex - 1].Operation == CilOperation.Constrained ||
+                    RuntimeAsync.RuntimeAsyncVirtualRequest.Is(body.Instructions[callerIndex - 1]))))
             {
                 plan = _resolver.Resolve(new(caller, instruction)
                 {
                     Nested = nested,
                     SmallOnly = smallOnly,
                     InLoop = LoopSpans.Contain(loops, instruction.Offset),
-                    LocalAddressArguments = LocalAddressArguments(body, callerIndex, instructionEntryStacks, producers),
+                    LocalAddressArguments = Inlining.LocalAddressArguments.Of(body, callerIndex, instructionEntryStacks, producers),
                 });
             }
             if (plan is null ||
@@ -541,33 +543,6 @@ internal sealed class ManagedMethodInliner(
                 new CilOperand.Index(argumentStart + argument)),
                 RemapCallerBranch: false));
         }
-    }
-
-    // The positions, among the callee's parameters, of the call's arguments that are the address of one of the caller's
-    // locals or arguments.
-    private static ImmutableHashSet<int> LocalAddressArguments(
-        CilMethodBody body,
-        int callerIndex,
-        IReadOnlyDictionary<int, ImmutableArray<CliValueKind>> instructionEntryStacks,
-        StackSlotProducers producers)
-    {
-        var call = body.Instructions[callerIndex];
-        if (call.Operand is not CilOperand.MethodInstance { Value: var method } ||
-            !instructionEntryStacks.TryGetValue(call.Offset, out var stack))
-        {
-            return [];
-        }
-        var arguments = method.Signature.ParameterTypes.Length +
-            (method.Definition.IsStatic || call.Operation == CilOperation.NewObject ? 0 : 1);
-        // The callee's parameters count its instance, which newobj does not take from the stack.
-        var first = stack.Length - arguments - (call.Operation == CilOperation.NewObject ? 1 : 0);
-        return
-        [
-            .. Enumerable.Range(Math.Max(0, stack.Length - arguments), Math.Min(arguments, stack.Length)).Where(depth =>
-                producers.Find(callerIndex, depth) is { } producer &&
-                body.Instructions[producer].Operation is CilOperation.LoadLocalAddress or CilOperation.LoadArgumentAddress)
-                .Select(depth => depth - first),
-        ];
     }
 
     private static ImmutableArray<CliTypeIdentity> GetArgumentTypes(

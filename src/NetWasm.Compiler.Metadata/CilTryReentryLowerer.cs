@@ -37,7 +37,9 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
             return new(instructions, exceptionRegions, [], AdditionalMaxStack: 0);
         }
         var tries = exceptionRegions.Select(TryOf).Distinct().ToArray();
-        var reentries = FindReentries(instructions, exceptionRegions);
+        var triesByStart = tries.GroupBy(zone => zone.Start).ToDictionary(group => group.Key, group => group.ToArray());
+        var nesting = ZoneNesting.Build(instructions, exceptionRegions);
+        var reentries = FindReentries(instructions, exceptionRegions, nesting);
 
         // The tries a branch or a dispatch enters at their first instruction, and the re-entered
         // ones. Any other leave keeps its target: one that enters a try is invalid.
@@ -46,14 +48,14 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
         {
             if (instruction.Operand is CilOperand.BranchTarget { Offset: var target } &&
                 instruction.Operation != CilOperation.Leave &&
-                Entered(tries, Zones(exceptionRegions, instruction.Offset), target) is { } zone)
+                Entered(triesByStart, Around(nesting, exceptionRegions, instruction.Offset), target) is { } zone)
             {
                 entered.Add(zone);
             }
         }
         foreach (var reentry in reentries.Values)
         {
-            if (Entered(tries, Inside(tries, reentry.Try), reentry.Target) is { } zone)
+            if (Entered(triesByStart, Inside(tries, reentry.Try).Contains, reentry.Target) is { } zone)
             {
                 entered.Add(zone);
             }
@@ -91,11 +93,11 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
 
         // A transfer to an offset from code in the given blocks: the entry point of the outermost
         // try starting there that the code is outside, or the instruction itself.
-        int Resolve(IReadOnlySet<Zone> source, int target)
+        int Resolve(Func<Zone, bool> source, int target)
         {
             foreach (var zone in zonesAt.GetValueOrDefault(target, []))
             {
-                if (!source.Contains(zone))
+                if (!source(zone))
                 {
                     return entry[zone];
                 }
@@ -113,7 +115,7 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
                 {
                     continue;
                 }
-                var inside = Inside(tries, zone);
+                var inside = Inside(tries, zone).Contains;
                 var local = new CilOperand.Index(locals[zone]);
                 var cases = result.Count + zoneTargets.Length * 3 + 1;
                 for (var index = 0; index < zoneTargets.Length; index++)
@@ -141,7 +143,7 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
             Add(instruction.Operation, instruction.Operand is CilOperand.BranchTarget branch
                 ? new CilOperand.BranchTarget(instruction.Operation == CilOperation.Leave
                     ? own[branch.Offset]
-                    : Resolve(Zones(exceptionRegions, instruction.Offset), branch.Offset))
+                    : Resolve(Around(nesting, exceptionRegions, instruction.Offset), branch.Offset))
                 : instruction.Operand, instruction);
         }
 
@@ -189,12 +191,12 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
     }
 
     // The outermost try starting at the target that the transfer's source is outside.
-    private static Zone? Entered(Zone[] tries, IReadOnlySet<Zone> source, int target)
+    private static Zone? Entered(Dictionary<int, Zone[]> triesByStart, Func<Zone, bool> source, int target)
     {
         Zone? entered = null;
-        foreach (var zone in tries)
+        foreach (var zone in triesByStart.GetValueOrDefault(target, []))
         {
-            if (zone.Start == target && !source.Contains(zone) &&
+            if (!source(zone) &&
                 (entered is not { } current || zone.End > current.End))
             {
                 entered = zone;
@@ -211,7 +213,8 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
     // directly in it or at the start of a try nested in it.
     private static Dictionary<int, Reentry> FindReentries(
         ImmutableArray<CilInstruction> instructions,
-        ImmutableArray<CilExceptionRegion> exceptionRegions)
+        ImmutableArray<CilExceptionRegion> exceptionRegions,
+        ZoneNesting? nesting)
     {
         var reentries = new Dictionary<int, Reentry>();
         foreach (var instruction in instructions)
@@ -220,8 +223,8 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
             {
                 continue;
             }
-            var source = Zones(exceptionRegions, instruction.Offset);
-            var entered = Zones(exceptionRegions, target).Except(source).ToArray();
+            var source = Around(nesting, exceptionRegions, instruction.Offset);
+            var entered = ZonesAround(nesting, exceptionRegions, target).Where(zone => !source(zone)).ToArray();
             if (entered.Length == 0)
             {
                 continue;
@@ -230,7 +233,7 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
             {
                 var tryZone = TryOf(region);
                 if (region.Kind is CilExceptionRegionKind.Catch or CilExceptionRegionKind.Filter &&
-                    source.Contains(HandlerOf(region)) && entered.Contains(tryZone) &&
+                    source(HandlerOf(region)) && entered.Contains(tryZone) &&
                     entered.All(zone => zone == tryZone ||
                         zone.Kind == ZoneKind.Try && zone.Start == target && tryZone.Contains(zone)))
                 {
@@ -240,6 +243,42 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
             }
         }
         return reentries;
+    }
+
+    // Whether a zone is around the offset: its range is the offset's innermost range or one of that range's parents,
+    // one interval test on the range tree's preorder. An offset where no instruction starts, or zones that overlap
+    // without nesting (invalid IL, which validation rejects), are answered by a scan of the regions.
+    private static Func<Zone, bool> Around(
+        ZoneNesting? nesting,
+        ImmutableArray<CilExceptionRegion> exceptionRegions,
+        int offset)
+    {
+        if (nesting is null || !nesting.InnermostAt.TryGetValue(offset, out var innermost))
+        {
+            return Zones(exceptionRegions, offset).Contains;
+        }
+        return zone => innermost >= 0 &&
+            nesting.Ranges.TryGetValue((zone.Start, zone.End), out var range) &&
+            nesting.Enter[range] <= nesting.Enter[innermost] && nesting.Exit[innermost] <= nesting.Exit[range] &&
+            Array.IndexOf(nesting.RangeZones[range], zone) >= 0;
+    }
+
+    // The zones around the offset: those of its innermost range and that range's parents.
+    private static IEnumerable<Zone> ZonesAround(
+        ZoneNesting? nesting,
+        ImmutableArray<CilExceptionRegion> exceptionRegions,
+        int offset)
+    {
+        if (nesting is null || !nesting.InnermostAt.TryGetValue(offset, out var innermost))
+        {
+            return Zones(exceptionRegions, offset);
+        }
+        var zones = new List<Zone>();
+        for (var range = innermost; range >= 0; range = nesting.Parents[range])
+        {
+            zones.AddRange(nesting.RangeZones[range]);
+        }
+        return zones;
     }
 
     private static HashSet<Zone> Zones(ImmutableArray<CilExceptionRegion> exceptionRegions, int offset)
@@ -284,6 +323,76 @@ internal sealed class CilTryReentryLowerer : ICilTryReentryLowerer
     }
 
     private readonly record struct Reentry(Zone Try, int Target);
+
+    // The zones' ranges (tries, handlers, filters) as a ProtectedRangeNesting over the instructions: each range's
+    // zones, its parent, its preorder interval in the range tree (Enter, Exit), and each instruction's innermost range.
+    // Null when two ranges overlap without nesting.
+    private sealed record ZoneNesting(
+        Dictionary<(int Start, int End), int> Ranges,
+        Zone[][] RangeZones,
+        int[] Parents,
+        int[] Enter,
+        int[] Exit,
+        Dictionary<int, int> InnermostAt)
+    {
+        public static ZoneNesting? Build(
+            ImmutableArray<CilInstruction> instructions,
+            ImmutableArray<CilExceptionRegion> exceptionRegions)
+        {
+            var ranges = exceptionRegions
+                .SelectMany(region => region.FilterOffset is int filter
+                    ? new[] { TryOf(region), HandlerOf(region), new Zone(filter, region.HandlerOffset, ZoneKind.Filter) }
+                    : new[] { TryOf(region), HandlerOf(region) })
+                .Distinct()
+                .GroupBy(zone => (zone.Start, zone.End))
+                .ToArray();
+            var nesting = ProtectedRangeNesting.Build(
+                [.. ranges.Select(range => range.Key)],
+                [.. instructions.Select(instruction => instruction.Offset)]);
+            if (nesting is null)
+            {
+                return null;
+            }
+            var children = new List<int>[ranges.Length];
+            for (var range = 0; range < ranges.Length; range++) children[range] = [];
+            var roots = new List<int>();
+            for (var range = 0; range < ranges.Length; range++)
+            {
+                (nesting.Parents[range] >= 0 ? children[nesting.Parents[range]] : roots).Add(range);
+            }
+            var enter = new int[ranges.Length];
+            var exit = new int[ranges.Length];
+            var clock = 0;
+            var pending = new Stack<(int Range, bool Done)>();
+            foreach (var root in roots)
+            {
+                pending.Push((root, false));
+                while (pending.TryPop(out var item))
+                {
+                    if (item.Done)
+                    {
+                        exit[item.Range] = clock++;
+                        continue;
+                    }
+                    enter[item.Range] = clock++;
+                    pending.Push((item.Range, true));
+                    foreach (var child in children[item.Range]) pending.Push((child, false));
+                }
+            }
+            var innermostAt = new Dictionary<int, int>(instructions.Length);
+            for (var index = 0; index < instructions.Length; index++)
+            {
+                innermostAt[instructions[index].Offset] = nesting.Innermost[index];
+            }
+            return new(
+                ranges.Select((range, index) => (range.Key, index)).ToDictionary(item => item.Key, item => item.index),
+                [.. ranges.Select(range => range.ToArray())],
+                nesting.Parents,
+                enter,
+                exit,
+                innermostAt);
+        }
+    }
 }
 
 internal sealed record LoweredTryReentryBody(

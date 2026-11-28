@@ -17,8 +17,12 @@ using NetWasm.Compiler.Analysis.Delegates;
 namespace NetWasm.Compiler.Analysis.Reachability;
 
 internal sealed class ReachableMethodApplier(
-    ITypeIdentityResolver typeIdentities) : IReachableMethodApplier
+    ITypeIdentityResolver typeIdentities,
+    IJavaScriptErrorConstructorRecorder exportFailures) : IReachableMethodApplier
 {
+    private readonly IJavaScriptErrorConstructorRecorder _exportFailures = exportFailures ??
+        throw new ArgumentNullException(nameof(exportFailures));
+
     private readonly ITypeIdentityResolver _typeIdentities = typeIdentities ??
         throw new ArgumentNullException(nameof(typeIdentities));
 
@@ -34,7 +38,7 @@ internal sealed class ReachableMethodApplier(
         {
             session.State.Types.Add(catchType);
         }
-        foreach (var region in analysis.Body.Body.ExceptionRegions)
+        foreach (var region in analysis.ReachableRegions)
         {
             if (region.CatchTypeIdentity is not { } identity)
                 continue;
@@ -54,16 +58,13 @@ internal sealed class ReachableMethodApplier(
             session.State.Methods.Add(analysis.Method.Definition.Key, analysis.Body);
         }
         ApplyInstructions(session, analysis.Instructions);
+        _exportFailures.Record(session, analysis.Method);
         session.State.RequiredTypes.UnionWith(analysis.RequiredTypes);
     }
 
     private void ApplyInstructions(ReachabilitySession session, ReachabilityInstructionAnalysis analysis)
     {
-        session.ArrayElementSeeds.UnionWith(analysis.RuntimeTypes);
         session.TypeHandleSeeds.UnionWith(analysis.RuntimeTypes);
-        session.ArrayElementSeeds.UnionWith(analysis.ConstructedTypes);
-        session.ArrayElementSeeds.UnionWith(analysis.AllocatedTypes);
-        session.ArrayElementSeeds.UnionWith(analysis.Types.Select(_typeIdentities.GetTypeIdentity));
         session.State.RequiresTypeFacts |= analysis.RequiresTypeFacts;
         session.State.RequiresGenericArguments |= analysis.RequiresGenericArguments;
         session.State.RequiresDeclaringTypes |= analysis.RequiresDeclaringTypes;

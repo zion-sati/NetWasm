@@ -19,14 +19,13 @@ internal sealed class RuntimeTypeAttributeCandidateSelector(IAttributeQueryPlann
 {
     private readonly IAttributeQueryPlanner _planner = planner ?? throw new ArgumentNullException(nameof(planner));
     private readonly ConcurrentDictionary<(CliTypeIdentity Type, CliTypeIdentity Filter, AttributeQueryOperation Operation,
-        bool? Inherit), AttributeQueryEntry?> _plans = new();
+        bool? Inherit), (AttributeQueryEntry? Entry, string? Failure)> _plans = new();
 
-    public ImmutableArray<RuntimeTypeAttributeCase>? Select(ResolvedAttributeQuery query,
-        IEnumerable<CliTypeIdentity> runtimeTypes)
+    public RuntimeTypeAttributeSelection Select(ResolvedAttributeQuery query, IEnumerable<CliTypeIdentity> runtimeTypes)
     {
         ArgumentNullException.ThrowIfNull(query);
         ArgumentNullException.ThrowIfNull(runtimeTypes);
-        if (query.Target is not null || query.TargetAssembly is not null)
+        if (query.Target is not null || query.TargetAssembly is not null || query.TargetModule is not null)
         {
             throw new ArgumentException("A run-time Type query has no compile-time target.", nameof(query));
         }
@@ -34,25 +33,30 @@ internal sealed class RuntimeTypeAttributeCandidateSelector(IAttributeQueryPlann
         foreach (var type in runtimeTypes.Where(Candidate).Distinct().OrderBy(type => type.CanonicalName, StringComparer.Ordinal))
         {
             var key = (type, query.Filter, query.Call.Operation, query.InheritConstant);
-            if (!_plans.TryGetValue(key, out var selection))
+            if (!_plans.TryGetValue(key, out var plan))
             {
                 try
                 {
-                    selection = _planner.Plan(query with { Target = type });
+                    plan = (_planner.Plan(query with { Target = type }), null);
                 }
-                catch (CompilerException)
+                catch (CompilerException exception)
                 {
-                    // A type whose attribute cannot be built here: the query keeps its run-time implementation.
-                    return null;
+                    // A type whose attribute cannot be built here: the query keeps its run-time implementation, and the
+                    // build says why (NW1019).
+                    plan = (null, exception.Diagnostic.Message);
                 }
-                _plans[key] = selection;
+                _plans[key] = plan;
             }
-            if (selection is not null && Answers(selection, query.InheritConstant))
+            if (plan.Failure is { } failure)
+            {
+                return RuntimeTypeAttributeSelection.Unplannable(failure);
+            }
+            if (plan.Entry is { } selection && Answers(selection, query.InheritConstant))
             {
                 cases.Add(new(type, selection));
             }
         }
-        return cases.ToImmutable();
+        return new(cases.ToImmutable(), null);
     }
 
     // Types that can carry custom attributes: closed classes, structs, interfaces, enums and primitives.

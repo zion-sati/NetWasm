@@ -88,7 +88,7 @@ internal sealed record CompileCliOptions(
         "managedquotientreuse", "managedintegercheckelimination", "managedloopinvariantexpressionhoisting",
         "managedmulticastinlinedispatch",
         "managednewobjectnullcheckelimination", "managedloopstrengthreduction", "managedrangebranchfolding",
-        "managedunwrittenstaticfieldfolding", "managedconditionalselects",
+        "managedunwrittenstaticfieldfolding", "managedconditionalselects", "managedbyrefnullcheckelimination",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public FinalWasmOptimization Optimization { get; init; } = FinalWasmOptimization.Oz;
@@ -119,6 +119,8 @@ internal sealed record CompileCliOptions(
     public bool LinkedNativeOnly { get; init; }
     // A reached method naming a member its declaring type lacks fails the compile, rather than throwing when called.
     public bool MissingApiError { get; init; }
+    // -receiverflowaudit+: precise dispatch sites check their receivers against the receiver flow analysis's sets.
+    public bool ReceiverFlowAudit { get; init; }
     // -nativearchive:library=path: a native archive the program links, for its library.
     public ImmutableArray<(string Library, string Path)> NativeArchives { get; init; } = [];
     // -featureswitch:name=true|false: a feature switch the compiler folds.
@@ -175,6 +177,8 @@ internal sealed record CompileCliOptions(
     public string? ManagedUnwrittenStaticFieldFolding { get; init; }
 
     public string? ManagedConditionalSelects { get; init; }
+
+    public string? ManagedByRefNullCheckElimination { get; init; }
 
     public static CompileCliOptions Parse(NwcArguments arguments)
     {
@@ -233,6 +237,7 @@ internal sealed record CompileCliOptions(
             NativeLibraries = options.Many("nativelibrary"),
             LinkedNativeOnly = options.Toggle("linkednativeonly"),
             MissingApiError = options.Toggle("missingapierror"),
+            ReceiverFlowAudit = options.Toggle("receiverflowaudit"),
             NativeArchives = ParseNativeArchives(options.Many("nativearchive")),
             FeatureSwitches = ParseFeatureSwitches(options.Many("featureswitch")),
             RuntimeProperties = ParseRuntimeProperties(options.Many("runtimeproperty")),
@@ -287,6 +292,7 @@ internal sealed record CompileCliOptions(
             ManagedRangeBranchFolding = options.Single("managedrangebranchfolding"),
             ManagedUnwrittenStaticFieldFolding = options.Single("managedunwrittenstaticfieldfolding"),
             ManagedConditionalSelects = options.Single("managedconditionalselects"),
+            ManagedByRefNullCheckElimination = options.Single("managedbyrefnullcheckelimination"),
         };
     }
 

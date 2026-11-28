@@ -34,6 +34,12 @@ public sealed class RepeatedArrayAccessPlannerTests
     // The loop's induction proof, which covers array locals, is kept beside the repeated access.
     // The loop scales what it has before each element, so it is no fold for a bulk call or vectors.
     [InlineData("var local = values; for (var i = 0; i < local.Length; i++) result = result * 3 + local[i]; result += other[index] + other[index];", 2, 0)]
+    // Protected blocks: an access in a try repeats one before it there; the catch may follow a failed check, so the
+    // access after the try repeats nothing; and a finally's copy on the normal path repeats the try's access, while the
+    // fault handler, entered from wherever the try throws (its loop branching back to its first block), repeats nothing.
+    [InlineData("try { result = values[index]; result += values[index]; } catch (System.IndexOutOfRangeException) { result = -1; }", 1, 0)]
+    [InlineData("try { result = values[index]; } catch (System.IndexOutOfRangeException) { result = -1; } result += values[index];", 0, 0)]
+    [InlineData("try { result = values[index]; } finally { do { result += values[index]; } while (result < 0); }", 1, 0)]
     public void ProvesAccessesThatRepeatAnEarlierCheck(string statement, int checkedAccesses, int nonNull)
     {
         using var assets = TestAssets.Create();
@@ -279,10 +285,11 @@ public sealed class RepeatedArrayAccessPlannerTests
         Assert.Empty(NonNull("Before"));
     }
 
+    // In a method with a handler, an access in the try repeats one before it there; with elimination disabled, nothing does.
     [Theory]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public void MethodsWithHandlersAndDisabledEliminationKeepTheirChecks(bool handler, bool disabled)
+    [InlineData(true, false, 1)]
+    [InlineData(false, true, 0)]
+    public void MethodsWithHandlersProveRepeatsAndDisabledEliminationKeepsEveryCheck(bool handler, bool disabled, int checkedAccesses)
     {
         using var assets = TestAssets.Create();
         var body = handler
@@ -310,8 +317,7 @@ public sealed class RepeatedArrayAccessPlannerTests
 
         var proof = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == "Probe").Body.ArrayBoundsProof;
 
-        // A failed check inside a handler region does not leave the method.
-        Assert.Empty(proof?.AccessOffsets ?? []);
+        Assert.Equal(checkedAccesses, proof?.AccessOffsets.Count ?? 0);
         Assert.Empty(proof?.NonNullOffsets ?? []);
     }
 
@@ -356,7 +362,7 @@ public sealed class RepeatedArrayAccessPlannerTests
             graph.Blocks.ToImmutableDictionary(block => block.Index, _ => ImmutableArray<CliValueKind>.Empty),
             stacks.ToImmutableDictionary());
 
-        var plan = new RepeatedArrayAccessPlanner(new ControlFlowDominanceAnalyzer(), new NoCalls()).Plan(flow);
+        var plan = new RepeatedArrayAccessPlanner(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()), new NoCalls()).Plan(flow);
 
         Assert.Equal(checkedAccesses, plan.Checked.Count);
     }
@@ -365,7 +371,7 @@ public sealed class RepeatedArrayAccessPlannerTests
     public void RejectsMissingDependenciesAndInput()
     {
         var graphs = new ControlFlowGraphBuilderFactory().Create();
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
         Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessPlanner(null!, new NoCalls()));
         Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessPlanner(dominance, null!));
         Assert.Throws<ArgumentNullException>(() => new RepeatedArrayAccessPlanner(dominance, new NoCalls()).Plan(null!));

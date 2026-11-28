@@ -9,6 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <NetWasmJavaScriptModule Include="labels.mjs" Module="app.labels" />
+    <NetWasmJavaScriptModule Include="indexeddb.mjs" Module="app.indexeddb" />
+    <NetWasmJavaScriptModule Include="turns.mjs" Module="app.turns" />
     <Content Include="index.html;app.mjs" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

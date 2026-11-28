@@ -1968,7 +1968,18 @@ public sealed class TypedStackValidatorTests
             I(4, CilOperation.Return));
         _ = Validate(constrained);
 
+        // GetObjectType of a constrained GetType takes the managed pointer and carries the type itself; a prefix left
+        // before it would be taken by the next call, so it is rejected.
         _ = Validate(Body(
+            CliValueKind.ManagedReference,
+            1,
+            [],
+            I(0, CilOperation.LoadStaticFieldAddress,
+                new CilOperand.Entity(StaticFieldKey)),
+            I(1, CilOperation.Nop),
+            I(2, CilOperation.GetObjectType, new CilOperand.TypeIdentity(value)),
+            I(3, CilOperation.Return)));
+        Assert.Throws<CompilerException>(() => Validate(Body(
             CliValueKind.ManagedReference,
             1,
             [],
@@ -1976,7 +1987,7 @@ public sealed class TypedStackValidatorTests
                 new CilOperand.Entity(StaticFieldKey)),
             I(1, CilOperation.Constrained, new CilOperand.TypeIdentity(value)),
             I(2, CilOperation.GetObjectType, new CilOperand.TypeIdentity(value)),
-            I(3, CilOperation.Return)));
+            I(3, CilOperation.Return))));
 
         var staticConstrained = Body(
             CliValueKind.I4,

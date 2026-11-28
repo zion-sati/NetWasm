@@ -80,9 +80,7 @@ public sealed class ModuleEncoder : IModuleEncoder
         int InternType(WasmFunctionType type)
         {
             ArgumentNullException.ThrowIfNull(type);
-            var existing = types.FindIndex(candidate =>
-                candidate.Result == type.Result &&
-                candidate.Parameters.AsSpan().SequenceEqual(type.Parameters.AsSpan()));
+            var existing = types.FindIndex(candidate => candidate.SameAs(type));
             if (existing >= 0)
             {
                 return existing;
@@ -167,15 +165,14 @@ public sealed class ModuleEncoder : IModuleEncoder
                 }
                 payload.Write([(byte)WasmValueTypes.FromCli(parameter, target)]);
             }
-            if (type.Result == CliValueKind.Void)
+            if (type.Result == CliValueKind.Void && !type.MoreResults.IsEmpty ||
+                type.MoreResults.Contains(CliValueKind.Void))
             {
-                _unsigned.Encode(payload, 0);
+                throw new ArgumentOutOfRangeException(nameof(types), type, "A function's results are Wasm value types.");
             }
-            else
-            {
-                _unsigned.Encode(payload, 1);
-                payload.Write([(byte)WasmValueTypes.FromCli(type.Result, target)]);
-            }
+            var results = type.Results;
+            _unsigned.Encode(payload, (uint)results.Length);
+            foreach (var result in results) payload.Write([(byte)WasmValueTypes.FromCli(result, target)]);
         }
         _sections.Write(module, 1, _snapshotReaderFactory(payloadBuffer).Read());
     }

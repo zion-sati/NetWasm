@@ -9,6 +9,8 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed class SynchronousJSExportEmitter(
@@ -21,7 +23,9 @@ internal sealed class SynchronousJSExportEmitter(
     IManagedTerminalExceptionBoundaryEmitter terminalExceptions,
     IManagedTerminalTrapBoundaryEmitter terminalTraps,
     IAddressInstructionEmitter addresses,
-    IGeneratedFunctionWriterFactory writers) : ISynchronousJSExportEmitter
+    IGeneratedFunctionWriterFactory writers,
+    IValueTypeArgumentConventionFactory argumentConventions,
+    IValueTypeResultConventionFactory resultConventions) : ISynchronousJSExportEmitter
 {
     public byte[] Emit(
         MethodDefinitionModel method,
@@ -71,6 +75,12 @@ internal sealed class SynchronousJSExportEmitter(
         var stackTraceLocal = messageLengthLocal + 1;
         var stackTraceLengthLocal = stackTraceLocal + 1;
         var valueFrameLocal = stackTraceLengthLocal + 1;
+        // A value-type result goes to its frame slot as its return convention takes it: the slot's address first, or the
+        // fields stored there after the call, through locals after the rest.
+        var resultConvention = converted?.Result is not null && method.Signature.ReturnSignatureType.StackKind == CliValueKind.ValueType
+            ? resultConventions.Create(method.Signature.ReturnSignatureType)
+            : null;
+        var firstStructResultLocal = valueFrameLocal + 1;
         var code = writers.Create();
         WasmLocalDeclarationWriter.Write(
             code.Bytes,
@@ -84,7 +94,8 @@ internal sealed class SynchronousJSExportEmitter(
                 CliValueKind.I4,
                 CliValueKind.ManagedReference,
                 CliValueKind.I4,
-                .. (converted is null ? Array.Empty<CliValueKind>() : [CliValueKind.ManagedAddress])],
+                .. (converted is null ? Array.Empty<CliValueKind>() : [CliValueKind.ManagedAddress]),
+                .. (resultConvention?.FieldLocalKinds ?? [])],
             layouts.Target);
 
         void EmitBody()
@@ -119,25 +130,39 @@ internal sealed class SynchronousJSExportEmitter(
             {
                 valueFrames.Emit(
                     code.Instructions, new JavaScriptValueFrameEnter(converted, valueFrameLocal, [.. parameterLocals], interopImports));
-                if (converted.Result is { } resultSlot)
-                    valueFrames.Emit(code.Instructions, new JavaScriptValueFrameAddress(valueFrameLocal, resultSlot.Offset));
             }
-            for (var index = 0; index < method.Signature.ParameterSignatureTypes.Length; index++)
+            void EmitCall(IWasmInstructionWriter instructions)
             {
-                if (rootSlots.TryGetValue(index, out var slot))
+                for (var index = 0; index < method.Signature.ParameterSignatureTypes.Length; index++)
                 {
-                    WriteRootAddress(code, rootFrameLocal);
-                    ManagedMemoryEmitter.EmitLoadBySize(
-                        code.Instructions,
-                        layouts.Target,
-                        slot * layouts.Target.ObjectReferenceSize,
-                        layouts.Target.ObjectReferenceSize);
+                    if (rootSlots.TryGetValue(index, out var slot))
+                    {
+                        WriteRootAddress(code, rootFrameLocal);
+                        ManagedMemoryEmitter.EmitLoadBySize(
+                            code.Instructions,
+                            layouts.Target,
+                            slot * layouts.Target.ObjectReferenceSize,
+                            layouts.Target.ObjectReferenceSize);
+                    }
+                    else if (converted?.Parameters.TryGetValue(index, out var valueSlot) == true)
+                    {
+                        argumentConventions.Create(method.Signature.ParameterSignatureTypes[index]).Emit(instructions,
+                            writer => valueFrames.Emit(writer, new JavaScriptValueFrameAddress(valueFrameLocal, valueSlot.Offset)), new());
+                    }
+                    else WriteLocalGet(code, parameterLocals[index]);
                 }
-                else if (converted?.Parameters.TryGetValue(index, out var valueSlot) == true)
-                    valueFrames.Emit(code.Instructions, new JavaScriptValueFrameAddress(valueFrameLocal, valueSlot.Offset));
-                else WriteLocalGet(code, parameterLocals[index]);
+                WriteCall(code, functionIndices.Resolve(method.Key));
             }
-            WriteCall(code, functionIndices.Resolve(method.Key));
+            if (resultConvention is not null)
+            {
+                resultConvention.Emit(code.Instructions,
+                    writer => valueFrames.Emit(writer, new JavaScriptValueFrameAddress(valueFrameLocal, converted!.Result!.Offset)), new(StructResultLocals.Sequential(firstStructResultLocal, resultConvention.FieldLocalKinds)),
+                    EmitCall);
+            }
+            else
+            {
+                EmitCall(code.Instructions);
+            }
             if (hostObjectResult)
             {
                 WriteLocalSet(code, objectTemporary);
@@ -227,7 +252,8 @@ internal sealed class SynchronousJSExportEmitter(
                         RuntimeImportSymbol.ManagedTerminalExceptionRaise,
                         initialization.RuntimeImportSelection)
                     : null,
-                EmitBody);
+                EmitBody,
+                exceptionObserverFunctionIndex: interopImports.ExportFailure);
         }
         else
         {

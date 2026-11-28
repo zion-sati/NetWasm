@@ -823,6 +823,13 @@ public sealed record MethodDefinitionModel(
     // A native import that takes runtime marshalling NetWasm provides: the method has no NativeImport and compiles to a
     // stub that marshals its arguments and calls the native method, which has.
     public NativeMarshallingStub? NativeMarshallingStub { get; init; }
+    // A native import that takes or returns a value type by value: the method beside it the compiler provides, which
+    // calls it with the managed convention's arguments and returns as a managed method does. A delegate or function
+    // pointer bound to the import binds the forwarder, since the import's own function has the native ABI, which differs
+    // where the managed convention passes a struct by its fields.
+    public EntityKey? NativeImportForwarder { get; init; }
+    // The native import this compiler-provided method forwards to (NativeImportForwarder).
+    public EntityKey? ForwardsNativeImport { get; init; }
     public NativeCallbackDeclaration? NativeCallback { get; init; }
     // Its assembly applies [DisableRuntimeMarshalling], so its P/Invokes, native callbacks and unmanaged calls follow
     // desktop .NET's disabled-marshalling rules.
@@ -831,6 +838,29 @@ public sealed record MethodDefinitionModel(
         DisablesRuntimeMarshalling ? NativeMarshallingRules.Disabled : NativeMarshallingRules.Runtime;
     public UnsafeAccessors.UnsafeAccessorDeclaration? UnsafeAccessor { get; init; }
     public bool IsDelegateAsynchronousCall { get; init; }
+    // MethodImplOptions.Async (0x2000): Roslyn's runtime async (runtime-async=on) compiled the method without a state
+    // machine; its awaits are calls to AsyncHelpers that the runtime suspends in.
+    public bool IsRuntimeAsync { get; init; }
+    // A runtime-async method's resumption stub, which the compiler provides: the method (this key) takes more
+    // parameters than a frame's resumer delegate does, so its frame resumes through the stub, which calls it with
+    // placeholder arguments that its prologue replaces with the saved ones, as upstream's resumption stubs do.
+    public EntityKey? RuntimeAsyncResumer { get; init; }
+    // A runtime-async method whose lowered body runs in a method the compiler provides beside it (this key): the method
+    // is then its entry, which takes the call mode and calls the body inside the catch that gives a Normal call its
+    // faulted task and a resumed one its recorded fault, so the body itself is not wrapped in that catch.
+    public EntityKey? RuntimeAsyncBody { get; init; }
+    // The runtime-async method whose lowered body this compiler-provided method runs: it takes that method's parameters
+    // and then the call mode its entry took.
+    public EntityKey? RuntimeAsyncBodyOf { get; init; }
+    // The MoveNext of the async state machine Roslyn compiled this method to (without runtime-async=on), when the
+    // compiler rewrites that MoveNext into this method's runtime async body instead (IsRuntimeAsync is set too).
+    public EntityKey? StateMachineMoveNext { get; init; }
+    // An async iterator machine's MoveNextAsync compiled as runtime async (IsRuntimeAsync is set too): the machine's
+    // MoveNext, whose body its own is rewritten from.
+    public EntityKey? AsyncIteratorMoveNext { get; init; }
+    // An async iterator machine's DisposeAsync compiled as runtime async (IsRuntimeAsync is set too): the machine's
+    // MoveNextAsync, which it awaits with the machine in dispose mode.
+    public EntityKey? AsyncIteratorDisposeOf { get; init; }
     // The feature switch a getter answers ([FeatureSwitchDefinition(name)] on its property), which a project's
     // Trim="true" RuntimeHostConfigurationOption folds to a constant at its call sites.
     public string? FeatureSwitch { get; init; }
@@ -845,7 +875,8 @@ public sealed record MethodDefinitionModel(
     // have no physical RVA.
     public bool HasManagedBody =>
         HasBody || UnsafeAccessor is not null || IsDelegateAsynchronousCall || UnboundNativeImport is not null ||
-        NativeMarshallingStub is not null;
+        NativeMarshallingStub is not null || RuntimeAsyncResumer is not null || RuntimeAsyncBodyOf is not null ||
+        ForwardsNativeImport is not null;
 
     public ImmutableArray<CliValueKind> WasmParameterTypes => IsStatic
         ? Signature.ParameterTypes
@@ -916,6 +947,11 @@ public sealed record MethodInstanceModel(
             Definition.NativeImport == other.Definition.NativeImport &
             Definition.UnboundNativeImport == other.Definition.UnboundNativeImport &
             Definition.NativeMarshallingStub == other.Definition.NativeMarshallingStub &
+            Definition.NativeImportForwarder == other.Definition.NativeImportForwarder &
+            Definition.ForwardsNativeImport == other.Definition.ForwardsNativeImport &
+            Definition.RuntimeAsyncResumer == other.Definition.RuntimeAsyncResumer &
+            Definition.RuntimeAsyncBody == other.Definition.RuntimeAsyncBody &
+            Definition.RuntimeAsyncBodyOf == other.Definition.RuntimeAsyncBodyOf &
             StringComparer.Ordinal.Equals(Definition.FeatureSwitch, other.Definition.FeatureSwitch) &
             Definition.FeatureSwitchStubs.SequenceEqual(other.Definition.FeatureSwitchStubs) &
             (Definition.NativeCallback is null
@@ -1050,6 +1086,23 @@ public sealed record DispatchCallSiteModel(
     // The call uses the shared body for its declaration (SharedDispatchPolicy): it is an unbounded virtual call
     // on object, so its targets are every allocated type, as the shared body's own call's are.
     public bool SharesObjectDispatch { get; init; }
+
+    // The targets are only the receivers the receiver flow found reach the call (no bound admitted others): a
+    // receiver outside them is an analysis gap and throws, so no unchecked fallback serves it.
+    public bool PreciseTargets { get; init; }
+
+    // The targets are those of the receivers the receiver flow admitted, some through a bound (a value it could not
+    // follow, bounded by a declared type): dispatch serves a receiver outside them with its last case, unchecked.
+    public bool BoundedTargets { get; init; }
+
+    // Qualification (the receiver flow audit): the receiver types the receiver flow analysis found reach the call. A
+    // receiver of any other type fails with AuditMessage through AuditFailure; dispatch itself is unchanged.
+    // Default when the call is not audited.
+    public ImmutableArray<CliTypeIdentity> AuditedReceivers { get; init; }
+
+    public string? AuditMessage { get; init; }
+
+    public MethodInstanceModel? AuditFailure { get; init; }
 }
 
 public sealed record TypeTestSiteModel(
@@ -1216,6 +1269,8 @@ public enum RuntimeIntrinsic
     AllocateUninitializedArray,
     ArrayCreateInstance,
     JavaScriptHost,
+    // RuntimeHelpers.IsKnownConstant: true for an argument constant folding knows, false otherwise.
+    IsKnownConstant,
     ArrayCreateRectangularInstance,
     RunClassConstructor,
     AllocateUninitializedObject,
@@ -1303,6 +1358,14 @@ public enum RuntimeIntrinsic
     // Runs the finalizers a collection has queued and yields the exception one let escape, or null
     // (GCFinalizerRuntime.RunQueued; the runtime's finalizer safepoint).
     GcRunQueuedFinalizers,
+    // Array.CreateInstance with lower bounds (Array.InternalCreateBoundedInstance): ArrayCreateRectangularInstance's
+    // contract, and the only creation of a rank-one array with lower bounds (T[*]).
+    ArrayCreateBoundedInstance,
+    // NonZeroAddress.Of: its argument, which the compiler has shown is not 0, so an access through it is not checked.
+    NonZeroAddress,
+    // Array.InternalCreateSharedInstance: the shared array of a rank and boundedness with an element in its header
+    // (SharedArrayShapes), ArrayCreateRectangularInstance's arguments; null without a shared array of that shape.
+    ArrayCreateSharedInstance,
 }
 
 public static class RuntimeIntrinsicKinds

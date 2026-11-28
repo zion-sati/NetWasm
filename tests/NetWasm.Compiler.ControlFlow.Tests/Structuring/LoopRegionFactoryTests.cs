@@ -35,7 +35,7 @@ public sealed class LoopRegionFactoryTests
             new FixedCommonReachableBlockFinder(2), new EmptyReachableBlockFinder(),
             new UnexpectedIrreducibleControlFlowExceptionFactory(),
             new LoopExitPartitioner(new OrderedExitExtensionCollector([], []), overlaps),
-            continues, CreateEligibilityClassifier(), new LoopEntryTargetFinder());
+            continues, CreateEligibilityClassifier(), new TerminatingExitJoinFinder(), new LoopEntryTargetFinder());
 
         var result = Create(factory, state, graph, [0, 1], new(0, graph.ReachableBlocks), [new(0, graph.ReachableBlocks)]);
 
@@ -74,7 +74,8 @@ public sealed class LoopRegionFactoryTests
             new FixedCommonReachableBlockFinder(3), new EmptyReachableBlockFinder(),
             new UnexpectedIrreducibleControlFlowExceptionFactory(),
             new LoopExitPartitioner(new OrderedExitExtensionCollector([], []), overlaps),
-            new RecordingContinueTargetFinder(1), CreateEligibilityClassifier(), new LoopEntryTargetFinder());
+            new RecordingContinueTargetFinder(1), CreateEligibilityClassifier(), new TerminatingExitJoinFinder(),
+            new LoopEntryTargetFinder());
         var handler = new ControlFlowDomain(1, [1, 2, 3]);
 
         var result = Create(factory, state, graph, [1, 2], handler, [new(0, [0, 4]), handler]);
@@ -95,7 +96,7 @@ public sealed class LoopRegionFactoryTests
         var continues = new RecordingContinueTargetFinder(1);
         var factory = new LoopRegionFactory(new RecordingOverlapClassifier(false), new FixedLoopConditionChooser(null),
             new FixedCommonReachableBlockFinder(5), new EmptyReachableBlockFinder(),
-            new UnexpectedIrreducibleControlFlowExceptionFactory(), partitions, continues, CreateEligibilityClassifier(), new LoopEntryTargetFinder());
+            new UnexpectedIrreducibleControlFlowExceptionFactory(), partitions, continues, CreateEligibilityClassifier(), new TerminatingExitJoinFinder(), new LoopEntryTargetFinder());
 
         var result = Create(factory, state, state.Graph, [1, 2], new(0, state.Graph.ReachableBlocks), [new(0, state.Graph.ReachableBlocks)]);
 
@@ -115,7 +116,7 @@ public sealed class LoopRegionFactoryTests
             new FixedCommonReachableBlockFinder(5), new EmptyReachableBlockFinder(),
             new UnexpectedIrreducibleControlFlowExceptionFactory(),
             new LoopExitPartitioner(new OrderedExitExtensionCollector([4], [3]), overlaps),
-            new RecordingContinueTargetFinder(1), eligibility, new LoopEntryTargetFinder());
+            new RecordingContinueTargetFinder(1), eligibility, new TerminatingExitJoinFinder(), new LoopEntryTargetFinder());
 
         var result = Create(factory, state, state.Graph, [1, 2], new(0, state.Graph.ReachableBlocks), [new(0, state.Graph.ReachableBlocks)]);
 
@@ -154,7 +155,7 @@ public sealed class LoopRegionFactoryTests
             new FixedLoopConditionChooser(1), new FixedCommonReachableBlockFinder(5),
             new EmptyReachableBlockFinder(), new UnexpectedIrreducibleControlFlowExceptionFactory(),
             new LoopExitPartitioner(new OrderedExitExtensionCollector([4], [3]), overlaps),
-            new RecordingContinueTargetFinder(2), CreateEligibilityClassifier(), new LoopEntryTargetFinder());
+            new RecordingContinueTargetFinder(2), CreateEligibilityClassifier(), new TerminatingExitJoinFinder(), new LoopEntryTargetFinder());
 
         var result = Create(factory, state, graph, [1, 2],
             new ControlFlowDomain(0, graph.ReachableBlocks),
@@ -178,7 +179,7 @@ public sealed class LoopRegionFactoryTests
         var factory = new LoopRegionFactory(new RecordingOverlapClassifier(false),
             new FixedLoopConditionChooser(1), new FixedCommonReachableBlockFinder(5),
             new EmptyReachableBlockFinder(), new UnexpectedIrreducibleControlFlowExceptionFactory(),
-            partitions, new RecordingContinueTargetFinder(1), CreateEligibilityClassifier(), new LoopEntryTargetFinder());
+            partitions, new RecordingContinueTargetFinder(1), CreateEligibilityClassifier(), new TerminatingExitJoinFinder(), new LoopEntryTargetFinder());
 
         var result = Create(factory, state, state.Graph, [1, 2],
             new ControlFlowDomain(0, state.Graph.ReachableBlocks),
@@ -237,7 +238,8 @@ public sealed class LoopRegionFactoryTests
         ILoopExitPartitioner partitions) =>
         new(new RecordingOverlapClassifier(false), new FixedLoopConditionChooser(null), joins,
             new EmptyReachableBlockFinder(), new UnexpectedIrreducibleControlFlowExceptionFactory(),
-            partitions, new RecordingContinueTargetFinder(1), CreateEligibilityClassifier(), new LoopEntryTargetFinder());
+            partitions, new RecordingContinueTargetFinder(1), CreateEligibilityClassifier(),
+            new TerminatingExitJoinFinder(), new LoopEntryTargetFinder());
 
     private static LoopRegionCreation CreateProtectedLoop(
         LoopRegionFactory factory,
@@ -324,7 +326,7 @@ public sealed class LoopRegionFactoryTests
             new UnexpectedIrreducibleControlFlowExceptionFactory(),
             new LoopExitPartitioner(extensions, overlaps),
             continues,
-            CreateEligibilityClassifier(), new LoopEntryTargetFinder(), policy);
+            CreateEligibilityClassifier(), new TerminatingExitJoinFinder(), new LoopEntryTargetFinder(), policy);
 
         var result = Create(
             factory,
@@ -364,7 +366,7 @@ public sealed class LoopRegionFactoryTests
                 new OrderedExitExtensionCollector([], []),
                 overlaps),
             new RecordingContinueTargetFinder(1),
-            CreateEligibilityClassifier(), new LoopEntryTargetFinder());
+            CreateEligibilityClassifier(), new TerminatingExitJoinFinder(), new LoopEntryTargetFinder());
 
         Assert.Throws<InvalidOperationException>(() => Create(
             factory,
@@ -390,7 +392,7 @@ public sealed class LoopRegionFactoryTests
                 new OrderedExitExtensionCollector([], []),
                 overlaps),
             new RecordingContinueTargetFinder(1),
-            CreateEligibilityClassifier(), new LoopEntryTargetFinder());
+            CreateEligibilityClassifier(), new TerminatingExitJoinFinder(), new LoopEntryTargetFinder());
         var component = ImmutableHashSet.Create(1, 2);
 
         var result = Create(
@@ -422,7 +424,7 @@ public sealed class LoopRegionFactoryTests
             new UnexpectedIrreducibleControlFlowExceptionFactory(),
             new LoopExitPartitioner(extensions, overlaps),
             continues,
-            CreateEligibilityClassifier(), new LoopEntryTargetFinder());
+            CreateEligibilityClassifier(), new TerminatingExitJoinFinder(), new LoopEntryTargetFinder());
 
         var creation = Create(
             factory,
@@ -499,34 +501,37 @@ public sealed class LoopRegionFactoryTests
 
         Assert.Throws<ArgumentNullException>(() => new LoopRegionFactory(
             null!, conditions, joins, reachable, errors, partitions, continues,
-            eligibility, entryTargets));
+            eligibility, new TerminatingExitJoinFinder(), entryTargets));
         Assert.Throws<ArgumentNullException>(() => new LoopRegionFactory(
             overlaps, null!, joins, reachable, errors, partitions, continues,
-            eligibility, entryTargets));
+            eligibility, new TerminatingExitJoinFinder(), entryTargets));
         Assert.Throws<ArgumentNullException>(() => new LoopRegionFactory(
             overlaps, conditions, null!, reachable, errors, partitions, continues,
-            eligibility, entryTargets));
+            eligibility, new TerminatingExitJoinFinder(), entryTargets));
         Assert.Throws<ArgumentNullException>(() => new LoopRegionFactory(
             overlaps, conditions, joins, null!, errors, partitions, continues,
-            eligibility, entryTargets));
+            eligibility, new TerminatingExitJoinFinder(), entryTargets));
         Assert.Throws<ArgumentNullException>(() => new LoopRegionFactory(
             overlaps, conditions, joins, reachable, null!, partitions, continues,
-            eligibility, entryTargets));
+            eligibility, new TerminatingExitJoinFinder(), entryTargets));
         Assert.Throws<ArgumentNullException>(() => new LoopRegionFactory(
             overlaps, conditions, joins, reachable, errors, null!, continues,
-            eligibility, entryTargets));
+            eligibility, new TerminatingExitJoinFinder(), entryTargets));
         Assert.Throws<ArgumentNullException>(() => new LoopRegionFactory(
             overlaps, conditions, joins, reachable, errors, partitions, null!,
-            eligibility, entryTargets));
+            eligibility, new TerminatingExitJoinFinder(), entryTargets));
         Assert.Throws<ArgumentNullException>(() => new LoopRegionFactory(
             overlaps, conditions, joins, reachable, errors, partitions, continues,
-            null!, entryTargets));
+            null!, new TerminatingExitJoinFinder(), entryTargets));
         Assert.Throws<ArgumentNullException>(() => new LoopRegionFactory(
             overlaps, conditions, joins, reachable, errors, partitions, continues,
-            eligibility, null!));
+            eligibility, null!, entryTargets));
+        Assert.Throws<ArgumentNullException>(() => new LoopRegionFactory(
+            overlaps, conditions, joins, reachable, errors, partitions, continues,
+            eligibility, new TerminatingExitJoinFinder(), null!));
         Assert.Throws<ArgumentOutOfRangeException>(() => new LoopRegionFactory(
             overlaps, conditions, joins, reachable, errors, partitions, continues,
-            eligibility, entryTargets, (BranchPrefixDuplicationPolicy)int.MaxValue));
+            eligibility, new TerminatingExitJoinFinder(), entryTargets, (BranchPrefixDuplicationPolicy)int.MaxValue));
     }
 
     private static LoopRegionCreation Create<TFactory>(
@@ -537,7 +542,7 @@ public sealed class LoopRegionFactoryTests
         ControlFlowDomain domain,
         ImmutableArray<ControlFlowDomain> orderedChildDomains)
         where TFactory : ILoopRegionFactory
-        => factory.Create(state, graph, component, domain, orderedChildDomains);
+        => factory.Create(state, graph, component, domain, new ControlFlowDomains(orderedChildDomains));
 
     private static LoopRegionEligibilityClassifier
         CreateEligibilityClassifier() =>

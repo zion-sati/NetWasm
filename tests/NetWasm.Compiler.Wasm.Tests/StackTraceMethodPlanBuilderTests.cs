@@ -92,6 +92,40 @@ public sealed class StackTraceMethodPlanBuilderTests
         Assert.Equal([1, 2], plan.Symbols.Select(static symbol => symbol.Id));
     }
 
+    // A runtime-async method whose separate body the program compiles is its entry: the body's frame stands for the
+    // method, so the entry records none. A program that compiles no body (no separation at its level) shows the method.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ARuntimeAsyncEntryRecordsNoFrameWhereItsBodyIsCompiled(bool bodyCompiled)
+    {
+        var program = new FakeProgram();
+        var template = program.GetMethod(EmitterTestSupport.EntryKey);
+        var method = new EntityKey(template.Key.Assembly, 0x06000201);
+        var body = new EntityKey(template.Key.Assembly, unchecked((int)0xC6000201));
+        var generic = new EntityKey(template.Key.Assembly, 0x06000202);
+        var genericBody = new EntityKey(template.Key.Assembly, unchecked((int)0xC6000202));
+        var methods = new MethodTable(new()
+        {
+            [method] = template with { Key = method, Name = "Run", IsRuntimeAsync = true, RuntimeAsyncBody = body },
+            [body] = template with { Key = body, Name = "Run", RuntimeAsyncBodyOf = method },
+            [generic] = template with { Key = generic, Name = "Map", IsRuntimeAsync = true, RuntimeAsyncBody = genericBody },
+            [genericBody] = template with { Key = genericBody, Name = "Map", RuntimeAsyncBodyOf = generic },
+        });
+
+        var plan = Create(methods, program, new FixedExceptionFieldLayoutResolver(29), new RecordingLayoutProvider()).Build(
+            true,
+            bodyCompiled ? [method, body] : [method],
+            bodyCompiled
+                ? [new("Example.Map<System.Int32>()", generic), new("Example.Map<System.Int32>()#body", genericBody)]
+                : [new("Example.Map<System.Int32>()", generic)],
+            ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>>.Empty);
+
+        Assert.Equal(bodyCompiled ? [body] : [method], plan.DirectMethodIds.Keys);
+        Assert.Equal(bodyCompiled ? ["Example.Map<System.Int32>()#body"] : ["Example.Map<System.Int32>()"],
+            plan.ConstructedMethodIds.Keys);
+    }
+
     [Fact]
     public void RejectsEnabledPlanWithoutReachableExceptionField()
     {

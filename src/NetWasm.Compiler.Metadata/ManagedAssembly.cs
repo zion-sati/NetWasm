@@ -14,11 +14,17 @@ using System.Runtime.InteropServices;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.NativeInterop;
 using NetWasm.Compiler.Metadata.UnsafeAccessors;
+using NetWasm.Compiler.Metadata.RuntimeProvidedMembers.RuntimeAsync;
+
+using NetWasm.Compiler.Metadata.RuntimeProvidedMembers.NativeImports;
 
 namespace NetWasm.Compiler.Metadata;
 
 public sealed class ManagedAssembly : IDisposable
 {
+    // MethodImplAttributes.Async, which .NET 11's System.Reflection.Metadata names and .NET 10's does not.
+    private const MethodImplAttributes RuntimeAsyncImplementation = (MethodImplAttributes)0x2000;
+
     private readonly PEReader _peReader;
     private readonly byte[] _image;
     private readonly Dictionary<int, TypeDefinitionModel> _types;
@@ -74,6 +80,7 @@ public sealed class ManagedAssembly : IDisposable
         Reader = _peReader.GetMetadataReader();
         var definition = Reader.GetAssemblyDefinition();
         Identity = new AssemblyIdentity(Reader.GetString(definition.Name));
+        Culture = Reader.GetString(definition.Culture);
         (_types, _fields, _methods, _properties, _structs) = ReadDefinitions(
             assemblyIdentityAliases,
             stackKinds,
@@ -117,6 +124,10 @@ public sealed class ManagedAssembly : IDisposable
     }
 
     public AssemblyIdentity Identity { get; }
+
+    // The assembly's culture: empty for a neutral assembly; a satellite resource assembly names the culture its
+    // resources are for (cs-CZ/App.resources.dll).
+    public string Culture { get; }
     public string Path { get; }
     public MetadataReader Reader { get; }
     public ImmutableArray<string> References { get; }
@@ -236,6 +247,8 @@ public sealed class ManagedAssembly : IDisposable
             assemblyIdentityAliases);
         var (pinvokes, variadicCalls) =
             NativeVariadicDeclarations.Resolve(Reader, nativeImports, nativeBinding, nativeVariadics, signatureProvider);
+        var stateMachines = AsyncStateMachineKickoffs.Find(Reader);
+        var iterators = AsyncStateMachineKickoffs.FindIteratorMembers(Reader);
 
         foreach (var typeHandle in Reader.TypeDefinitions)
         {
@@ -279,6 +292,7 @@ public sealed class ManagedAssembly : IDisposable
             }
 
             var typeStackTraceHidden = HasStackTraceHiddenAttribute(definition.GetCustomAttributes());
+            var declaresValueType = IsValueTypeBase(definition.BaseType);
             foreach (var methodHandle in methodHandles)
             {
                 var method = Reader.GetMethodDefinition(methodHandle);
@@ -292,6 +306,34 @@ public sealed class ManagedAssembly : IDisposable
                 var (Import, Export, WitImport, WitExport, WitPostReturn, declinedBinding, generatedImportBody) =
                     ReadInteropDeclarations(method, methodKey, methodName, methodSignature);
                 var nativeImport = pinvokes.GetValueOrDefault(methodToken);
+                // A method Roslyn compiled to a state machine over one of the task builders compiles as runtime async:
+                // its body is its MoveNext rewritten (StateMachineRewriter). A struct's method keeps the machine, which
+                // works on a copy of the struct.
+                EntityKey? stateMachineMoveNext =
+                    (method.ImplAttributes & RuntimeAsyncImplementation) == 0 && !declaresValueType &&
+                    stateMachines.TryGetValue(methodHandle, out var stateMachine) &&
+                    TakesTaskBuilder(stateMachine.Machine, signatureProvider)
+                        ? new EntityKey(Identity, MetadataTokens.GetToken(stateMachine.MoveNext))
+                        : null;
+                // An async iterator's machine (a class over the iterator builder): its MoveNextAsync and DisposeAsync
+                // compile as runtime async, MoveNextAsync's body MoveNext's rewritten, DisposeAsync's awaiting it in
+                // dispose mode (AsyncIteratorBodyBuilder). Both or neither, as the machine's members.
+                var iteratorMember = (method.ImplAttributes & RuntimeAsyncImplementation) == 0 &&
+                    iterators.TryGetValue(methodHandle, out var iterator) &&
+                    TakesBuilder(iterator.Machine, signatureProvider, AsyncStateMachineKickoffs.TakesIteratorBuilder)
+                        ? iterator
+                        : (AsyncIteratorMember?)null;
+                var runtimeAsync = (method.ImplAttributes & RuntimeAsyncImplementation) != 0 || stateMachineMoveNext is not null ||
+                    iteratorMember is not null;
+                // A method written as runtime async can run its lowered body in a method beside it (RuntimeAsyncBodies),
+                // the method itself becoming the entry, where the compilation separates bodies
+                // (RuntimeAsyncBodyPlacement). Its own protected blocks stay in the body; only the lowering's catch
+                // moves to the entry, which a direct await skips.
+                EntityKey? runtimeAsyncBody = (method.ImplAttributes & RuntimeAsyncImplementation) != 0 &&
+                    method.RelativeVirtualAddress != 0
+                        ? new EntityKey(Identity, RuntimeAsyncBodies.Token(methodToken))
+                        : null;
+                var stackTraceHidden = typeStackTraceHidden || HasStackTraceHiddenAttribute(method.GetCustomAttributes());
                 var binds = nativeImport is null || nativeBinding.Binds(nativeImport);
                 // A bound P/Invoke that takes runtime marshalling, or one of the fixed-signature declarations of a C
                 // variadic function, compiles to a stub over an inner native method. One the stub cannot express
@@ -314,6 +356,20 @@ public sealed class ManagedAssembly : IDisposable
                     });
                     marshallingStub = new(nativeKey) { Variadic = variadic };
                 }
+                // A raw import taking or returning a value type by value gets a forwarder with the managed convention,
+                // which delegates and function pointers bound to the import bind instead (NativeImportForwarders).
+                EntityKey? importForwarder = null;
+                if (nativeImport is not null && binds && marshallingStub is null && NativeImportForwarders.Needs(methodSignature))
+                {
+                    var forwarderToken = NativeImportForwarders.Token(methodToken);
+                    importForwarder = new EntityKey(Identity, forwarderToken);
+                    methods.Add(forwarderToken, new MethodDefinitionModel(
+                        importForwarder.Value, typeKey, methodName, IsStatic: true, methodSignature, RelativeVirtualAddress: 0)
+                    {
+                        ForwardsNativeImport = methodKey,
+                        IsStackTraceHidden = true,
+                    });
+                }
                 methods.Add(
                     methodToken,
                     new MethodDefinitionModel(
@@ -334,6 +390,7 @@ public sealed class ManagedAssembly : IDisposable
                         NativeImport = binds && marshallingStub is null ? nativeImport : null,
                         UnboundNativeImport = binds ? null : nativeImport,
                         NativeMarshallingStub = marshallingStub,
+                        NativeImportForwarder = importForwarder,
                         NativeCallback = nativeCallbacks.Read(Reader, method),
                         DisablesRuntimeMarshalling = disablesRuntimeMarshalling,
                         UnsafeAccessor = unsafeAccessors.Read(Reader, method),
@@ -347,14 +404,55 @@ public sealed class ManagedAssembly : IDisposable
                         PreservesBaseOverrides = HasPreserveBaseOverridesAttribute(method),
                         IsAggressiveInlining = (method.ImplAttributes & MethodImplAttributes.AggressiveInlining) != 0,
                         IsNoInlining = (method.ImplAttributes & MethodImplAttributes.NoInlining) != 0,
-                        IsStackTraceHidden = typeStackTraceHidden ||
-                            HasStackTraceHiddenAttribute(method.GetCustomAttributes()),
+                        IsStackTraceHidden = stackTraceHidden,
                         // The JIT honors the attribute only in the core library, whose internal type it is.
                         IsIntrinsic = Identity.Name == CoreLibraryName && HasIntrinsicAttribute(method),
                         IsDelegateAsynchronousCall =
                             (method.ImplAttributes & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Runtime &&
                             methodName is "BeginInvoke" or "EndInvoke",
+                        IsRuntimeAsync = runtimeAsync,
+                        RuntimeAsyncBody = runtimeAsyncBody,
+                        StateMachineMoveNext = stateMachineMoveNext,
+                        AsyncIteratorMoveNext = iteratorMember is { Dispose: false } moveNextAsync
+                            ? new EntityKey(Identity, MetadataTokens.GetToken(moveNextAsync.MoveNext))
+                            : null,
+                        AsyncIteratorDisposeOf = iteratorMember is { Dispose: true } disposeAsync
+                            ? new EntityKey(Identity, MetadataTokens.GetToken(disposeAsync.MoveNextAsync))
+                            : null,
                     });
+                if (runtimeAsyncBody is { } bodyKey)
+                {
+                    methods.Add(bodyKey.MetadataToken, new MethodDefinitionModel(
+                        bodyKey,
+                        typeKey,
+                        methodName,
+                        (method.Attributes & MethodAttributes.Static) != 0,
+                        RuntimeAsyncBodies.Signature(methodSignature),
+                        RelativeVirtualAddress: 0)
+                    {
+                        RuntimeAsyncBodyOf = methodKey,
+                        GenericArity = method.GetGenericParameters().Count,
+                        IsAggressiveInlining = (method.ImplAttributes & MethodImplAttributes.AggressiveInlining) != 0,
+                        IsNoInlining = (method.ImplAttributes & MethodImplAttributes.NoInlining) != 0,
+                        IsStackTraceHidden = stackTraceHidden,
+                    });
+                }
+                if (runtimeAsync && RuntimeAsyncResumers.Needs(methodSignature))
+                {
+                    var resumerToken = RuntimeAsyncResumers.Token(methodToken);
+                    methods.Add(resumerToken, new MethodDefinitionModel(
+                        new EntityKey(Identity, resumerToken),
+                        typeKey,
+                        $"<resume>{methodName}",
+                        (method.Attributes & MethodAttributes.Static) != 0,
+                        new MethodSignatureModel(methodSignature.ReturnSignatureType, []),
+                        RelativeVirtualAddress: 0)
+                    {
+                        RuntimeAsyncResumer = methodKey,
+                        GenericArity = method.GetGenericParameters().Count,
+                        IsStackTraceHidden = true,
+                    });
+                }
             }
 
             foreach (var propertyHandle in definition.GetProperties())
@@ -1318,6 +1416,23 @@ public sealed class ManagedAssembly : IDisposable
         }
         (var typeNamespace, var declaringName) = GetTypeName(declaringType);
         return (typeNamespace, declaringName + "+" + name);
+    }
+
+    // Whether a state machine's builder (its <>t__builder field) is one of the task builders the rewrite takes.
+    private bool TakesTaskBuilder(TypeDefinitionHandle machine, SignatureTypeProvider signatureProvider) =>
+        TakesBuilder(machine, signatureProvider, AsyncStateMachineKickoffs.TakesBuilder);
+
+    // Whether a machine's builder (its <>t__builder field) is one the predicate takes.
+    private bool TakesBuilder(TypeDefinitionHandle machine, SignatureTypeProvider signatureProvider,
+        Func<CliTypeIdentity, bool> takes)
+    {
+        foreach (var handle in Reader.GetTypeDefinition(machine).GetFields())
+        {
+            var field = Reader.GetFieldDefinition(handle);
+            if (!Reader.StringComparer.Equals(field.Name, "<>t__builder")) continue;
+            return takes(field.DecodeSignature(signatureProvider, genericContext: null));
+        }
+        return false;
     }
 
     private bool IsValueTypeBase(EntityHandle baseType)

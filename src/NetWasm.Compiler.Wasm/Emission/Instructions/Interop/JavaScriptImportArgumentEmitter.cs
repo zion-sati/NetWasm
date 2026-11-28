@@ -3,7 +3,6 @@
 
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
@@ -18,7 +17,6 @@ internal sealed class JavaScriptImportArgumentEmitter(
         IWasmInstructionWriter code,
         CliTypeIdentity type,
         int local,
-        MethodEmissionContext context,
         InteropImportPlan interop)
     {
         if (InteropTypeClassifier.IsNullable(type))
@@ -49,18 +47,16 @@ internal sealed class JavaScriptImportArgumentEmitter(
             return;
         }
 
+        // The object's host handle, or 0 for null, as the if's value, with no local to hold it.
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(local))));
         addresses.Emit(code, AddressOperation.EqualZero);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType((byte)WasmValueType.I32)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(context.InteropResult))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(local))));
         addresses.Emit(code, layouts.Target.ObjectHeaderSize);
         addresses.Emit(code, AddressOperation.Add);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(0))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(context.InteropResult))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropResult))));
     }
 }

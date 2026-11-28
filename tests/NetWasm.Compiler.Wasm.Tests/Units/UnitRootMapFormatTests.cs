@@ -48,6 +48,24 @@ public sealed class UnitRootMapFormatTests
         Assert.Equal(Anchored.Slots, read.Slots);
     }
 
+    // The roots a throw-only point may leave unpublished read back with their safepoint.
+    [Fact]
+    public void ASafepointsDeferrableRootsReadBack()
+    {
+        var root = new RootSource(RootSourceKind.Local, 1);
+        var map = Anchored with
+        {
+            Safepoints = Anchored.Safepoints.SetItem(12, Anchored.Safepoints[12] with { Deferrable = [root] }),
+        };
+
+        var read = UnitRootMapFormat.Read(UnitRootMapFormat.Write(map).AsSpan(), Method,
+            name => name == Holder.CanonicalName ? Holder : null);
+
+        Assert.Equal([root], read!.Safepoints[12].Deferrable);
+        Assert.Empty(UnitRootMapFormat.Read(UnitRootMapFormat.Write(Anchored).AsSpan(), Method,
+            name => name == Holder.CanonicalName ? Holder : null)!.Safepoints[12].Deferrable);
+    }
+
     // A name is two bytes a character: one longer than a quarter of the bytes after it reads
     // back too, as a namespaced struct's does where no assignments follow.
     [Fact]
@@ -107,8 +125,8 @@ public sealed class UnitRootMapFormatTests
     {
         var bytes = UnitRootMapFormat.Write(Anchored).ToArray();
         // Words: the slot count and two slots of four; the safepoint count and one safepoint
-        // of ten; then the anchor count, whose first anchor's name length follows its location.
-        var firstNameLength = 4 * (1 + 2 * 4 + 1 + 10 + 1 + 2);
+        // of eleven; then the anchor count, whose first anchor's name length follows its location.
+        var firstNameLength = 4 * (1 + 2 * 4 + 1 + 11 + 1 + 2);
         // The last offset's three assignments of three words each come before the map's last word, the count of
         // its stores into young objects.
         var firstAssignmentKind = bytes.Length - 4 - 4 * 3 * 3;

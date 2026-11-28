@@ -33,6 +33,13 @@ internal sealed class StructuredLoopDepthMeasurer : IStructuredLoopDepthMeasurer
                     case StructuredCode code:
                         Add(code.Occurrence, depth);
                         break;
+                    case StructuredSwitch table:
+                        Add(table.Head, depth);
+                        foreach (var block in table.Chain)
+                        {
+                            Add(block, depth);
+                        }
+                        break;
                     case StructuredIf conditional:
                         Add(conditional.Condition, depth);
                         Visit(conditional.WhenTrue, depth);

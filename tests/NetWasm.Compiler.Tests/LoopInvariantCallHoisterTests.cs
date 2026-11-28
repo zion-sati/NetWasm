@@ -38,6 +38,9 @@ public sealed class LoopInvariantCallHoisterTests
         { "division of a missing argument", false },
         { "written argument", false },
         { "arguments from before the loop", false },
+        // A branch from before the loop lands in its body, so the value computed ahead of the entry jump would not be
+        // ready on that way in.
+        { "jump into the body from outside", false },
     };
 
     [Theory]
@@ -76,13 +79,20 @@ public sealed class LoopInvariantCallHoisterTests
         "division of an unknown local" => Loop([Local(1), Local(9), I(CilOperation.Divide), Call(Sqrt)]),
         "division of a missing argument" => Loop([Arg(0), Arg(5), I(CilOperation.Divide), Call(Sqrt)]),
         "written argument" => Loop([Arg(0), Call(Sqrt), I(CilOperation.StoreArgument, new CilOperand.Index(0))]),
+        "jump into the body from outside" => Loop([Arg(0), Call(Sqrt)], entry: true),
         _ => Loop([Call(Sqrt)]),
     };
 
-    // i = 0; goto test; start: body; pop; i = i + 1; test: if (i < 10) goto start; return.
-    private static CilMethodBody Loop(CilInstruction[] body, bool isStatic = true)
+    // i = 0; goto test; start: body; pop; i = i + 1; test: if (i < 10) goto start; return. With entry, a branch ahead
+    // of the loop lands at start too.
+    private static CilMethodBody Loop(CilInstruction[] body, bool isStatic = true, bool entry = false)
     {
-        var code = new List<CilInstruction> { I(CilOperation.LoadInt32, 0), I(CilOperation.StoreLocal, new CilOperand.Index(0)) };
+        var code = new List<CilInstruction>();
+        if (entry)
+        {
+            code.AddRange([I(CilOperation.LoadInt32, 1), I(CilOperation.BranchIfTrue)]);
+        }
+        code.AddRange([I(CilOperation.LoadInt32, 0), I(CilOperation.StoreLocal, new CilOperand.Index(0))]);
         var jump = code.Count;
         code.Add(I(CilOperation.Branch));
         var start = code.Count;
@@ -93,6 +103,10 @@ public sealed class LoopInvariantCallHoisterTests
         code.AddRange([Local(0), I(CilOperation.LoadInt32, 10), new(0, 0, CilOperation.BranchIfLessThanSigned, new CilOperand.BranchTarget(start))]);
         code.Add(I(CilOperation.Return));
         code[jump] = code[jump] with { Operand = new CilOperand.BranchTarget(test) };
+        if (entry)
+        {
+            code[1] = code[1] with { Operand = new CilOperand.BranchTarget(start) };
+        }
         var instructions = code.Select(static (instruction, index) => instruction with { Offset = index, NextOffset = index + 1 })
             .ToImmutableArray();
         var signature = MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void), Float64, Float64);

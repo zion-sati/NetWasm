@@ -187,7 +187,6 @@ public sealed class SdkRoutingTests
         Assert.Equal(workerKind, project.Property("_NetWasmWorkerKind"));
         Assert.Equal("true", project.Property("_NetWasmCompileAsLibrary"));
         Assert.Equal(workerKind == "jsexport" ? "true" : "false", project.Property("NetWasmRawWasm"));
-        Assert.Empty(project.Property("NetWasmComponentContract"));
         Assert.Empty(project.Property("NetWasmExecutionContract"));
         Assert.NotEqual("true", project.Property("_IsExecutable"));
         Assert.NotEqual("true", project.Property("HasRuntimeOutput"));
@@ -254,23 +253,6 @@ public sealed class SdkRoutingTests
         var (exitCode, output) = project.RunTarget("NetWasmSdkValidateJavaScriptHosts");
         Assert.NotEqual(0, exitCode);
         Assert.Contains("NWSDK076", output, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void RemovedJsWebWorkerOutputTypeNamesItsReplacement()
-    {
-        using var project = EvaluationProject.Create("""
-            <TargetFramework>netwasm0.1</TargetFramework>
-            <OutputType>JsWebWorker</OutputType>
-            """);
-
-        Assert.Equal("Library", project.Property("OutputType"));
-        Assert.Equal("JsWebWorker", project.Property("_NetWasmRemovedOutputType"));
-        Assert.Empty(project.Property("_NetWasmWorkerKind"));
-        var (exitCode, output) = project.RunTarget("NetWasmSdkRejectRemovedOutputType");
-        Assert.NotEqual(0, exitCode);
-        Assert.Contains("NWSDK074", output, StringComparison.Ordinal);
-        Assert.Contains("<OutputType>JsModule</OutputType>", output, StringComparison.Ordinal);
     }
 
     // Issue #141: an item naming a missing file fails where the build reads
@@ -386,20 +368,6 @@ public sealed class SdkRoutingTests
     }
 
     [Fact]
-    public void RenamedJavaScriptModuleItemNamesItsReplacement()
-    {
-        using var project = EvaluationProject.Create("""
-            <TargetFramework>netwasm0.1</TargetFramework>
-            <OutputType>JsModule</OutputType>
-            """, projectItems: """<NetWasmWorkerJavaScriptModule Include="host.mjs" Module="app.host" />""");
-
-        var (exitCode, output) = project.RunTarget("NetWasmSdkRejectRenamedJavaScriptModuleItem");
-        Assert.NotEqual(0, exitCode);
-        Assert.Contains("NWSDK075", output, StringComparison.Ordinal);
-        Assert.Contains("NetWasmJavaScriptModule", output, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void WitWorkerKeepsApplicationAndWorkerWorldSelectionsSeparate()
     {
         using var project = EvaluationProject.Create("""
@@ -455,8 +423,6 @@ public sealed class SdkRoutingTests
             "NetWasmSdkValidateSdkVersion",
             "NetWasmSdkValidateHostToolsHost",
             "NetWasmSdkValidateJavaScriptHosts",
-            "NetWasmSdkRejectRenamedJavaScriptModuleItem",
-            "NetWasmSdkRejectRemovedOutputType",
             "NetWasmSdkValidateWorkerOutput",
             "NetWasmSdkValidateCoreModuleOutput",
             "NetWasmSdkValidateComponentOutput",
@@ -906,6 +872,55 @@ public sealed class SdkRoutingTests
             "@(_NetWasmRequiredImport->'%(Interface)')",
             toolchainTargets,
             StringComparison.Ordinal);
+    }
+
+    // NetWasmDebugInfo is on in Debug and off in Release, either way overridable, and the componentize and raw-link
+    // tasks receive it with the method symbols and the project directory, from which they write a Debug build's names
+    // and DWARF lines.
+    [Fact]
+    public void DebugInformationDefaultsToDebugAndReachesThePackagingTasks()
+    {
+        using var debug = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>", configuration: "Debug", includeCompilerTargets: true);
+        using var release = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>", includeCompilerTargets: true);
+        using var debugOptOut = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework><NetWasmDebugInfo>false</NetWasmDebugInfo>",
+            configuration: "Debug", includeCompilerTargets: true);
+        using var releaseOptIn = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework><NetWasmDebugInfo>true</NetWasmDebugInfo>",
+            includeCompilerTargets: true);
+
+        Assert.Equal(
+            ["true", "false", "false", "true"],
+            new[] { debug, release, debugOptOut, releaseOptIn }.Select(project => project.Property("NetWasmDebugInfo")));
+        Assert.EndsWith(".wasm.method-symbols", debug.Property("NetWasmMethodSymbolsPath"), StringComparison.Ordinal);
+        Assert.Equal(string.Empty, release.Property("NetWasmMethodSymbolsPath"));
+        var targets = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(), "src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"));
+        foreach (var task in new[] { "NetWasmComponentizeTask", "NetWasmLinkRawModuleTask" })
+        {
+            var element = Assert.Single(targets.Descendants(), candidate => candidate.Name.LocalName == task);
+            Assert.Equal("$(NetWasmDebugInfo)", (string?)element.Attribute("DebugInfo"));
+            Assert.Equal("$(NetWasmMethodSymbolsPath)", (string?)element.Attribute("MethodSymbolsPath"));
+            Assert.Equal("$(MSBuildProjectDirectory)", (string?)element.Attribute("SourceDirectory"));
+        }
+    }
+
+    // Every project compiles its async methods with Roslyn's runtime-async code generation, added to the project's
+    // own features; there is no property to turn it off.
+    [Fact]
+    public void RuntimeAsyncIsAlwaysOn()
+    {
+        using var standard = EvaluationProject.Create("<TargetFramework>netwasm0.1</TargetFramework>",
+            includeCompilerTargets: true);
+        using var withFeatures = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework><Features>strict</Features>", includeCompilerTargets: true);
+
+        Assert.Equal(["runtime-async=on"],
+            standard.Property("Features").Split(';', StringSplitOptions.RemoveEmptyEntries));
+        Assert.Equal(["strict", "runtime-async=on"],
+            withFeatures.Property("Features").Split(';', StringSplitOptions.RemoveEmptyEntries));
     }
 
     [Fact]
@@ -1733,7 +1748,6 @@ public sealed class SdkRoutingTests
                   {(includeCompilerTargets ? $"<Import Project=\"{Escape(compilerTargetsPath)}\" />" : string.Empty)}
                   <Target Name="PrintNetWasmRouting" DependsOnTargets="$(NetWasmSdkPackRouteProbeDependsOn);NetWasmSdkCollectInnerPackageReferences;_NetWasmResolveWitBindings{(probeTargets.Length == 0 ? string.Empty : ";" + probeTargets)}{(collectPackEvidence ? ";NetWasmCollectPackEvidence" : string.Empty)}">
                     <Message Importance="High" Text="__NETWASM_PROP__OutputType=$(OutputType)" />
-                    <Message Importance="High" Text="__NETWASM_PROP___NetWasmRemovedOutputType=$(_NetWasmRemovedOutputType)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmJavaScriptHosts=$(NetWasmJavaScriptHosts)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmJavaScriptPageHost=$(_NetWasmJavaScriptPageHost)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmJavaScriptWorkerHost=$(_NetWasmJavaScriptWorkerHost)" />
@@ -1745,7 +1759,6 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmBuildsModule=$(_NetWasmBuildsModule)" />
                     <Message Importance="High" Text="__NETWASM_PROP__CopyBuildOutputToPublishDirectory=$(CopyBuildOutputToPublishDirectory)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRawWasm=$(NetWasmRawWasm)" />
-                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmComponentContract=$(NetWasmComponentContract)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmExecutionContract=$(NetWasmExecutionContract)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmCompilerWitPath=$(NetWasmCompilerWitPath)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmCompilerWitPath=$(_NetWasmCompilerWitPath)" />
@@ -1800,6 +1813,9 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__RunWorkingDirectory=$(RunWorkingDirectory)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedStackTrace=$(NetWasmManagedStackTrace)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmStructuredDiagnostics=$(NetWasmStructuredDiagnostics)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmDebugInfo=$(NetWasmDebugInfo)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmMethodSymbolsPath=$(NetWasmMethodSymbolsPath)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__Features=$(Features)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmOptimization=$(NetWasmOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedInliningHints=$(NetWasmManagedInliningHints)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmOptimizerConverge=$(NetWasmOptimizerConverge)" />

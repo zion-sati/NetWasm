@@ -4,6 +4,7 @@ Every NetWasm release, newest first. Each version links to its release notes.
 
 | Version | Highlights |
 | --- | --- |
+| [0.16.0](releases/0.16.0.md) | Runtime async in WebAssembly, debugging by C# line, calls that dispatch to what reaches them |
 | [0.15.2](releases/0.15.2.md) | HTTP service handlers that finish under the JavaScript host |
 | [0.15.1](releases/0.15.1.md) | Loops in exception handlers, `Math` as .NET computes it, a JavaScript host that releases what calls held |
 | [0.15.0](releases/0.15.0.md) | NuGet packages under `net10.0-netwasm`, native ones included; the generational NetWasmGen collector; collection while a program waits; TLS clients |

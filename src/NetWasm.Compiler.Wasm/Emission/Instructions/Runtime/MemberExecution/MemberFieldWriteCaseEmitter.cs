@@ -93,7 +93,8 @@ internal sealed class MemberFieldWriteCaseEmitter(
             var valueLayout = _values.GetValueLayout(fieldType);
             if (fieldType.StackKind == CliValueKind.ManagedReference)
             {
-                EmitAssignabilityCheck(code, valueLocal, fieldType, throwFunction);
+                EmitAssignabilityCheck(code, valueLocal, fieldType, throwFunction,
+                    request.Instruction.Target.RuntimeImportSelection);
                 var offset = _fieldLocations.Emit(code, receiverLocal, field, address: false);
                 code.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.LocalGet,
@@ -132,7 +133,8 @@ internal sealed class MemberFieldWriteCaseEmitter(
 
     // A non-null reference must be of a type the field accepts; object accepts any.
     private void EmitAssignabilityCheck(
-        IWasmInstructionWriter code, int valueLocal, CliTypeIdentity fieldType, OptionalFunctionIndex throwFunction)
+        IWasmInstructionWriter code, int valueLocal, CliTypeIdentity fieldType, OptionalFunctionIndex throwFunction,
+        RuntimeImportSelection selection)
     {
         if (fieldType.CanonicalName == "primitive:object")
         {
@@ -148,7 +150,7 @@ internal sealed class MemberFieldWriteCaseEmitter(
             WasmInstructionOperand.Signed(_types.GetObjectLayout(fieldType).TypeId)));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)_runtimeImports.Resolve(RuntimeImportSymbol.IsAssignable))));
+            WasmInstructionOperand.Unsigned((uint)_runtimeImports.Resolve(selection.IsAssignable, selection))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         _exceptions.Emit(code, ManagedExceptionKind.InvalidCast, throwFunction);

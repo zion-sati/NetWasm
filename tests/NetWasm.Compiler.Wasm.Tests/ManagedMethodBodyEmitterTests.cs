@@ -359,12 +359,12 @@ public sealed class ManagedMethodBodyEmitterTests
         var frameEntry = CreateMethodFrameEntry(program, layouts, imports);
         var frameExit = CreateMethodFrameExit(imports);
         var addresses = CreateAddressInstructions(layouts);
-        var returnEmitter = new ExceptionAndReturnEmitter(layouts, layouts, imports,
+        var returnEmitter = new ExceptionAndReturnEmitter(layouts, imports,
             exceptions,
             frameExit,
             CreateFilterEnvironmentRoots(layouts),
             addresses,
-            new SmallValueCopyEmitter(new BulkValueCopyEmitter(layouts)));
+            new NetWasm.Compiler.Wasm.Emission.StructResults.ValueTypeReturnConventionFactory(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier(), new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultEmitter(layouts), layouts, new SmallValueCopyEmitter(new BulkValueCopyEmitter(layouts))));
         var dispatcher = new CilInstructionDispatcher(new InstructionCommandRegistry(
             returnEmitter.Commands,
             [CilOperation.Return]),
@@ -391,19 +391,23 @@ public sealed class ManagedMethodBodyEmitterTests
                 new ArrayMetadataSnapshotEmitter(layouts, layouts, new RectangularArrayLayoutProvider(layouts, layouts), addresses, new ImplicitExceptionEmitter(layouts)),
                 new ArrayStoreCheckPlanner(types, new UnusedTypeDefinitionResolver()),
                 new ScalarCallLifetimePlanner(new ControlFlowGraphBuilderFactory().Create(),
-                    new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer())),
-                new AuthoritativeRootSourceSelector(), new AuthoritativeRootLayoutPlanner(), new RootClearElisionPlanner(new StructuredBlockPredecessorReader()),
+                    new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()))),
+                new AuthoritativeRootSourceSelector(new RootClearElisionPlanner(new StructuredBlockPredecessorReader()), new RootValueElisionPlanner(new StructuredBlockPredecessorReader())), new AuthoritativeRootLayoutPlanner(), new RootClearElisionPlanner(new StructuredBlockPredecessorReader()),
                 new RootFrameEntryClearPlanner(new RootClearElisionPlanner(new StructuredBlockPredecessorReader()), layouts),
+                new LazyRootFramePlanner(new RootClearElisionPlanner(new StructuredBlockPredecessorReader()),
+                    new FallbackPublicationClassifier()),
                 new RootValueElisionPlanner(new StructuredBlockPredecessorReader()),
                 new ValueFrameReferenceMapPlanner(layouts, layouts, CreateArgumentSignatureTypes(program)),
-                new NetWasm.Compiler.GarbageCollection.RootSlotAllocator()),
+                new NetWasm.Compiler.GarbageCollection.RootSlotAllocator(),
+                TestExceptionFrames.Strategies(layouts, imports), new LandingPadRestorePlanner()),
             new ManagedMethodSequenceEmitter(
                 layouts,
                 new ExceptionRegionEmitter(
                     layouts,
-                    imports,
                     exceptionPayloadBlocks,
-                    new StructuredExceptionGroupKeyFactory()),
+                    TestExceptionFrames.Steps(layouts, imports),
+                    new PassThroughCatchLocalFinder(),
+                    imports),
                 new StructuredControlFlowEmitter(
                     new StructuredConditionValueEmitter(layouts),
                     new ControlFlowDispatcherEmitter(
@@ -516,7 +520,8 @@ StructuredMethod structured,
 OptionalFunctionIndex managedThrowFunction = default,
             bool inlineSmallBlocks = false,
             bool inlineArrayData = false,
-            bool conditionalAllocationRoots = false)
+            bool conditionalAllocationRoots = false,
+            bool reachesFilters = true)
         {
             Method = method;
             HoistArrayNullChecks = hoistArrayNullChecks;

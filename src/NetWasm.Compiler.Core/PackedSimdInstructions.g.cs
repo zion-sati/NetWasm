@@ -390,6 +390,8 @@ public static partial class PackedSimdInstructions
             ["ShiftRightLogical(v:u2,s:i4)"] = new("i16x8.shr_u", 0x8d, PackedSimdShape.Simple, 2, false, false, new(0x8d, 2, false)),
             ["ShiftRightLogical(v:u4,s:i4)"] = new("i32x4.shr_u", 0xad, PackedSimdShape.Simple, 4, false, false, new(0xad, 4, false)),
             ["ShiftRightLogical(v:u8,s:i4)"] = new("i64x2.shr_u", 0xcd, PackedSimdShape.Simple, 8, false, false, new(0xcd, 8, false)),
+            ["Shuffle(v:i1,v:i1,v:i1)"] = new("i8x16.shuffle", 0x0d, PackedSimdShape.Shuffle, 1, false, false, new(0x0d, 1, false)),
+            ["Shuffle(v:u1,v:u1,v:u1)"] = new("i8x16.shuffle", 0x0d, PackedSimdShape.Shuffle, 1, false, false, new(0x0d, 1, false)),
             ["SignExtendWideningLower(v:i1)"] = new("i16x8.extend_low_i8x16_s", 0x87, PackedSimdShape.Simple, 2, false, false, new(0x87, 2, false)),
             ["SignExtendWideningLower(v:i2)"] = new("i32x4.extend_low_i16x8_s", 0xa7, PackedSimdShape.Simple, 4, false, false, new(0xa7, 4, false)),
             ["SignExtendWideningLower(v:i4)"] = new("i64x2.extend_low_i32x4_s", 0xc7, PackedSimdShape.Simple, 8, false, false, new(0xc7, 8, false)),

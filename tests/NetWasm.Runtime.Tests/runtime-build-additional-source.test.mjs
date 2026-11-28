@@ -22,7 +22,8 @@ for (const target of ['wasm32', 'wasm64']) {
         const output = path.join(directory, 'runtime.wasm');
         const invoked = path.join(directory, 'node-invoked');
         fs.writeFileSync(layout, JSON.stringify({
-          schemaVersion: 2, target, applicationStaticDataEnd: 65536,
+          schemaVersion: 3, target, applicationStaticDataEnd: 65536, managedExecutableEntryPoint: null,
+          runtimeFeatures: [], nativeImports: [], importModules: [],
         }));
         fs.writeFileSync(path.join(directory, 'node'),
           '#!/bin/sh\n: > "$NETWASM_BUILDER_TEST_MARKER"\nexit 99\n', { mode: 0o755 });

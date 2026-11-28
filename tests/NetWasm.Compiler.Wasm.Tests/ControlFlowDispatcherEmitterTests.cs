@@ -161,6 +161,41 @@ public sealed class ControlFlowDispatcherEmitterTests
             instruction.Operand == WasmInstructionOperand.Unsigned(0));
     }
 
+    // A block that goes straight to an exit names the exit in the counter first: a dispatcher whose exit's body holds
+    // this one dispatches on the counter once this one ends, and must not see the value that brought control in.
+    [Fact]
+    public void DenseDispatcherNamesTheExitItBranchesStraightTo()
+    {
+        var blocks = Enumerable.Range(0, 32)
+            .Select(index => new StructuredDispatcherBlock(
+                Block(index, CilOperation.Return),
+                index == 0 ? new StructuredBlockId(32) : null,
+                null))
+            .ToImmutableArray();
+        var dispatcher = new StructuredDispatcher(
+            new StructuredBlockId(0),
+            blocks,
+            [new StructuredDispatcherExit(new StructuredBlockId(32), StructuredSequence.Empty)]);
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+
+        EmitThroughCapability(
+            CreateEmitter(),
+            code,
+            new(Method(dispatcher), dispatcher, 7),
+            _ => { },
+            _ => { },
+            (_, _) => { });
+
+        var instructions = code.ToInstructions().ToList();
+        var named = instructions.FindIndex(instruction =>
+            instruction.Opcode == WasmOpcodes.I32Constant &&
+            instruction.Operand == WasmInstructionOperand.Signed(32));
+        Assert.True(named >= 0);
+        Assert.Equal((WasmOpcodes.LocalSet, 7u),
+            (instructions[named + 1].Opcode, instructions[named + 1].Operand.UnsignedValue));
+        Assert.Equal(WasmOpcodes.Branch, instructions[named + 2].Opcode);
+    }
+
     [Fact]
     public void DenseDispatcherRedispatchesBackedgeSuccessor()
     {
@@ -593,6 +628,47 @@ public sealed class ControlFlowDispatcherEmitterTests
             emitBlock,
             emitCondition,
             emitSequence));
+    }
+
+    // Exits with bodies each test whether their body set the counter to one of the blocks, until those tests would
+    // compare more than MaximumOwnRedispatchCompares times; then they share one test, in either selection form.
+    [Theory]
+    [InlineData(100, 2048, false)]
+    [InlineData(100, 2049, true)]
+    [InlineData(1, 2048, false)]
+    [InlineData(1, 2049, true)]
+    public void ExitBodiesShareOneRedispatchTestAboveTheBound(int spacing, int blockCount, bool shared)
+    {
+        Assert.Equal(4096, ControlFlowDispatcherEmitter.MaximumOwnRedispatchCompares);
+        var blocks = Enumerable.Range(0, blockCount)
+            .Select(index => new StructuredDispatcherBlock(Block(index * spacing, CilOperation.Return), null, null))
+            .ToImmutableArray();
+        var firstTarget = (blockCount - 1) * spacing + 1;
+        var dispatcher = new StructuredDispatcher(
+            new StructuredBlockId(0),
+            blocks,
+            [
+                new StructuredDispatcherExit(new StructuredBlockId(firstTarget),
+                    new StructuredSequence([new StructuredCode(Block(firstTarget + 10, CilOperation.Return))])),
+                new StructuredDispatcherExit(new StructuredBlockId(firstTarget + 1),
+                    new StructuredSequence([new StructuredCode(Block(firstTarget + 11, CilOperation.Return))])),
+            ]);
+        var emitted = 0;
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+
+        EmitThroughCapability(
+            CreateEmitter(),
+            code,
+            new(Method(dispatcher), dispatcher, 7),
+            _ => { },
+            _ => { },
+            (_, _) => emitted++);
+
+        Assert.Equal(2, emitted);
+        Assert.Equal(spacing == 1, code.ToInstructions().Any(instruction => instruction.Opcode == WasmOpcodes.BranchTable));
+        Assert.Equal(
+            shared ? blockCount : 2 * blockCount,
+            code.ToInstructions().Count(instruction => instruction.Opcode == WasmOpcodes.BranchIf));
     }
 
     private static void EmitThroughCapability(

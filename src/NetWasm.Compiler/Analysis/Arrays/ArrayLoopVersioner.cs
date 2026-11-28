@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using NetWasm.Compiler.Analysis.Loops;
+using NetWasm.Compiler.Analysis.NullChecks;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
 
@@ -23,12 +25,15 @@ internal interface IArrayLoopVersioner
 // negative bound under a signed guard runs no iteration either way. The copy is appended after the body, as the
 // unroller appends its fast loop, and only loops within the size budget are copied. The copy counts with an index of
 // its own, which starts where the loop's does, so each loop has one initialization and one increment of its index
-// and stays a counted loop for the passes after this one.
+// and stays a counted loop for the passes after this one. Where the plan names runs of elements its reads lie in, the
+// test also fails when one may hold address 0, and the copy marks those reads NonZeroAddress, so their accesses check
+// nothing; that takes the methods that mark them.
 internal sealed class ArrayLoopVersioner(
     IControlFlowGraphBuilder graphs,
     ITypedStackValidator stacks,
     IArrayLoopVersionPlanner planner,
-    int loopInstructionBudget) : IArrayLoopVersioner
+    int loopInstructionBudget,
+    IVectorLoopMethodResolver? nonZeroAddresses = null) : IArrayLoopVersioner
 {
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
     private readonly ITypedStackValidator _stacks = stacks ?? throw new ArgumentNullException(nameof(stacks));
@@ -69,12 +74,21 @@ internal sealed class ArrayLoopVersioner(
             var guard = graph.GetBlock(loop.GuardBlock).StartOffset;
             source = graph.GetBlock(loop.GuardBlock).Instructions[0].SourceOffset;
             foreach (var entry in version.Entries) redirects.Add(entry, next);
+            // Each failing condition pushes 1, and their or takes the loop as written in one branch: several branches to
+            // one target per loop send the structurer's join search through every candidate. Every condition is
+            // evaluated; a bound read from a null array throws as the loop's own condition would, before anything else.
+            var failures = 0;
+            void Failed()
+            {
+                if (failures++ != 0) Append(CilOperation.BitwiseOr, new CilOperand.None());
+            }
             foreach (var (start, length) in version.Ranges)
             {
                 // start < 0 runs the loop as written.
                 Append(CilOperation.LoadLocal, new CilOperand.Index(start));
                 Append(CilOperation.LoadInt32, new CilOperand.ConstantI4(0));
-                Append(CilOperation.BranchIfLessThanSigned, new CilOperand.BranchTarget(guard));
+                Append(CilOperation.CompareLessThanSigned, new CilOperand.None());
+                Failed();
                 // (long)start + (ulong)bound > length runs it as written too.
                 Append(CilOperation.LoadLocal, new CilOperand.Index(start));
                 Append(CilOperation.ConvertInt64, new CilOperand.None());
@@ -82,7 +96,8 @@ internal sealed class ArrayLoopVersioner(
                 Append(CilOperation.Add, new CilOperand.None());
                 Append(CilOperation.LoadLocal, new CilOperand.Index(length));
                 Append(CilOperation.ConvertInt64, new CilOperand.None());
-                Append(CilOperation.BranchIfGreaterThanSigned, new CilOperand.BranchTarget(guard));
+                Append(CilOperation.CompareGreaterThanSigned, new CilOperand.None());
+                Failed();
             }
             foreach (var range in version.OffsetRanges)
             {
@@ -97,7 +112,8 @@ internal sealed class ArrayLoopVersioner(
                     Append(CilOperation.Add, new CilOperand.None());
                     AppendTerm(range);
                     Append(CilOperation.LoadInt64, new CilOperand.ConstantI8(0));
-                    Append(CilOperation.BranchIfLessThanSigned, new CilOperand.BranchTarget(guard));
+                    Append(CilOperation.CompareLessThanSigned, new CilOperand.None());
+                    Failed();
                     // One past the largest, (long)start + (ulong)bound + High - lookahead ± term, past the length does
                     // too.
                     Append(CilOperation.LoadLocal, new CilOperand.Index(range.Start));
@@ -115,8 +131,24 @@ internal sealed class ArrayLoopVersioner(
                 AppendTerm(range);
                 Append(CilOperation.LoadLocal, new CilOperand.Index(range.Length));
                 Append(CilOperation.ConvertInt64, new CilOperand.None());
-                Append(CilOperation.BranchIfGreaterThanSigned, new CilOperand.BranchTarget(guard));
+                Append(CilOperation.CompareGreaterThanSigned, new CilOperand.None());
+                Failed();
             }
+            // Each run whose reads the copy marks: from the reference, length elements, none at address 0.
+            var marked = nonZeroAddresses is null ? ImmutableDictionary<int, CliTypeIdentity>.Empty : version.NonZeroReads.Reads;
+            if (!marked.IsEmpty)
+            {
+                foreach (var run in version.NonZeroReads.Runs)
+                {
+                    NonZeroAddressRange.PushMayHoldZero(
+                        (operation, operand) => Append(operation, operand ?? new CilOperand.None()),
+                        () => Append(CilOperation.LoadLocal, new CilOperand.Index(run.Reference)),
+                        () => Append(CilOperation.LoadLocal, new CilOperand.Index(run.Length)),
+                        run.Element);
+                    Failed();
+                }
+            }
+            if (failures != 0) Append(CilOperation.BranchIfTrue, new CilOperand.BranchTarget(guard));
             var index = locals.Count;
             locals.Add(CliValueKind.I4);
             signatures.Add(CliTypeIdentity.FromStackKind(CliValueKind.I4));
@@ -129,7 +161,8 @@ internal sealed class ArrayLoopVersioner(
             foreach (var block in blocks)
             {
                 copied.Add(block.StartOffset, position);
-                position += block.Instructions.Length + (FallsThrough(block.Instructions[^1]) ? 1 : 0);
+                position += block.Instructions.Length + (FallsThrough(block.Instructions[^1]) ? 1 : 0) +
+                    block.Instructions.Count(instruction => marked.ContainsKey(instruction.Offset));
             }
             Append(CilOperation.Branch, new CilOperand.BranchTarget(copied[guard]));
             foreach (var block in blocks)
@@ -151,6 +184,11 @@ internal sealed class ArrayLoopVersioner(
                         OriginalOffset = instruction.SourceOffset,
                     });
                     next++;
+                    if (marked.TryGetValue(instruction.Offset, out var element))
+                    {
+                        Append(CilOperation.Call, new CilOperand.MethodInstance(
+                            nonZeroAddresses!.Resolve(VectorLoopMethod.NonZeroAddress, element)));
+                    }
                 }
                 var last = block.Instructions[^1];
                 if (FallsThrough(last))
@@ -169,7 +207,7 @@ internal sealed class ArrayLoopVersioner(
         var result = body with
         {
             Instructions = code.ToImmutable(),
-            MaxStack = Math.Max(2, body.MaxStack),
+            MaxStack = Math.Max(4, body.MaxStack),
             Locals = locals.ToImmutable(),
             LocalSignatureTypes = signatures.ToImmutable(),
             ArrayBoundsProof = null,

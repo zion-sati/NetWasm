@@ -65,8 +65,14 @@ namespace System.Threading
             return WaitHandle.WaitMultipleIgnoringSyncContext(waitHandles, waitAll, millisecondsTimeout);
         }
 
-        public static void SetSynchronizationContext(SynchronizationContext? context) =>
+        public static void SetSynchronizationContext(SynchronizationContext? context)
+        {
+            AmbientContextChanges.Made = true;
             s_current = context;
+        }
+
+        // Puts back a context the runtime saved, which is no change the program makes (AmbientContextChanges).
+        internal static void RestoreCurrent(SynchronizationContext? context) => s_current = context;
 
         public virtual SynchronizationContext CreateCopy() => new();
 
@@ -85,11 +91,11 @@ namespace System.Threading
             }
 
             internal void Schedule() =>
-                _schedule = PlatformServices.Scheduler.Schedule(Run, 0);
+                _schedule = PlatformServices.Scheduler.Post(Run);
 
             private void Run()
             {
-                _schedule?.Dispose();
+                _schedule?.Cancel();
                 _schedule = null;
                 if (_executionContext is null)
                 {

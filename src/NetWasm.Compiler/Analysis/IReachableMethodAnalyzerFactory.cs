@@ -18,6 +18,7 @@ internal interface IReachableMethodAnalyzerFactory
         IMethodSpecializer specializer,
         IManagedMethodOptimizer optimizer,
         ICalledMethodResolver calledMethods,
+        IRuntimeIntrinsicRegistry intrinsics,
         WasmOptimizationSettings settings,
         IImplicitExceptionDiscovery exceptionDiscovery,
         IReachabilityInstructionAnalyzer instructionAnalyzer);

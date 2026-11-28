@@ -9,6 +9,7 @@ using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.GenericConstraints;
+using NetWasm.Compiler.Metadata.RuntimeProvidedMembers.RuntimeAsync;
 
 namespace NetWasm.Compiler.Metadata;
 
@@ -35,6 +36,12 @@ public sealed class MetadataGenericParameterConstraintReader : IGenericParameter
 
     private ImmutableArray<GenericParameterConstraintModel> ReadCore(EntityKey owner)
     {
+        // A runtime-async resumption stub has its method's generic parameters (RuntimeAsyncResumers).
+        if (RuntimeAsyncResumers.IsStub(owner.MetadataToken))
+            owner = owner with { MetadataToken = RuntimeAsyncResumers.Method(owner.MetadataToken) };
+        // So has a runtime-async method's separate body (RuntimeAsyncBodies).
+        if (RuntimeAsyncBodies.IsBody(owner.MetadataToken))
+            owner = owner with { MetadataToken = RuntimeAsyncBodies.Method(owner.MetadataToken) };
         if (!_assemblies.TryGetValue(owner.Assembly, out var source))
             throw new CompilerException(new(DiagnosticCode.AssemblyResolution,
                 $"Generic constraint owner assembly '{owner.Assembly.Name}' is not in the compilation unit."));

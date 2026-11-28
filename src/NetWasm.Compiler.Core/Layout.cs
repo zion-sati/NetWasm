@@ -49,6 +49,8 @@ public enum ManagedExceptionKind
     JSException,
     InvalidOperation,
     NotSupported,
+    // A JavaScript import failed: a JSException carrying what it threw or rejected with, which the host holds for it.
+    JSImportFailure,
 }
 // A type's runtime registration: its object layout's reference offsets, in bytes, and the type
 // IDs a cast to it accepts.
@@ -140,6 +142,10 @@ public interface IStaticDataLayout
     int TypeObjectCacheAddress => 0;
     int TypeObjectCount => 0;
     int TypeObjectSize => 0;
+    // The shared arrays' cast table, which the runtime initializer registers (SharedArrayShapes): the shared type ids
+    // by shape, then SharedArrayTargetCount entries; 0 in a program that allocates no shared array.
+    int SharedArrayTargetsAddress => 0;
+    int SharedArrayTargetCount => 0;
 }
 
 public interface IMemberDescriptorLayout
@@ -249,6 +255,15 @@ public static class RuntimeAbi
     public const string RuntimeExceptionFrameLeave = "exception_frame_leave";
     public const string RuntimeExceptionFrameUnwind = "exception_frame_unwind";
     public const string RuntimeExceptionFrameTargetClause = "exception_frame_target_clause";
+    public const string RuntimeExceptionFilterFramesLive = "exception_filter_frames_live";
+    public const string RuntimeExceptionCatchSelect = "exception_catch_select";
+    public const string RuntimeFrameMarkRoot = "frame_mark_root";
+    public const string RuntimeFrameMarkValueCursor = "frame_mark_value_cursor";
+    public const string RuntimeFrameMarkStackTrace = "frame_mark_stack_trace";
+    public const string RuntimeFrameMarksRewind = "frame_marks_rewind";
+    public const string RuntimeFramesUnwind = "frames_unwind";
+    public const string RuntimeExceptionCellEnter = "exception_cell_enter";
+    public const string RuntimeExceptionCellLeave = "exception_cell_leave";
     public const string RuntimeExceptionFrameSetEnvironment =
         "exception_frame_set_environment";
     public const string ManagedFilterDispatcher = "netwasm.filter";
@@ -292,6 +307,10 @@ public static class RuntimeAbi
     public const string RuntimeAllocateString = "allocate_string";
     public const string RuntimeGetTypeObject = "get_type_object";
     public const string RuntimeRegisterTypeObjects = "register_type_objects";
+    public const string RuntimeRegisterSharedArrays = "register_shared_arrays";
+    public const string RuntimeIsAssignableShared = "is_assignable_shared";
+    public const string RuntimeArrayCopyShared = "array_copy_shared";
+    public const string RuntimeArraySetValueShared = "array_set_value_shared";
     public const string RuntimeTypeObjectCache = "type_object_cache_address";
     public const string RuntimeHandleNew = "handle_new";
     public const string RuntimeHandleGet = "handle_get";

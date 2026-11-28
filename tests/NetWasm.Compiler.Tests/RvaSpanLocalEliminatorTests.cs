@@ -52,7 +52,7 @@ public sealed class RvaSpanLocalEliminatorTests
     {
         var body = Shape(shape);
 
-        var result = new RvaSpanLocalEliminator(new ControlFlowGraphBuilderFactory().Create(), new ControlFlowDominanceAnalyzer(),
+        var result = new RvaSpanLocalEliminator(new ControlFlowGraphBuilderFactory().Create(), new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()),
             enabled: true).Rewrite(body);
 
         Assert.Equal(rewritten, !ReferenceEquals(body, result));

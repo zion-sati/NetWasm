@@ -510,7 +510,7 @@ public sealed class AsyncJSExportFunctionEmitterTests
                     arrays ?? new RecordingArrayArguments(),
                     objects ?? new RecordingObjectArguments()),
                 EmitterTestSupport.ValueFramePlanner(layouts),
-                EmitterTestSupport.ValueFrames(layouts, imports)),
+                EmitterTestSupport.ValueFrames(layouts, imports), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory()),
         }.Cast<IAsyncJSExportWrapperEmitter>().Single();
 
     private static FunctionIndexResolver CreateFunctionIndices(FakeProgram methods)

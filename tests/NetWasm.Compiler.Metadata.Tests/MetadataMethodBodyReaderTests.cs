@@ -6,6 +6,7 @@ using System.Reflection.Emit;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.UnsafeAccessors;
 using NetWasm.Compiler.Metadata.RuntimeProvidedMembers;
+using NetWasm.Compiler.Metadata.RuntimeProvidedMembers.RuntimeAsync;
 using NetWasm.Compiler.Metadata.UnsafeAccessors;
 
 namespace NetWasm.Compiler.Metadata.Tests;
@@ -38,6 +39,21 @@ public sealed class MetadataMethodBodyReaderTests
         Assert.Equal(0, fixture.Bindings);
         Assert.Equal(0, fixture.BodyBuilds);
         Assert.Equal(0, fixture.DelegateCallBuilds);
+    }
+
+    // A runtime-async method (runtime-async=on) runs its decoded body as the runtime async lowering rewrites it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RuntimeAsyncMethodsRunTheirLoweredBody(bool instance)
+    {
+        using var fixture = new Fixture(physical: true, annotated: false, runtimeAsync: true);
+        var reader = fixture.CreateReader();
+
+        var result = instance ? reader.ReadMethodBody(fixture.Method) : reader.ReadMethodBody(fixture.Method.Definition);
+
+        Assert.Same(fixture.LoweredBody, result);
+        Assert.Equal((1, 1, 0), (fixture.InstanceDecodes, fixture.RuntimeAsyncBuilds, fixture.IntrinsicBuilds));
     }
 
     [Theory]
@@ -179,7 +195,9 @@ public sealed class MetadataMethodBodyReaderTests
         IManagedAssemblyResolver, IMetadataMethodReferenceResolver, ISymbolFormatter,
         IUnsafeAccessorTargetResolverFactory, IUnsafeAccessorTargetResolver, IUnsafeAccessorBodyBuilder,
         IDelegateAsynchronousCallBodyBuilder, IUnsafeIntrinsicBodyBuilder, IUnboundNativeImportBodyBuilder,
-        INativeMarshallingStubBodyBuilder, IMissingMemberBodyBuilder, IMissingTypeFinder
+        INativeMarshallingStubBodyBuilder, IMissingMemberBodyBuilder, IMissingTypeFinder, IRuntimeAsyncBodyBuilder,
+        IRuntimeAsyncResumerBodyBuilder, IRuntimeAsyncSourceReader, IRuntimeAsyncEntryBuilder, IMethodRepository,
+        IRuntimeAsyncBodyPlacement
     {
         private readonly ManagedAssembly _assembly;
         private readonly UnsafeAccessorBinding _binding;
@@ -187,7 +205,8 @@ public sealed class MetadataMethodBodyReaderTests
         internal CilMethodBody Body { get; }
         internal int AssemblyReads, DecoderCreations, InstanceDecodes,
             MethodResolutions, AccessorCreations, Bindings, BodyBuilds, DelegateCallBuilds, IntrinsicBuilds, UnboundNativeImportBuilds,
-            MarshallingStubBuilds;
+            MarshallingStubBuilds, RuntimeAsyncBuilds;
+        internal CilMethodBody LoweredBody { get; } = null!;
         internal Exception? BindingError { get; set; }
         internal Exception? DecodeError { get; set; }
         internal MissingMemberReference? BuiltMissingMember { get; private set; }
@@ -195,7 +214,8 @@ public sealed class MetadataMethodBodyReaderTests
         // Whether the method is an Unsafe intrinsic, whose body the compiler builds.
         internal bool IntrinsicBody { get; init; }
 
-        internal Fixture(bool physical, bool annotated, bool delegateCall = false, bool marshallingStub = false)
+        internal Fixture(bool physical, bool annotated, bool delegateCall = false, bool marshallingStub = false,
+            bool runtimeAsync = false)
         {
             var imageBuilder = new PersistedAssemblyBuilder(new AssemblyName("Accessors"), typeof(object).Assembly);
             _ = imageBuilder.DefineDynamicModule("Accessors").DefineType("Owner").CreateType();
@@ -209,17 +229,22 @@ public sealed class MetadataMethodBodyReaderTests
             {
                 UnsafeAccessor = annotated ? new UnsafeAccessorDeclaration(1, "Target", true, false) : null,
                 IsDelegateAsynchronousCall = delegateCall,
+                IsRuntimeAsync = runtimeAsync,
                 NativeMarshallingStub = marshallingStub
                     ? new(new(_assembly.Identity, unchecked((int)0x86000001)))
                     : null,
             };
             Method = new(definition, CliTypeIdentity.Named(_assembly.Identity, "", "Owner", false), [], signature);
             Body = new(definition, 1, [], []) { MethodInstance = Method };
+            LoweredBody = new(definition, 2, [], []) { MethodInstance = Method };
             _binding = new UnsafeAccessorBinding.Method(Method);
         }
 
         internal IMethodBodyReader CreateReader() => Assert.IsAssignableFrom<IMethodBodyReader>(
-            new MetadataMethodBodyReader(this, this, this, this, this, this, this, this, this, this, this, this));
+            new MetadataMethodBodyReader(this, this, this, this, this, this, this, this, this, this, this, this, this, this, this,
+                this, this, this,
+                new NetWasm.Compiler.Metadata.RuntimeProvidedMembers.NativeImports.NativeImportForwarderBodyBuilder(this),
+                new NetWasm.Compiler.Metadata.RuntimeProvidedMembers.NativeImports.NativeImportAddressRedirector(this)));
         public void Dispose() => _assembly.Dispose();
 
         ICilDecoder ICilDecoderFactory.Create() { DecoderCreations++; return this; }
@@ -274,6 +299,21 @@ public sealed class MetadataMethodBodyReaderTests
             Assert.Same(Method, method);
             DelegateCallBuilds++;
             return Body;
+        }
+        CilMethodBody IRuntimeAsyncResumerBodyBuilder.Build(MethodInstanceModel resumer) =>
+            throw new InvalidOperationException("no resumption stub in these methods");
+        CilMethodBody IRuntimeAsyncEntryBuilder.Build(MethodInstanceModel method) =>
+            throw new InvalidOperationException("no runtime-async entry in these methods");
+        MethodDefinitionModel IMethodRepository.GetMethod(EntityKey key) =>
+            throw new InvalidOperationException("no method lookup in these methods");
+        bool IRuntimeAsyncBodyPlacement.Separates(MethodDefinitionModel method) => false;
+        CilMethodBody IRuntimeAsyncSourceReader.Read(MethodInstanceModel method) => Decode(_assembly, method);
+        CilMethodBody IRuntimeAsyncBodyBuilder.Build(MethodInstanceModel method, CilMethodBody body)
+        {
+            Assert.Same(Method, method);
+            Assert.Same(Body, body);
+            RuntimeAsyncBuilds++;
+            return LoweredBody;
         }
         CilMethodBody? IUnsafeIntrinsicBodyBuilder.Build(MethodInstanceModel method)
         {

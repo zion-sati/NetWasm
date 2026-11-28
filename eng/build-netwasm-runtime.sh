@@ -121,23 +121,22 @@ try {
   process.exit(1);
 }
 if (!layout || typeof layout !== "object" || Array.isArray(layout) ||
-    ![2, 3, 4].includes(layout.schemaVersion) ||
-    (layout.schemaVersion >= 3 && !Array.isArray(layout.nativeImports)) ||
+    ![3, 4].includes(layout.schemaVersion) ||
+    !Array.isArray(layout.nativeImports) ||
     layout.target !== requestedTarget ||
     !Number.isSafeInteger(layout.applicationStaticDataEnd) ||
     layout.applicationStaticDataEnd < 0 ||
     Object.prototype.hasOwnProperty.call(layout, "runtimeGlobalBase")) {
   process.stderr.write(
-    "runtime layout must contain schemaVersion 2, 3 or 4, matching target, and applicationStaticDataEnd\n");
+    "runtime layout must contain schemaVersion 3 or 4, matching target, nativeImports and applicationStaticDataEnd\n");
   process.exit(1);
 }
 
-if (layout.runtimeFeatures !== undefined &&
-    (!Array.isArray(layout.runtimeFeatures) ||
-     layout.runtimeFeatures.some(feature => typeof feature !== "string") ||
-     new Set(layout.runtimeFeatures).size !== layout.runtimeFeatures.length ||
-     [...layout.runtimeFeatures].sort().some((feature, index) =>
-       feature !== layout.runtimeFeatures[index]))) {
+if (!Array.isArray(layout.runtimeFeatures) ||
+    layout.runtimeFeatures.some(feature => typeof feature !== "string") ||
+    new Set(layout.runtimeFeatures).size !== layout.runtimeFeatures.length ||
+    [...layout.runtimeFeatures].sort().some((feature, index) =>
+      feature !== layout.runtimeFeatures[index])) {
   process.stderr.write("runtime layout features must be a canonical string array\n");
   process.exit(1);
 }
@@ -154,27 +153,21 @@ if (!Number.isSafeInteger(runtimeGlobalBase)) {
   process.stderr.write("runtime layout base exceeds the supported integer range\n");
   process.exit(1);
 }
-// Layouts written before runtime feature evidence was introduced retain the
-// complete source runtime for compatibility. Current compiler layouts opt into
-// ephemeron code only when ConditionalWeakTable is reachable.
-const includeEphemerons = layout.runtimeFeatures === undefined ||
-  layout.runtimeFeatures.includes("ephemeron-handles");
-const includeStructuredCommandDiagnostics = layout.runtimeFeatures === undefined ||
-  layout.runtimeFeatures.includes("structured-command-diagnostics");
-const includeFinalization = layout.runtimeFeatures === undefined ||
-  layout.runtimeFeatures.includes("finalization");
-const includeArraySetValue = layout.runtimeFeatures === undefined ||
-  layout.runtimeFeatures.includes("array-set-value");
+// The compiler records the optional runtime features the program uses: ephemeron
+// code only when ConditionalWeakTable is reachable, and so on.
+const includeEphemerons = layout.runtimeFeatures.includes("ephemeron-handles");
+const includeStructuredCommandDiagnostics = layout.runtimeFeatures.includes("structured-command-diagnostics");
+const includeFinalization = layout.runtimeFeatures.includes("finalization");
+const includeArraySetValue = layout.runtimeFeatures.includes("array-set-value");
 // The hash seed's wasi:random import stays out of a program that never seeds a hash.
-const includeRandomSeed = layout.runtimeFeatures === undefined ||
-  layout.runtimeFeatures.includes("random-seed");
-const includeObjectClone = layout.runtimeFeatures === undefined ||
-  layout.runtimeFeatures.includes("object-clone");
-const includeUninitializedArrays = layout.runtimeFeatures === undefined ||
-  layout.runtimeFeatures.includes("uninitialized-arrays");
+const includeRandomSeed = layout.runtimeFeatures.includes("random-seed");
+const includeObjectClone = layout.runtimeFeatures.includes("object-clone");
+const includeUninitializedArrays = layout.runtimeFeatures.includes("uninitialized-arrays");
+// The shared arrays' casts, copies and stores stay out of a program that creates no shared array.
+const includeSharedArrays = layout.runtimeFeatures.includes("shared-arrays");
 // The C library functions the program imports (CoreLib's Math and MathF call libm): the runtime links the C
 // library and exports them, as RuntimeSystemImportPartitioner does for a runtime pack.
-const systemExports = [...new Set((layout.nativeImports ?? [])
+const systemExports = [...new Set(layout.nativeImports
   .filter(nativeImport => nativeImport?.libraryName === "libc")
   .map(nativeImport => nativeImport.entryPoint))].sort();
 if (systemExports.some(name => typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))) {
@@ -182,7 +175,7 @@ if (systemExports.some(name => typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-
   process.exit(1);
 }
 process.stdout.write(
-  `${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}\n${includeFinalization ? 1 : 0}\n${includeArraySetValue ? 1 : 0}\n${includeRandomSeed ? 1 : 0}\n${includeObjectClone ? 1 : 0}\n${includeUninitializedArrays ? 1 : 0}\nexports=${systemExports.join(" ")}`);
+  `${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}\n${includeFinalization ? 1 : 0}\n${includeArraySetValue ? 1 : 0}\n${includeRandomSeed ? 1 : 0}\n${includeObjectClone ? 1 : 0}\n${includeUninitializedArrays ? 1 : 0}\n${includeSharedArrays ? 1 : 0}\nexports=${systemExports.join(" ")}`);
 NODE
 )"
 runtime_target="${runtime_layout_values%%$'\n'*}"
@@ -202,6 +195,8 @@ runtime_layout_values="${runtime_layout_values#*$'\n'}"
 include_object_clone="${runtime_layout_values%%$'\n'*}"
 runtime_layout_values="${runtime_layout_values#*$'\n'}"
 include_uninitialized_arrays="${runtime_layout_values%%$'\n'*}"
+runtime_layout_values="${runtime_layout_values#*$'\n'}"
+include_shared_arrays="${runtime_layout_values%%$'\n'*}"
 # The export line is marked, so an empty list survives the command substitution's trailing-newline trim.
 system_exports_line="${runtime_layout_values#*$'\n'}"
 [[ "$system_exports_line" = exports=* ]] || {
@@ -216,7 +211,8 @@ read -r -a system_exports <<< "${system_exports_line#exports=}"
    "$include_array_set_value" =~ ^[01]$ &&
    "$include_random_seed" =~ ^[01]$ &&
    "$include_object_clone" =~ ^[01]$ &&
-   "$include_uninitialized_arrays" =~ ^[01]$ ]] || {
+   "$include_uninitialized_arrays" =~ ^[01]$ &&
+   "$include_shared_arrays" =~ ^[01]$ ]] || {
     echo "runtime layout contract validation failed" >&2
     exit 1
 }
@@ -297,6 +293,9 @@ if [[ "$include_random_seed" = 0 ]]; then
 fi
 if [[ "$include_object_clone" = 0 ]]; then
     defines+=(-DNETWASM_NO_OBJECT_CLONE)
+fi
+if [[ "$include_shared_arrays" = 0 ]]; then
+    defines+=(-DNETWASM_NO_SHARED_ARRAYS)
 fi
 if [[ "$include_uninitialized_arrays" = 0 ]]; then
     defines+=(-DNETWASM_NO_UNINITIALIZED_ARRAYS)

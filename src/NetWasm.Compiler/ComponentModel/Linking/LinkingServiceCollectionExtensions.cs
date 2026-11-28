@@ -3,6 +3,7 @@
 
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using NetWasm.Compiler.ComponentModel.Debugging;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -24,6 +25,7 @@ internal static class LinkingServiceCollectionExtensions
             ManagedCompilerOptimizationOverridesParser>();
         services.AddSingleton<IWasmInlineAnnotationFilter, WasmInlineAnnotationFilter>();
         services.AddSingleton<IWasmCoreModuleInlineAnnotationEditor, WasmCoreModuleInlineAnnotationEditor>();
+        services.AddSingleton<IWasmDebugInformationWriter, WasmDebugInformationWriter>();
         services.AddSingleton<IWasmCoreModuleMerger, WasmCoreModuleMerger>();
         services.AddSingleton<IComponentCoreModuleMergeRunner, WasmCoreModuleMergeRunner>();
         services.AddSingleton<ComponentCoreModuleOptimizer>();

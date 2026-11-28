@@ -35,7 +35,7 @@ internal sealed class ControlFlowStructuringState(ValidatedControlFlowGraph vali
 
     internal HashSet<int> BoundaryOwnedBlocks { get; } = [];
 
-    internal Dictionary<ImmutableHashSet<int>, Dictionary<int, Dictionary<int, ImmutableHashSet<int>>>> PostDominators { get; } = [];
+    internal Dictionary<ImmutableHashSet<int>, Dictionary<int, DominatorTree>> PostDominators { get; } = [];
 
     internal Dictionary<ImmutableHashSet<int>, Dictionary<(int Start, int Stop), Dictionary<int, int>>> Distances { get; } = [];
 

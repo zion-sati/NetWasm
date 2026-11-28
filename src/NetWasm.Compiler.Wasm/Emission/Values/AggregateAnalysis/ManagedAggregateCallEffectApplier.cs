@@ -136,5 +136,5 @@ internal sealed class ManagedAggregateCallEffectApplier(
 
     private static bool IsAliasPreservingIntrinsic(RuntimeIntrinsic intrinsic) =>
         intrinsic is RuntimeIntrinsic.UnsafeAs or RuntimeIntrinsic.UnsafeAsRef or
-            RuntimeIntrinsic.UnsafeAsRefManaged;
+            RuntimeIntrinsic.UnsafeAsRefManaged or RuntimeIntrinsic.NonZeroAddress;
 }

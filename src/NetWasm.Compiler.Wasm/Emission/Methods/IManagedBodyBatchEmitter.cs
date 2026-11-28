@@ -25,22 +25,25 @@ internal sealed record ManagedBodyEmission(
     public NetWasm.Compiler.Wasm.Units.UnitLocation? Unit { get; init; }
 }
 
+// Emits a set of bodies in parallel and hands each body to consume in the set's order, with its index in the set.
 internal interface IManagedBodyBatchEmitter : IDisposable
 {
-    ManagedBodyEmission[] Emit(
+    void Emit(
         ImmutableArray<ManagedDefinitionEmission> ordered,
         IReadOnlyDictionary<EntityKey, StructuredMethod> methods,
         IReadOnlyDictionary<EntityKey, MethodRootMap> rootMaps,
         InstructionModuleTarget target,
-        IFunctionIndexResolver indices);
+        IFunctionIndexResolver indices,
+        Action<int, ManagedBodyEmission> consume);
 
-    ManagedBodyEmission[] Emit(
+    void Emit(
         ImmutableArray<ManagedMethodIdentity> ordered,
         IReadOnlyDictionary<string, MethodInstanceModel> instances,
         IReadOnlyDictionary<string, StructuredMethod> methods,
         IReadOnlyDictionary<string, MethodRootMap> rootMaps,
         InstructionModuleTarget target,
-        IFunctionIndexResolver indices);
+        IFunctionIndexResolver indices,
+        Action<int, ManagedBodyEmission> consume);
 }
 
 internal interface IManagedBodyBatchEmitterFactory

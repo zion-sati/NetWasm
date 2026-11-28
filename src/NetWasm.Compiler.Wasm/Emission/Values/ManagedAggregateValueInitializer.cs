@@ -39,7 +39,7 @@ internal sealed class ManagedAggregateValueInitializer(
                 "A selected aggregate argument has no stable value-frame backing.");
         }
 
-        var sourceLocal = checked(argumentIndex + context.ParameterOffset);
+        var sourceLocal = context.ArgumentLocal(argumentIndex);
         foreach (var lane in context.ManagedAggregateValues.Plan.Lanes
                      .Where(lane => lane.Storage == storage)
                      .OrderBy(lane => lane.ByteOffset))

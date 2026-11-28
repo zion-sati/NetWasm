@@ -3,6 +3,7 @@
 
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.ComponentModel;
@@ -67,6 +68,18 @@ public static class NetWasmCompilerServiceCollectionExtensions
                     services.GetRequiredService<ILogger<CompilerDiagnosticCompilationDecorator>>(),
                     services.GetRequiredService<ICompilerDiagnosticLogPathResolver>()),
                 services.GetRequiredService<CompilerParallelism>()));
+        return services;
+    }
+
+    // A compiler process (nwc) returns the collector's committed memory throughout each compile, where a host that
+    // keeps its own memory policy, and so composes the compiler without this, leaves it to the host.
+    public static IServiceCollection WatchCompilerMemory(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.Replace(ServiceDescriptor.Singleton<NetWasm.Compiler.Diagnostics.ICompilerMemoryWatch>(static provider =>
+            new NetWasm.Compiler.Diagnostics.PollingCompilerMemoryWatch(
+                provider.GetRequiredService<NetWasm.Compiler.Diagnostics.ICompilerMemoryReleaser>(),
+                provider.GetRequiredService<TimeProvider>())));
         return services;
     }
 }

@@ -149,11 +149,16 @@ internal sealed class StructuredControlFlowEmitter(
                     break;
                 case StructuredLabeledBlock labeled:
                     EmitLabeled(code, WasmOpcodes.Block, labeled.Next, labeled.Body, method, context, emitBlock,
-                        emitExceptionRegion, loopBreakDepth, loopContinueDepth, labelDepths);
+                        emitExceptionRegion, loopBreakDepth, loopContinueDepth, exceptionLeaveDepth,
+                        dispatcherContinueDepth, labelDepths);
                     break;
                 case StructuredLabeledLoop labeled:
                     EmitLabeled(code, WasmOpcodes.Loop, labeled.Header, labeled.Body, method, context, emitBlock,
-                        emitExceptionRegion, loopBreakDepth, loopContinueDepth, labelDepths);
+                        emitExceptionRegion, loopBreakDepth, loopContinueDepth, exceptionLeaveDepth,
+                        dispatcherContinueDepth, labelDepths);
+                    break;
+                case StructuredSwitch table:
+                    EmitSwitch(code, table, method, context, emitBlock, labelDepths);
                     break;
                 case StructuredLabelBranch branch:
                     code.Write(WasmInstruction.WithOperand(
@@ -354,9 +359,36 @@ internal sealed class StructuredControlFlowEmitter(
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
+    // The head's code ends in its first case's test, whose result goes unused: the value it compared, the stack slot
+    // under the test's copy, indexes the table, whose entries are the depths of the targets' labeled blocks. The
+    // chain's other blocks are the cases the table replaces: they follow it, where nothing reaches them, so emission
+    // still accounts for every original block once, and wasm-opt drops them. Each leaves the operand stack as it was.
+    private void EmitSwitch(
+        IWasmInstructionWriter code,
+        StructuredSwitch table,
+        StructuredMethod method,
+        MethodEmissionContext context,
+        Func<StructuredBlockOccurrence, bool, bool, ConditionValue> emitBlock,
+        ImmutableDictionary<StructuredBlockId, int> labelDepths)
+    {
+        emitBlock(table.Head, true, table.Head.Role == StructuredBlockRole.Owner);
+        var test = (StructuredConditionalExit)method.Blocks[table.Head.Block].Exit;
+        EmitConditionValue(code, context, new ConditionValue(test.Condition.StackSlot - 1, CliValueKind.I4));
+        uint Depth(StructuredBlockId target) => (uint)(labelDepths.TryGetValue(target, out var depth)
+            ? depth
+            : throw new InvalidOperationException("A structured switch target was emitted outside its labeled region."));
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.BranchTable,
+            WasmInstructionOperand.BranchTable([.. table.Cases.Select(Depth)], Depth(table.Default))));
+        foreach (var block in table.Chain)
+        {
+            emitBlock(block, true, block.Role == StructuredBlockRole.Owner);
+        }
+    }
+
     // CallFree leaves a loop alone when its condition calls: the bottom copy
     // would be the callee's second call site.
-    private static bool Rotates(LoopRotationPolicy policy, StructuredMethod method, StructuredBlockId condition) =>
+    internal static bool Rotates(LoopRotationPolicy policy, StructuredMethod method, StructuredBlockId condition) =>
         policy switch
         {
             LoopRotationPolicy.Guarded => true,
@@ -381,11 +413,15 @@ internal sealed class StructuredControlFlowEmitter(
             emitExceptionRegion,
         int? loopBreakDepth,
         int? loopContinueDepth,
+        int? exceptionLeaveDepth,
+        int? dispatcherContinueDepth,
         ImmutableDictionary<StructuredBlockId, int> labelDepths)
     {
         code.Write(WasmInstruction.WithOperand(
             opcode,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        // A labeled region's code may leave it any way an if's may: a flat else-if chain's arm that breaks out of a loop
+        // inside a dispatcher reaches the dispatcher's next block, and a leave its protected region's continuation.
         Emit(
             code,
             method,
@@ -395,8 +431,8 @@ internal sealed class StructuredControlFlowEmitter(
             emitExceptionRegion,
             loopBreakDepth + 1,
             loopContinueDepth + 1,
-            null,
-            null,
+            exceptionLeaveDepth + 1,
+            dispatcherContinueDepth + 1,
             Nested(labelDepths).SetItem(label, 0));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }

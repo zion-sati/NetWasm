@@ -252,14 +252,268 @@ public sealed class ExceptionRegionEmitterTests
             .ToList();
         var unwind = imports.Resolve(RuntimeImportSymbol.ExceptionFrameUnwind);
         var leave = imports.Resolve(RuntimeImportSymbol.ExceptionFrameLeave);
-        // The normal exit leaves the exception frame; the landing pad unwinds it.
-        Assert.Equal(1, calls.Count(call => call == unwind));
-        Assert.Equal(1, calls.Count(call => call == leave));
-        Assert.True(calls.IndexOf(unwind) > calls.IndexOf(leave));
-        // Whatever catches a rethrow rewinds this method's frames, so it never leaves them here.
-        Assert.DoesNotContain(imports.Resolve(RuntimeImportSymbol.RootFrameLeave), calls);
+        if (kind == CilExceptionRegionKind.Catch)
+        {
+            // The normal exit leaves the exception frame; the landing pad unwinds it.
+            Assert.Equal(1, calls.Count(call => call == unwind));
+            Assert.Equal(1, calls.Count(call => call == leave));
+            Assert.True(calls.IndexOf(unwind) > calls.IndexOf(leave));
+        }
+        else
+        {
+            // A block without catch clauses has no frame; its landing pad rewinds to the marks it kept.
+            Assert.DoesNotContain(unwind, calls);
+            Assert.DoesNotContain(leave, calls);
+            Assert.Equal(1, calls.Count(call =>
+                call == imports.Resolve(RuntimeImportSymbol.FrameMarksRewind, context.RuntimeImportSelection)));
+        }
+        // Whatever catches a rethrow rewinds this method's frames, so it never leaves them here; a catch handler that ends
+        // normally leaves only its own exception cell.
+        var instructions = code.ToInstructions().ToList();
+        Assert.Equal(-1, CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.RootFrameLeave)));
+        var leaves = instructions.Select((instruction, index) => (instruction, index)).Where(pair =>
+            pair.instruction.Opcode == WasmOpcodes.Call && pair.instruction.Operand.UnsignedValue ==
+                (uint)imports.Resolve(RuntimeImportSymbol.ExceptionCellLeave, context.RuntimeImportSelection)).ToList();
+        Assert.Equal(kind == CilExceptionRegionKind.Catch ? 1 : 0, leaves.Count);
+        Assert.All(leaves, pair => Assert.Equal((uint)context.ExceptionCellFrames[group.Id],
+            instructions[pair.index - 1].Operand.UnsignedValue));
         Assert.DoesNotContain(imports.Resolve(RuntimeImportSymbol.ValueFrameLeave), calls);
         Assert.DoesNotContain(imports.Resolve(RuntimeImportSymbol.StackTraceFrameLeave), calls);
+    }
+
+    // A block without catch clauses registers no exception frame. Where its restore reads marks as it begins, it keeps the
+    // root cursor and the value list's head and arena position in its locals before its try_table, and its landing pad
+    // returns the arenas to them, once.
+    [Theory]
+    [InlineData(CilExceptionRegionKind.Finally)]
+    [InlineData(CilExceptionRegionKind.Fault)]
+    public void ABlockWithoutCatchClausesKeepsItsMarksInLocals(CilExceptionRegionKind kind)
+    {
+        var program = new FakeProgram();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider();
+        var method = Structure(
+            program,
+            program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(1, CilOperation.Return));
+        var group = Group(
+            0,
+            1,
+            [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(kind, null, new StructuredSequence([new StructuredLoopContinue()]))],
+            []);
+        var marks = new RegionMarkLocals(40, 41, 42);
+        var code = new RecordingInstructionWriter();
+        var context = CreateContext(group) with
+        {
+            RegionMarkLocals = ImmutableDictionary<StructuredExceptionGroupId, RegionMarkLocals>.Empty.Add(group.Id, marks),
+        };
+
+        CreateEmitter(program, layouts, imports).Emit(
+            code,
+            WithGroups(method, group),
+            new StructuredExceptionRegion(group.Id, null),
+            context,
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
+            (_, _, _, _, _) => { });
+
+        var instructions = code.ToInstructions().ToList();
+        var calls = instructions.Where(instruction => instruction.Opcode == WasmOpcodes.Call)
+            .Select(instruction => (int)instruction.Operand.UnsignedValue).ToList();
+        foreach (var frameStep in new[]
+                 {
+                     RuntimeImportSymbol.ExceptionFrameEnter, RuntimeImportSymbol.ExceptionFrameLeave,
+                     RuntimeImportSymbol.ExceptionFrameUnwind, RuntimeImportSymbol.ExceptionFrameTargetClause,
+                 })
+        {
+            Assert.DoesNotContain(imports.Resolve(frameStep), calls);
+        }
+        var reads = new[]
+        {
+            RuntimeImportSymbol.FrameMarkRoot, RuntimeImportSymbol.FrameMarkValueCursor,
+        };
+        var tryTable = instructions.FindIndex(instruction => instruction.Opcode == WasmOpcodes.TryTable);
+        for (var index = 0; index < reads.Length; index++)
+        {
+            var read = instructions.FindIndex(instruction =>
+                instruction.Opcode == WasmOpcodes.Call &&
+                instruction.Operand.UnsignedValue == (uint)imports.Resolve(reads[index], context.RuntimeImportSelection));
+            Assert.InRange(read, 0, tryTable);
+            Assert.Equal(WasmOpcodes.LocalSet, instructions[read + 1].Opcode);
+            Assert.Equal((uint)(40 + index), instructions[read + 1].Operand.UnsignedValue);
+        }
+        var rewind = imports.Resolve(RuntimeImportSymbol.FrameMarksRewind, context.RuntimeImportSelection);
+        Assert.Equal(1, calls.Count(call => call == rewind));
+        var rewindAt = instructions.FindIndex(instruction =>
+            instruction.Opcode == WasmOpcodes.Call && instruction.Operand.UnsignedValue == (uint)rewind);
+        Assert.True(rewindAt > tryTable);
+        // The root and value cursors it read, and no stack-trace depth.
+        Assert.Equal(
+            [(WasmOpcodes.LocalGet, 40L), (WasmOpcodes.LocalGet, 41L), (WasmOpcodes.I32Constant, -1L)],
+            instructions[(rewindAt - 3)..rewindAt].Select(instruction => (instruction.Opcode,
+                instruction.Opcode == WasmOpcodes.LocalGet ? (long)instruction.Operand.UnsignedValue : instruction.Operand.SignedValue)));
+    }
+
+    // A method that enters its root frame lazily keeps the frame local as a block begins, entering the frame first when
+    // the block is eager, and restores it after the landing pad's unwind.
+    [Theory]
+    [InlineData(CilExceptionRegionKind.Catch, false)]
+    [InlineData(CilExceptionRegionKind.Catch, true)]
+    [InlineData(CilExceptionRegionKind.Finally, false)]
+    public void ALazyFrameLocalIsSavedAsABlockBeginsAndRestoredAtItsPad(CilExceptionRegionKind kind, bool eager)
+    {
+        var program = new FakeProgram();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider();
+        var method = Structure(program, program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(1, CilOperation.Return));
+        var group = Group(0, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(kind, kind == CilExceptionRegionKind.Catch ? TypeKey : null, new StructuredSequence([new StructuredLoopContinue()]))],
+            []);
+        var context = CreateContext(group) with
+        {
+            RootMap = new MethodRootMap(EntryKey,
+                ImmutableDictionary<RootSource, int>.Empty.Add(new(RootSourceKind.Local, 0), 0), []),
+            LazyRootFrame = new(eager ? [group.Id] : [], []),
+            RootFrameSaves = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(group.Id, 50),
+            RegionMarkLocals = ImmutableDictionary<StructuredExceptionGroupId, RegionMarkLocals>.Empty
+                .Add(group.Id, new(60, 61, 62)),
+        };
+        var code = new RecordingInstructionWriter();
+
+        CreateEmitter(program, layouts, imports).Emit(code, WithGroups(method, group),
+            new StructuredExceptionRegion(group.Id, null), context,
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata), (_, _, _, _, _) => { });
+
+        var instructions = code.ToInstructions().ToList();
+        int Index(byte opcode, uint operand) => instructions.FindIndex(instruction =>
+            instruction.Opcode == opcode && instruction.Operand.UnsignedValue == operand);
+        var save = Index(WasmOpcodes.LocalSet, 50);
+        var tryTable = instructions.FindIndex(instruction => instruction.Opcode == WasmOpcodes.TryTable);
+        var restore = Index(WasmOpcodes.LocalGet, 50);
+        var rewound = kind == CilExceptionRegionKind.Finally
+            ? CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.FrameMarksRewind, context.RuntimeImportSelection))
+            : CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFrameUnwind));
+        Assert.InRange(save, 1, tryTable);
+        Assert.Equal((WasmOpcodes.LocalGet, (uint)context.RootFrame), (instructions[save - 1].Opcode, instructions[save - 1].Operand.UnsignedValue));
+        Assert.True(restore > rewound && rewound > tryTable);
+        Assert.Equal((WasmOpcodes.LocalSet, (uint)context.RootFrame), (instructions[restore + 1].Opcode, instructions[restore + 1].Operand.UnsignedValue));
+        var enter = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.RootFrameEnter));
+        Assert.Equal(eager, enter >= 0 && enter < save);
+    }
+
+    // A catch without filters registers its frame only while a frame with filters is registered: it keeps its marks
+    // before its try_table, asks the runtime, and registers only in that branch; its landing pad unwinds the frame or
+    // rewinds to the marks, takes the selected clause or selects its own, and ends the catch either way. A catch with a
+    // filter registers unconditionally and never selects its own clause.
+    [Theory]
+    [InlineData(CilExceptionRegionKind.Catch)]
+    [InlineData(CilExceptionRegionKind.Filter)]
+    public void ACatchWithoutFiltersRegistersOnlyWhileAFilterFrameIs(CilExceptionRegionKind kind)
+    {
+        var program = new FakeProgram();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider();
+        var method = Structure(program, program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(1, CilOperation.Return));
+        var group = Group(0, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(kind, kind == CilExceptionRegionKind.Catch ? TypeKey : null)], []);
+        var context = CreateContext(group);
+        var code = new RecordingInstructionWriter();
+
+        CreateEmitter(program, layouts, imports).Emit(code, WithGroups(method, group),
+            new StructuredExceptionRegion(group.Id, null), context,
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata), (_, _, _, _, _) => { });
+
+        var instructions = code.ToInstructions().ToList();
+        var live = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFilterFramesLive, context.RuntimeImportSelection));
+        var enter = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFrameEnter));
+        var select = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionCatchSelect, context.RuntimeImportSelection));
+        var endCatch = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.EndCatch));
+        var tryTable = instructions.FindIndex(instruction => instruction.Opcode == WasmOpcodes.TryTable);
+        Assert.InRange(enter, 0, tryTable);
+        Assert.InRange(endCatch, tryTable, instructions.Count);
+        if (kind == CilExceptionRegionKind.Filter)
+        {
+            Assert.Equal(-1, live);
+            Assert.Equal(-1, select);
+            Assert.Equal(-1, CallIndex(instructions,
+                imports.Resolve(RuntimeImportSymbol.FrameMarkRoot, context.RuntimeImportSelection)));
+            return;
+        }
+        var marks = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.FrameMarkRoot, context.RuntimeImportSelection));
+        Assert.True(marks >= 0 && marks < live && live < enter);
+        Assert.Equal(WasmOpcodes.If, instructions[live + 1].Opcode);
+        var unwind = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFrameUnwind));
+        var rewind = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.FrameMarksRewind, context.RuntimeImportSelection));
+        var target = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFrameTargetClause));
+        Assert.True(tryTable < unwind && unwind < rewind && rewind < target && target < select && select < endCatch);
+        // The selection reads the exception the landing pad caught, then the group's clauses.
+        Assert.Equal((WasmOpcodes.LocalGet, (uint)context.ExceptionTemporary),
+            (instructions[select - 3].Opcode, instructions[select - 3].Operand.UnsignedValue));
+    }
+
+    // In a program that reaches no filter, no first pass runs one, so a catch without filters never registers: it keeps
+    // its marks before its try_table and asks the runtime nothing; its landing pad rewinds to the marks, selects its own
+    // clause and ends the catch.
+    [Fact]
+    public void InAProgramThatReachesNoFilterACatchNeverRegisters()
+    {
+        var program = new FakeProgram();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider();
+        var method = Structure(program, program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(1, CilOperation.Return));
+        var group = Group(0, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(CilExceptionRegionKind.Catch, TypeKey)], []);
+        var context = CreateContext(group) with { ReachesFilters = false };
+        var code = new RecordingInstructionWriter();
+
+        CreateEmitter(program, layouts, imports).Emit(code, WithGroups(method, group),
+            new StructuredExceptionRegion(group.Id, null), context,
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata), (_, _, _, _, _) => { });
+
+        var instructions = code.ToInstructions().ToList();
+        var tryTable = instructions.FindIndex(instruction => instruction.Opcode == WasmOpcodes.TryTable);
+        var marks = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.FrameMarkRoot, context.RuntimeImportSelection));
+        var rewind = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.FrameMarksRewind, context.RuntimeImportSelection));
+        var select = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionCatchSelect, context.RuntimeImportSelection));
+        var endCatch = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.EndCatch));
+        Assert.Equal(-1, CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFilterFramesLive, context.RuntimeImportSelection)));
+        Assert.Equal(-1, CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFrameEnter)));
+        Assert.Equal(-1, CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFrameLeave)));
+        Assert.Equal(-1, CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFrameUnwind)));
+        Assert.Equal(-1, CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFrameTargetClause)));
+        Assert.True(marks >= 0 && marks < tryTable && tryTable < rewind && rewind < select && select < endCatch);
+    }
+
+    // A block that keeps its marks in locals has no frame to select a clause in or end a catch of.
+    [Fact]
+    public void ABlockWithoutCatchClausesHasNoClauseStep()
+    {
+        var program = new FakeProgram();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider();
+        var method = Structure(
+            program,
+            program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(1, CilOperation.Return));
+        var group = Group(0, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(CilExceptionRegionKind.Finally, null)], []);
+        var context = CreateContext(group) with
+        {
+            RegionMarkLocals = ImmutableDictionary<StructuredExceptionGroupId, RegionMarkLocals>.Empty
+                .Add(group.Id, new RegionMarkLocals(40, 41, 42)),
+        };
+        var frames = TestExceptionFrames.Steps(layouts, imports);
+
+        foreach (var step in new[] { ExceptionFrameStep.TargetClause, ExceptionFrameStep.EndCatch })
+        {
+            Assert.Throws<InvalidOperationException>(() => frames.Emit(new RecordingInstructionWriter(), step,
+                WithGroups(method, group), group, context, Lookups.Of(CreateModuleData(group).ExceptionMetadata)));
+        }
     }
 
     [Fact]
@@ -424,7 +678,7 @@ public sealed class ExceptionRegionEmitterTests
     }
 
     [Fact]
-    public void FinallyInitializesAndReloadsItsOwnPendingExceptionRoot()
+    public void FinallyEntersItsExceptionCellOnlyAtItsLandingPad()
     {
         var program = new FakeProgram();
         var imports = WasmRuntimeImports.CreateCatalog();
@@ -451,11 +705,67 @@ public sealed class ExceptionRegionEmitterTests
             Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (_, _, _, _, _) => { });
 
-        var instructions = code.ToInstructions();
-        Assert.Equal(2, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.I32Store));
-        Assert.Equal(2, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.I32Load));
+        var instructions = code.ToInstructions().ToList();
+        // The normal path starts with no cell; the landing pad has the runtime enter one, holding the exception, after its
+        // unwind, and the finally rethrows it from there when the cell exists. A rethrow abandons the cell to whatever
+        // catches it.
+        Assert.Equal(0, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.I32Store));
+        Assert.Equal(1, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.I32Load));
         Assert.All(instructions.Where(instruction => instruction.Opcode is WasmOpcodes.I32Store or WasmOpcodes.I32Load),
             instruction => Assert.Equal(0u, instruction.Operand.Offset));
+        var tryTable = instructions.FindIndex(instruction => instruction.Opcode == WasmOpcodes.TryTable);
+        var reset = instructions.FindIndex(instruction =>
+            instruction.Opcode == WasmOpcodes.LocalSet && instruction.Operand.UnsignedValue == 40u);
+        Assert.InRange(reset, 1, tryTable);
+        Assert.Equal(WasmOpcodes.I32Constant, instructions[reset - 1].Opcode);
+        var enter = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionCellEnter, context.RuntimeImportSelection));
+        Assert.True(enter > tryTable);
+        Assert.True(enter > CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFrameUnwind)));
+        Assert.Equal((uint)context.ExceptionTemporary, instructions[enter - 1].Operand.UnsignedValue);
+        Assert.Equal((WasmOpcodes.LocalSet, 40u), (instructions[enter + 1].Opcode, instructions[enter + 1].Operand.UnsignedValue));
+        Assert.Equal(-1, CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionCellLeave, context.RuntimeImportSelection)));
+        Assert.Equal(-1, CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.RootFrameEnter)));
+    }
+
+    // A catch's landing pad unwinds, then enters the cell that holds the exception while its handler runs; a handler
+    // that ends normally leaves the cell, and an exception no clause takes is thrown on from it.
+    [Fact]
+    public void CatchEntersItsExceptionCellAfterTheUnwindAndLeavesItAfterItsHandler()
+    {
+        var program = new FakeProgram();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider();
+        var method = Structure(
+            program,
+            program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(1, CilOperation.Return));
+        var handler = new StructuredSequence([new StructuredLoopContinue()]);
+        var group = Group(0, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(CilExceptionRegionKind.Catch, TypeKey, handler)], []);
+        var code = new RecordingInstructionWriter();
+        int? handlerCell = null;
+
+        var context = CreateContext(group);
+        CreateEmitter(program, layouts, imports).Emit(code, WithGroups(method, group),
+            new StructuredExceptionRegion(group.Id, null), context,
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
+            (sequence, actual, _, _, _) =>
+            {
+                if (ReferenceEquals(sequence, handler)) handlerCell = actual.ActiveCatchCellFrame;
+            });
+
+        var instructions = code.ToInstructions().ToList();
+        Assert.Equal(40, handlerCell);
+        var unwind = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionFrameUnwind));
+        var enter = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionCellEnter, context.RuntimeImportSelection));
+        var leave = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.ExceptionCellLeave, context.RuntimeImportSelection));
+        Assert.True(unwind >= 0 && enter > unwind && leave > enter);
+        Assert.Equal(WasmOpcodes.LocalSet, instructions[enter + 1].Opcode);
+        Assert.Equal(40u, instructions[enter + 1].Operand.UnsignedValue);
+        Assert.Equal(40u, instructions[leave - 1].Operand.UnsignedValue);
+        Assert.Contains(instructions.Select((instruction, index) => (instruction, index)), pair =>
+            pair.instruction.Opcode == WasmOpcodes.Throw && instructions[pair.index - 2].Operand.UnsignedValue == 40u);
     }
 
     [Theory]
@@ -480,8 +790,8 @@ public sealed class ExceptionRegionEmitterTests
             [Continuation(20, continuation)]);
         var context = CreateContext(group) with
         {
-            ActiveCatchRootSlot = 5,
-            ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(group.Id, 6),
+            ActiveCatchCellFrame = 5,
+            ExceptionCellFrames = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(group.Id, 46),
         };
         var code = new RecordingInstructionWriter();
         var handlers = 0;
@@ -493,12 +803,12 @@ public sealed class ExceptionRegionEmitterTests
                 if (ReferenceEquals(sequence, handler))
                 {
                     handlers++;
-                    Assert.Equal(kind == CilExceptionRegionKind.Catch ? 6 : 5, actual.ActiveCatchRootSlot);
+                    Assert.Equal(kind == CilExceptionRegionKind.Catch ? 46 : 5, actual.ActiveCatchCellFrame);
                 }
                 if (ReferenceEquals(sequence, continuation))
                 {
                     continuations++;
-                    Assert.Equal(5, actual.ActiveCatchRootSlot);
+                    Assert.Equal(5, actual.ActiveCatchCellFrame);
                 }
             });
         Assert.Equal(1, handlers);
@@ -506,8 +816,8 @@ public sealed class ExceptionRegionEmitterTests
         var memory = code.ToInstructions().Where(instruction => instruction.Opcode is
             WasmOpcodes.I32Load or WasmOpcodes.I64Load or WasmOpcodes.I32Store or WasmOpcodes.I64Store).ToArray();
         Assert.NotEmpty(memory);
-        Assert.All(memory, instruction => Assert.Equal(
-            (uint)(6 * layouts.Target.ObjectReferenceSize), instruction.Operand.Offset));
+        // The handler's exception goes through its own cell's one slot.
+        Assert.All(memory, instruction => Assert.Equal(0u, instruction.Operand.Offset));
     }
 
     [Fact]
@@ -846,6 +1156,126 @@ public sealed class ExceptionRegionEmitterTests
         Assert.Contains(nameof(UnrelatedPart), exception.Message);
     }
 
+    // A method's own frames say where it stood at a block when it enters them in its prologue on every path: an eager
+    // root frame and a value frame, with no localloc block and no block inside another's handler. With no frame in an
+    // arena, the read after the prologue serves a block in a loop and several blocks at once, and a method's only such
+    // block outside every loop reads as it begins (it runs at most once a call, and a path that skips it reads nothing);
+    // a lazy root frame, a localloc block or a handler the block is in reads a mark as the block begins; stack-trace depth
+    // is read after the prologue when the program records traces.
+    [Fact]
+    public void ALandingPadRestoresFromTheMethodsOwnFramesWhereTheySay()
+    {
+        var program = new FakeProgram();
+        var plain = Structure(program, program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(1, CilOperation.Return));
+        var looped = Structure(program, program.GetMethod(EntryKey),
+            I(0, CilOperation.Nop), I(1, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(2, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(0)),
+            I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(4, CilOperation.Return));
+        var allocating = Structure(program, program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(8)), I(1, CilOperation.LocalAllocate),
+            I(2, CilOperation.Pop), I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(4, CilOperation.Return));
+        var group = Group(0, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(CilExceptionRegionKind.Finally, null)], []);
+        var outer = Group(5, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(CilExceptionRegionKind.Catch, TypeKey) with { HandlerOffset = 0, HandlerLength = 5 }], []);
+        var framed = CreateContext(group) with
+        {
+            RootMap = new MethodRootMap(EntryKey, ImmutableDictionary<RootSource, int>.Empty.Add(new(RootSourceKind.Local, 0), 0), []),
+            ValueLayout = new ValueFrameLayout(16, [], [], [], []),
+        };
+        var planner = new LandingPadRestorePlanner();
+
+        Assert.Equal(new LandingPadRestore(ArenaRestoreSource.OwnedFrame, ArenaRestoreSource.OwnedFrame, ArenaRestoreSource.None),
+            planner.Plan(WithGroups(plain, group), framed)[group.Id]);
+        var tracing = CreateContext(group) with
+        {
+            RuntimeImportSelection = CreateContext(group).RuntimeImportSelection with { IncludeStackTrace = true },
+        };
+        Assert.Equal(new LandingPadRestore(ArenaRestoreSource.BlockMark, ArenaRestoreSource.BlockMark, ArenaRestoreSource.EntryMark),
+            planner.Plan(WithGroups(plain, group), tracing)[group.Id]);
+        Assert.Equal(new LandingPadRestore(ArenaRestoreSource.EntryMark, ArenaRestoreSource.EntryMark, ArenaRestoreSource.EntryMark),
+            planner.Plan(WithGroups(looped, group), tracing)[group.Id]);
+        var second = Group(1, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(CilExceptionRegionKind.Finally, null) with { HandlerOffset = 1, HandlerLength = 1 }], []);
+        var both = planner.Plan(WithGroups(plain, group, second), tracing);
+        Assert.All([both[group.Id], both[second.Id]], plan => Assert.Equal(
+            new LandingPadRestore(ArenaRestoreSource.EntryMark, ArenaRestoreSource.EntryMark, ArenaRestoreSource.EntryMark), plan));
+        Assert.Equal(ArenaRestoreSource.BlockMark, planner.Plan(WithGroups(plain, group), framed with
+        {
+            LazyRootFrame = new([], []),
+        })[group.Id].Root);
+        Assert.Equal(ArenaRestoreSource.BlockMark, planner.Plan(WithGroups(allocating, group), framed)[group.Id].Value);
+        var nested = planner.Plan(WithGroups(plain, group, outer), framed);
+        Assert.Equal(ArenaRestoreSource.BlockMark, nested[group.Id].Root);
+        Assert.Equal(ArenaRestoreSource.OwnedFrame, nested[outer.Id].Root);
+    }
+
+    // A block whose arenas the method's own frames restore reads nothing as it begins: its pad passes the root frame's
+    // end, the value frame and its size, and the stack-trace depth read after the prologue.
+    [Fact]
+    public void ABlockRestoredFromOwnedFramesReadsNothingAsItBegins()
+    {
+        var program = new FakeProgram();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider();
+        var method = Structure(program, program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(1, CilOperation.Return));
+        var group = Group(0, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(CilExceptionRegionKind.Finally, null)], []);
+        var context = CreateContext(group) with
+        {
+            RootMap = new MethodRootMap(EntryKey, ImmutableDictionary<RootSource, int>.Empty
+                .Add(new(RootSourceKind.Local, 0), 0).Add(new(RootSourceKind.Local, 1), 1), []),
+            ValueLayout = new ValueFrameLayout(16, [], [], [], []),
+            LandingPadRestores = ImmutableDictionary<StructuredExceptionGroupId, LandingPadRestore>.Empty.Add(group.Id,
+                new(ArenaRestoreSource.OwnedFrame, ArenaRestoreSource.OwnedFrame, ArenaRestoreSource.EntryMark)),
+        };
+        var code = new RecordingInstructionWriter();
+
+        CreateEmitter(program, layouts, imports).Emit(code, WithGroups(method, group),
+            new StructuredExceptionRegion(group.Id, null), context,
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata), (_, _, _, _, _) => { });
+
+        var instructions = code.ToInstructions().ToList();
+        var tryTable = instructions.FindIndex(instruction => instruction.Opcode == WasmOpcodes.TryTable);
+        var unwind = CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.FramesUnwind, context.RuntimeImportSelection));
+        Assert.Equal(-1, CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.FrameMarkRoot, context.RuntimeImportSelection)));
+        Assert.Equal(-1, CallIndex(instructions, imports.Resolve(RuntimeImportSymbol.FrameMarkValueCursor, context.RuntimeImportSelection)));
+        Assert.True(unwind > tryTable);
+        Assert.Equal(
+            [(WasmOpcodes.LocalGet, (long)context.RootFrame), (WasmOpcodes.I32Constant, 2L * layouts.Target.ObjectReferenceSize),
+             (WasmOpcodes.I32Add, 0L), (WasmOpcodes.LocalGet, context.ValueFrame), (WasmOpcodes.I32Constant, 16L),
+             (WasmOpcodes.LocalGet, 92L)],
+            instructions[(unwind - 6)..unwind].Select(instruction => (instruction.Opcode,
+                instruction.Opcode == WasmOpcodes.LocalGet ? (long)instruction.Operand.UnsignedValue : instruction.Operand.SignedValue)));
+    }
+
+    // After the prologue a method reads only the arenas some block restores from that read.
+    [Fact]
+    public void AMethodReadsAfterItsPrologueOnlyTheMarksItsBlocksUse()
+    {
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var emitter = new LandingPadRestoreEmitter(new RecordingLayoutProvider(), imports);
+        var group = Group(0, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(CilExceptionRegionKind.Finally, null)], []);
+        var context = CreateContext(group) with
+        {
+            LandingPadRestores = ImmutableDictionary<StructuredExceptionGroupId, LandingPadRestore>.Empty.Add(group.Id,
+                new(ArenaRestoreSource.EntryMark, ArenaRestoreSource.OwnedFrame, ArenaRestoreSource.EntryMark)),
+        };
+        var code = new RecordingInstructionWriter();
+
+        emitter.Emit(code, LandingPadRestoreStep.MethodEntry, context);
+
+        Assert.Equal(
+            [(WasmOpcodes.Call, (uint)imports.Resolve(RuntimeImportSymbol.FrameMarkRoot, context.RuntimeImportSelection)),
+             (WasmOpcodes.LocalSet, 90u),
+             (WasmOpcodes.Call, (uint)imports.Resolve(RuntimeImportSymbol.FrameMarkStackTrace, context.RuntimeImportSelection)),
+             (WasmOpcodes.LocalSet, 92u)],
+            code.ToInstructions().Select(instruction => (instruction.Opcode, instruction.Operand.UnsignedValue)));
+    }
+
     private static StructuredExceptionClause Clause(
         CilExceptionRegionKind kind,
         EntityKey? catchType,
@@ -913,9 +1343,10 @@ public sealed class ExceptionRegionEmitterTests
             {
                 new ExceptionRegionEmitter(
                     layouts,
-                    imports,
                     new ExceptionPayloadBlockEmitter(layouts),
-                    new StructuredExceptionGroupKeyFactory()),
+                    TestExceptionFrames.Steps(layouts, imports),
+                    new PassThroughCatchLocalFinder(),
+                    imports),
             }
             .Cast<IExceptionRegionEmitter>()
             .Single();
@@ -983,10 +1414,25 @@ public sealed class ExceptionRegionEmitterTests
             18)
         {
             ManagedThrowFunction = OptionalFunctionIndex.At(7),
-            ExceptionRootSlots = groups.Select((group, index) => (group.Id, index))
-                .ToImmutableDictionary(item => item.Id, item => item.index),
+            ExceptionCellFrames = groups.Select((group, index) => (group.Id, index))
+                .ToImmutableDictionary(item => item.Id, item => 40 + item.index),
+            // A block without catch clauses, and a catch without filters that is not a pass-through one, keeps its
+            // marks in locals, as the method's context factory gives it.
+            RegionMarkLocals = groups.Select((group, index) => (group, index))
+                .Where(item => item.group.Clauses.All(clause =>
+                    clause.Kind is CilExceptionRegionKind.Finally or CilExceptionRegionKind.Fault) ||
+                    item.group.Clauses.All(clause => clause is { Kind: CilExceptionRegionKind.Catch, PassThroughLocal: null }))
+                .ToImmutableDictionary(item => item.group.Id, item => new RegionMarkLocals(
+                    60 + 3 * item.index, 61 + 3 * item.index, 62 + 3 * item.index)),
+            // Each reads its marks as it begins, as a method whose frames do not say where it stood does.
+            LandingPadRestores = groups.ToImmutableDictionary(group => group.Id,
+                _ => new LandingPadRestore(ArenaRestoreSource.BlockMark, ArenaRestoreSource.BlockMark, ArenaRestoreSource.None)),
+            EntryMarks = new RegionMarkLocals(90, 91, 92),
         };
     }
+
+    private static int CallIndex(List<WasmInstruction> instructions, int function) => instructions.FindIndex(instruction =>
+        instruction.Opcode == WasmOpcodes.Call && instruction.Operand.UnsignedValue == (uint)function);
 
     private static int[] Calls(byte[] code) => [.. code
         .Select((value, index) => (value, index))

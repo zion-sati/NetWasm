@@ -12,7 +12,9 @@ using NetWasm.Compiler.Core.IntermediateRepresentation.Attributes;
 
 namespace NetWasm.Compiler.Analysis.Attributes;
 
-// Mediator: an attribute query whose target is a Type known only at run time (t.GetCustomAttributes(typeof(X), inherit),
+// Mediator: an attribute query left in the settled program is answered there. One whose target inlining or a constant
+// argument named is answered at compile time, as the lowering answers one its body names. One whose target is a Type
+// known only at run time (t.GetCustomAttributes(typeof(X), inherit),
 // Attribute.IsDefined(t, typeof(X)), t.GetCustomAttribute<X>()) becomes a switch over the run-time types of the
 // reachable program that carry X, each answering as the compile-time lowering would; any other type answers as a type
 // without X does. The run-time types are the closure's (a typeof, a GetType() result, an allocation), so the switch roots
@@ -26,14 +28,17 @@ internal sealed class RuntimeTypeAttributeQueryReducer(
     IControlFlowGraphBuilder graphs,
     ITypedStackValidator stacks,
     IAttributeProvenanceAnalyzer provenance,
-    IRuntimeTypeAttributeQueryResolver resolver,
-    IRuntimeTypeAttributeCandidateSelector candidates,
+    IRuntimeTypeAttributeQueryAcceptor acceptor,
+    IAttributeQueryCompileTimeAnswerer answers,
     IRuntimeTypeAttributeDispatchBuilder dispatch,
     IAttributeQueryBodyRewriter bodies,
     MethodInstanceModel ambiguityConstructor,
     MethodInstanceModel nullReferenceConstructor,
     MethodInstanceModel argumentNullConstructor) : IReachableProgramReducer
 {
+    // What each round lowered, by method, for the next round. An entry holds only while the program carries its
+    // rewrite: a later closure build (a second analysis of the same program) starts from the bodies as read, and its
+    // rounds must lower them again rather than take the earlier build's rewrite as done.
     private readonly Dictionary<string, LoweredBody> _lowered = new(StringComparer.Ordinal);
 
     public ImmutableDictionary<string, CilMethodBody> Reduce(ReachableProgram program, ReachabilityRoots roots)
@@ -46,15 +51,15 @@ internal sealed class RuntimeTypeAttributeQueryReducer(
             .DistinctBy(body => body.Method.CanonicalName))
         {
             var name = method.Method.CanonicalName;
-            var previous = _lowered.GetValueOrDefault(name);
+            var previous = _lowered.GetValueOrDefault(name) is { } lowered && Carries(method.Body, lowered) ? lowered : null;
             var source = previous?.Source ?? method.Body;
-            if (Lower(source, runtimeTypes) is not { } lowered ||
-                previous is not null && previous.Cases.SequenceEqual(lowered.Cases))
+            if (Lower(source, runtimeTypes) is not { } next ||
+                previous is not null && previous.Cases.SequenceEqual(next.Cases))
             {
                 continue;
             }
-            _lowered[name] = lowered;
-            result.Add(name, lowered.Body);
+            _lowered[name] = next;
+            result.Add(name, next.Body);
         }
         return result.ToImmutable();
     }
@@ -77,26 +82,43 @@ internal sealed class RuntimeTypeAttributeQueryReducer(
         var proofs = provenance.Analyze(stacks.Validate(graphs.Build(body)));
         var replacements = ImmutableDictionary.CreateBuilder<int, AttributeCilFragment>();
         var cases = ImmutableArray.CreateBuilder<string>();
+        var answeredOffsets = ImmutableHashSet.CreateBuilder<int>();
         var nextLocal = body.Locals.Length;
         foreach (var (instruction, method, call) in queries)
         {
-            if (!proofs.TryGetValue(instruction.Offset, out var stack) ||
-                resolver.ResolveRuntimeType(call, stack) is not { } query ||
-                candidates.Select(query, runtimeTypes) is not { } found)
+            if (!proofs.TryGetValue(instruction.Offset, out var stack))
             {
                 continue;
             }
-            var fragment = dispatch.Build(new(call, ArgumentTypes(method), found, Otherwise(query),
-                query.InheritConstant, query.ResultArrayType, ambiguityConstructor,
-                method.Definition.IsStatic ? argumentNullConstructor : nullReferenceConstructor,
-                method.Definition.IsStatic ? "element" : null, nextLocal));
+            AttributeCilFragment fragment;
+            switch (acceptor.Decide(call, stack, runtimeTypes))
+            {
+                case RuntimeTypeAttributeQueryDecision.Answered { Query: var query, Cases: var found }:
+                    fragment = dispatch.Build(new(call, ArgumentTypes(method), found, Otherwise(query),
+                        query.InheritConstant, query.ResultArrayType, ambiguityConstructor,
+                        method.Definition.IsStatic ? argumentNullConstructor : nullReferenceConstructor,
+                        method.Definition.IsStatic ? "element" : null, nextLocal));
+                    cases.Add($"{instruction.Offset}:{string.Join(",", found.Select(found => found.Type.CanonicalName))}");
+                    break;
+                // Inlining or a constant argument named the target of a query whose own body did not: it is answered at
+                // compile time here, as the lowering answers one its body names, so every level answers it alike. An
+                // attribute that cannot be built leaves it to its run-time path, as for a run-time Type.
+                case RuntimeTypeAttributeQueryDecision.NotRunTimeType when
+                    answers.Answer(call, stack, nextLocal) is AttributeQueryAnswer.Answered { Fragment: var answered }:
+                    fragment = answered;
+                    cases.Add($"{instruction.Offset}:compile time");
+                    break;
+                // A query this declines keeps its run-time path; the settled program's report says why (NW1019).
+                default:
+                    continue;
+            }
             replacements.Add(instruction.Offset, fragment);
+            answeredOffsets.Add(instruction.SourceOffset);
             nextLocal += fragment.LocalTypes.Length;
-            cases.Add($"{instruction.Offset}:{string.Join(",", found.Select(found => found.Type.CanonicalName))}");
         }
         return replacements.Count == 0
             ? null
-            : new(body, bodies.Rewrite(body, replacements.ToImmutable()), cases.ToImmutable());
+            : new(body, bodies.Rewrite(body, replacements.ToImmutable()), cases.ToImmutable(), answeredOffsets.ToImmutable());
     }
 
     // The call's arguments as its signature types them: the receiver first for an instance method.
@@ -113,5 +135,12 @@ internal sealed class RuntimeTypeAttributeQueryReducer(
         return new(null, query.Filter, none, none);
     }
 
-    private sealed record LoweredBody(CilMethodBody Source, CilMethodBody Body, ImmutableArray<string> Cases);
+    // Whether the body carries the rewrite: none of the queries the rewrite answered is still a call in it.
+    private bool Carries(CilMethodBody body, LoweredBody lowered) => !body.Instructions.Any(instruction =>
+        instruction.Operation is CilOperation.Call or CilOperation.CallVirtual &&
+        lowered.Answered.Contains(instruction.SourceOffset) &&
+        calls.Resolve(instruction) is { } method && classifier.Classify(method) is not null);
+
+    private sealed record LoweredBody(CilMethodBody Source, CilMethodBody Body, ImmutableArray<string> Cases,
+        ImmutableHashSet<int> Answered);
 }

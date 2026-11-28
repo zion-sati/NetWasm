@@ -57,24 +57,26 @@ public sealed class ManagedMethodOptimizerFactoryTests
                 null!,
                 new ControlFlowGraphBuilderFactory(),
                 new ArrayBoundsCheckEliminatorFactory(), new RepeatedArrayAccessEliminatorFactory(),
-                new ConstructedObjectNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
+                new ConstructedObjectNullCheckEliminatorFactory(), new ByRefNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizerFactory(
                 new TypedStackValidatorFactory(
                     new StackTypeCompatibilityValidator()),
                 null!,
                 new ArrayBoundsCheckEliminatorFactory(), new RepeatedArrayAccessEliminatorFactory(),
-                new ConstructedObjectNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
+                new ConstructedObjectNullCheckEliminatorFactory(), new ByRefNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
         var stacks = new TypedStackValidatorFactory(new StackTypeCompatibilityValidator());
         var graphs = new ControlFlowGraphBuilderFactory();
         Assert.Throws<ArgumentNullException>(() => new ManagedMethodOptimizerFactory(stacks, graphs, null!,
-            new RepeatedArrayAccessEliminatorFactory(), new ConstructedObjectNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
+            new RepeatedArrayAccessEliminatorFactory(), new ConstructedObjectNullCheckEliminatorFactory(), new ByRefNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
         Assert.Throws<ArgumentNullException>(() => new ManagedMethodOptimizerFactory(stacks, graphs, new ArrayBoundsCheckEliminatorFactory(),
-            null!, new ConstructedObjectNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
+            null!, new ConstructedObjectNullCheckEliminatorFactory(), new ByRefNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
         Assert.Throws<ArgumentNullException>(() => new ManagedMethodOptimizerFactory(stacks, graphs, new ArrayBoundsCheckEliminatorFactory(),
-            new RepeatedArrayAccessEliminatorFactory(), null!, new IntegerCheckEliminatorFactory()));
+            new RepeatedArrayAccessEliminatorFactory(), null!, new ByRefNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory()));
         Assert.Throws<ArgumentNullException>(() => new ManagedMethodOptimizerFactory(stacks, graphs, new ArrayBoundsCheckEliminatorFactory(),
-            new RepeatedArrayAccessEliminatorFactory(), new ConstructedObjectNullCheckEliminatorFactory(), null!));
+            new RepeatedArrayAccessEliminatorFactory(), new ConstructedObjectNullCheckEliminatorFactory(), new ByRefNullCheckEliminatorFactory(), null!));
+        Assert.Throws<ArgumentNullException>(() => new ManagedMethodOptimizerFactory(stacks, graphs, new ArrayBoundsCheckEliminatorFactory(),
+            new RepeatedArrayAccessEliminatorFactory(), new ConstructedObjectNullCheckEliminatorFactory(), null!, new IntegerCheckEliminatorFactory()));
 
         Assert.Throws<ArgumentNullException>(() => factory.Create(
             null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
@@ -112,7 +114,7 @@ public sealed class ManagedMethodOptimizerFactoryTests
         new TypedStackValidatorFactory(new StackTypeCompatibilityValidator()),
         new ControlFlowGraphBuilderFactory(),
         new ArrayBoundsCheckEliminatorFactory(), new RepeatedArrayAccessEliminatorFactory(),
-        new ConstructedObjectNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory());
+        new ConstructedObjectNullCheckEliminatorFactory(), new ByRefNullCheckEliminatorFactory(), new IntegerCheckEliminatorFactory());
 
     private sealed class Dependencies :
         NetWasm.Compiler.Metadata.IMethodBodyReader,

@@ -252,9 +252,8 @@ namespace System.Threading.Tasks.Sources
             }
             if (forceAsynchronous || RunContinuationsAsynchronously)
             {
-                Runtime.InteropServices.PlatformServices.Scheduler.Schedule(
-                    invocation.Invoke,
-                    0);
+                Runtime.InteropServices.PlatformServices.Scheduler.Post(
+                    invocation.Invoke);
                 return;
             }
             invocation.Invoke();

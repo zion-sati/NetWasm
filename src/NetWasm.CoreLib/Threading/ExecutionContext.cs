@@ -49,6 +49,9 @@ namespace System.Threading
         public static ExecutionContext? Capture() =>
             s_current._flowSuppressed ? null : s_current;
 
+        // The context a flow has until it changes one.
+        internal static ExecutionContext Default => s_default;
+
         internal static ExecutionContext CaptureForRestore(
             out int flowControlToken)
         {
@@ -58,6 +61,15 @@ namespace System.Threading
 
         /// <summary>Suppresses propagation of the current execution context.</summary>
         public static AsyncFlowControl SuppressFlow()
+        {
+            AmbientContextChanges.Made = true;
+            return SuppressFlowWhileCreatingTimer();
+        }
+
+        // CoreLib's own suppression while it creates a timer, undone before it returns: the timer's callback then runs
+        // without the caller's context, and no code that flows a context sees the suppression, so it is no change the
+        // program makes (AmbientContextChanges).
+        internal static AsyncFlowControl SuppressFlowWhileCreatingTimer()
         {
             if (s_current._flowSuppressed)
             {
@@ -127,7 +139,7 @@ namespace System.Threading
 
             try
             {
-                SynchronizationContext.SetSynchronizationContext(
+                SynchronizationContext.RestoreCurrent(
                     previousSynchronizationContext);
                 SetCurrent(previous, contextChanged: true);
                 s_currentFlowControlToken = previousFlowControlToken;
@@ -162,6 +174,16 @@ namespace System.Threading
             s_currentFlowControlToken = flowControlToken;
         }
 
+        // As upstream's runtime async puts a context back while a suspension unwinds: no AsyncLocal change notifications,
+        // since no user code runs before the context that resumes or returns to the caller is restored with them.
+        internal static void RestoreWithoutNotifications(
+            ExecutionContext executionContext,
+            int flowControlToken)
+        {
+            SetCurrent(executionContext, contextChanged: false);
+            s_currentFlowControlToken = flowControlToken;
+        }
+
         /// <summary>Creates an immutable copy of this context.</summary>
         public ExecutionContext CreateCopy() => this;
 
@@ -190,6 +212,7 @@ namespace System.Threading
                 return;
             }
 
+            AmbientContextChanges.Made = true;
             var values = current._localValues.Set(
                 local,
                 newValue,

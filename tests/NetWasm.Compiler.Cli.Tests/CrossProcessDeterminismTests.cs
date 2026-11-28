@@ -84,6 +84,29 @@ public sealed class CrossProcessDeterminismTests
         public record Square(double Side) : IShape { public double Area() => Side * Side; }
         public enum Mode { Fast, Careful, Lazy }
         public abstract class Visitor { public abstract T Visit<T>(T value) where T : notnull; }
+        // An iterator-shaped generic virtual chain, as LINQ's Select over its iterators: each Map override makes a new
+        // sequence type, so the closure dispatches it by receiver flow.
+        public abstract class Seq<T>
+        {
+            public abstract Seq<TResult> Map<TResult>(Func<T, TResult> map);
+            public abstract int Count();
+        }
+        public sealed class ArraySeq<T>(T[] items) : Seq<T>
+        {
+            public override Seq<TResult> Map<TResult>(Func<T, TResult> map) => new MappedSeq<T, TResult>(this, map);
+            public override int Count() => items.Length;
+        }
+        public sealed class ListSeq<T>(List<T> items) : Seq<T>
+        {
+            public override Seq<TResult> Map<TResult>(Func<T, TResult> map) => new MappedSeq<T, TResult>(this, map);
+            public override int Count() => items.Count;
+        }
+        public sealed class MappedSeq<TSource, T>(Seq<TSource> source, Func<TSource, T> map) : Seq<T>
+        {
+            public override Seq<TResult> Map<TResult>(Func<T, TResult> next) =>
+                new MappedSeq<TSource, TResult>(source, value => next(map(value)));
+            public override int Count() => source.Count();
+        }
         public sealed class Echo : Visitor { public override T Visit<T>(T value) => value; }
 
         public static class Registry
@@ -113,6 +136,9 @@ public sealed class CrossProcessDeterminismTests
                 var total = area + joined.Length + grid[input % 3, 1] + Classify(joined) + Registry.Operations["square"](input);
                 total += new Echo().Visit(input) + new Echo().Visit("text").Length + ((Mode)(input % 3)).ToString().Length;
                 total += Guarded(input) + Compute(input).GetAwaiter().GetResult();
+                total += new ArraySeq<IShape>(shapes).Map(shape => shape.Name).Map(name => name.Length).Count();
+                total += new ListSeq<string>(names).Map(name => name[0]).Map(letter => (int)letter).Count();
+                total += new ArraySeq<int>([input, 2]).Map(value => value.ToString()).Map(text => new Square(text.Length)).Count();
                 return total;
             }
 

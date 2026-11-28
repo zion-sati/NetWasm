@@ -6,16 +6,37 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Metadata.RuntimeProvidedMembers;
 
-// A runtime-provided CIL body before layout: its declared locals, its elements in order and its finally regions.
-// Locals and labels are objects the elements name; the layout numbers the declared locals in order, then any other
-// local in the order it is first used, and gives each label the offset of the next instruction after its mark.
+// A CIL body before layout, built by the compiler or read from a decoded body to be rewritten: its declared locals, its
+// elements in order and its exception regions. Locals and labels are objects the elements name; the layout numbers the
+// declared locals in order, then any other local in the order it is first used, and gives each label the offset of the
+// next instruction after its mark.
 internal sealed record CilBodyDraft(
     ImmutableArray<CilBodyLocal> Locals,
     ImmutableArray<CilBodyElement> Elements,
-    ImmutableArray<CilBodyFinally> FinallyRegions);
+    ImmutableArray<CilBodyRegion> Regions)
+{
+    // The header's localsinit flag: a decoded body keeps its own, and a runtime-provided body sets it.
+    public bool InitializesLocals { get; init; } = true;
+}
 
-// The protected block runs from TryStart to HandlerStart; its finally handler from HandlerStart to HandlerEnd.
-internal sealed record CilBodyFinally(CilBodyLabel TryStart, CilBodyLabel HandlerStart, CilBodyLabel HandlerEnd);
+// A protected block from TryStart to TryEnd and its handler from HandlerStart to HandlerEnd; a filter runs from
+// FilterStart to HandlerStart, and a catch names the type it catches.
+internal sealed record CilBodyRegion(
+    CilExceptionRegionKind Kind,
+    CilBodyLabel TryStart,
+    CilBodyLabel TryEnd,
+    CilBodyLabel HandlerStart,
+    CilBodyLabel HandlerEnd)
+{
+    public EntityKey? CatchType { get; init; }
+
+    public CliTypeIdentity? CatchTypeIdentity { get; init; }
+
+    public CilBodyLabel? FilterStart { get; init; }
+
+    // CilExceptionRegion.PassThroughLocal: while this local is nonzero, the catch is passed by in the first pass.
+    public CilBodyLocal? PassThroughLocal { get; init; }
+}
 
 // A local of a runtime-provided body, which the layout numbers.
 internal sealed class CilBodyLocal(CliTypeIdentity type, bool pinned = false)
@@ -34,6 +55,9 @@ internal abstract record CilBodyElement
     {
     }
 
+    // The source offset the instruction maps to (a decoded instruction's own), which stack traces and debug lines read.
+    public int? Source { get; init; }
+
     // An instruction with its operand.
     public sealed record Instruction(CilOperation Operation, CilOperand Operand) : CilBodyElement;
 
@@ -42,6 +66,9 @@ internal abstract record CilBodyElement
 
     // A branch, or leave, to a label.
     public sealed record Branch(CilOperation Operation, CilBodyLabel Target) : CilBodyElement;
+
+    // A switch to one label per case.
+    public sealed record Switch(ImmutableArray<CilBodyLabel> Targets) : CilBodyElement;
 
     // The label names the next instruction.
     public sealed record Mark(CilBodyLabel Label) : CilBodyElement;

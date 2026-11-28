@@ -43,10 +43,12 @@ const requestKeys = [
   "assertAsyncDeliveryAvailable",
   "callbacks",
   "descriptor",
+  "errors",
   "exceptionReporter",
   "getInstance",
   "getMemory",
   "handles",
+  "isClosed",
   "observeAsyncFailure",
   "pendingAsyncOperations",
   "service",
@@ -60,11 +62,17 @@ export function createInteropStatusService(
   request, observeAsyncCompletion = () => {}, isImportActive = () => false) {
   assertExactDataObject(request, requestKeys, "interop status-service request");
   if (typeof request.service !== "function" || typeof request.getMemory !== "function"
-      || typeof request.getInstance !== "function"
+      || typeof request.getInstance !== "function" || typeof request.isClosed !== "function"
       || typeof request.assertAsyncDeliveryAvailable !== "function"
       || typeof request.observeAsyncFailure !== "function"
       || typeof observeAsyncCompletion !== "function" || typeof isImportActive !== "function") {
     throw new TypeError("interop status-service actions are invalid");
+  }
+  if (request.errors === null || typeof request.errors !== "object"
+      || typeof request.errors.captureThrow !== "function"
+      || typeof request.errors.captureRejection !== "function"
+      || typeof request.errors.discardPending !== "function") {
+    throw new TypeError("interop status-service error channel is invalid");
   }
   if (!(request.pendingAsyncOperations instanceof Map)) {
     throw new TypeError("interop status-service pending-operation registry is invalid");
@@ -83,7 +91,8 @@ export function createInteropStatusService(
   // A subscription or Promise-style result owns its callbacks; any other import's callbacks belong to JavaScript.
   const lifetime = request.descriptor.result !== "subscription" && request.descriptor.result !== "promise"
       && request.descriptor.parameters.includes("callback")
-    ? createManagedCallbackLifetime(handle => releaseManagedInteropCallback({ getInstance: request.getInstance, handle }))
+    ? createManagedCallbackLifetime(
+      handle => releaseManagedInteropCallback({ getInstance: request.getInstance, handle }), request.isClosed)
     : null;
   return Object.freeze((...argumentsWithDescriptor) => {
     const descriptorAddress = argumentsWithDescriptor.pop();
@@ -134,8 +143,14 @@ export function createInteropStatusService(
           value => {
             if (active) settleAsyncCompletion(request, () => promiseCallbacks[0](value), observeAsyncCompletion);
           },
-          () => {
-            if (active) settleAsyncCompletion(request, () => promiseCallbacks[1](), observeAsyncCompletion);
+          reason => {
+            if (active) {
+              settleAsyncCompletion(request, () => {
+                request.errors.captureRejection(reason);
+                // A failure callback that raises no JSException leaves the error untaken; it ends with the callback.
+                try { promiseCallbacks[1](); } finally { request.errors.discardPending(); }
+              }, observeAsyncCompletion);
+            }
           });
         result = { dispose() { active = false; } };
       } else {
@@ -144,7 +159,9 @@ export function createInteropStatusService(
       writeResult(request, result, descriptorAddress, callbackHandles);
       for (const callback of adopted) callback.keep();
       return request.statusAbi.successStatus;
-    } catch {
+    } catch (cause) {
+      // The JSException managed code raises for the failure carries what the import threw.
+      request.errors.captureThrow(cause);
       // The failed import's callbacks end with it.
       for (const callback of adopted) callback.drop();
       for (const handle of owned) lifetime.release(handle);
@@ -266,17 +283,25 @@ function startAsyncOperation(request, asyncHandle, argumentsForService, observeA
       let resolution;
       try {
         resolution = prepareAsyncResolution(request, asyncHandle, resolve, value);
-      } catch {
-        settleAsyncCompletion(request, () => reject(asyncHandle), observeAsyncCompletion);
+      } catch (cause) {
+        // A value the task's result cannot take fails the task with the conversion's error.
+        settleAsyncCompletion(request, () => {
+          request.errors.captureThrow(cause);
+          reject(asyncHandle);
+        }, observeAsyncCompletion);
         return;
       }
       settleAsyncCompletion(request, resolution, observeAsyncCompletion);
     },
-    () => {
+    reason => {
       if (!operation.active) return;
       operation.active = false;
       request.pendingAsyncOperations.delete(asyncHandle);
-      settleAsyncCompletion(request, () => reject(asyncHandle), observeAsyncCompletion);
+      // The task's JSException carries the reason the promise rejected with.
+      settleAsyncCompletion(request, () => {
+        request.errors.captureRejection(reason);
+        reject(asyncHandle);
+      }, observeAsyncCompletion);
     });
   return request.statusAbi.successStatus;
 }

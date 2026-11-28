@@ -14,6 +14,8 @@ using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
 internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
@@ -32,7 +34,9 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
     INullableTypeResolver nullableTypes,
     INullableBoxEmitter nullableBoxes,
     IValueFrameAddressEmitter valueFrames,
-    IReferenceWriteBarrierEmitter writeBarrier) : IRuntimeIntrinsicEmitter
+    IReferenceWriteBarrierEmitter writeBarrier,
+    IValueTypeArgumentConventionFactory argumentConventions,
+    IValueTypeResultConventionFactory resultConventions) : IRuntimeIntrinsicEmitter
 {
     private static readonly CliTypeIdentity ObjectReference = CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference);
 
@@ -215,37 +219,40 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
         MethodInstanceModel method)
     {
         var resultType = method.Signature.ReturnSignatureType;
+        void EmitCall(IWasmInstructionWriter code)
+        {
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.LocalGet,
+                WasmInstructionOperand.Unsigned((uint)receiverLocal)));
+            for (var index = 0; index < method.Signature.ParameterSignatureTypes.Length; index++)
+            {
+                EmitCallArgument(
+                    request,
+                    code,
+                    argumentsLocal,
+                    index,
+                    method.Signature.ParameterSignatureTypes[index]);
+            }
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.Call,
+                WasmInstructionOperand.Unsigned(
+                    (uint)request.Instruction.Target.FunctionIndices
+                        .GetDelegateInvokeHelper(method.DeclaringType.CanonicalName).Value)));
+        }
+        // A struct result goes to the box allocated before the call, a nullable one to the member result scratch, as
+        // the invoke's return convention takes it.
         if (resultType.StackKind == CliValueKind.ValueType)
         {
-            if (nullableTypes.Resolve(resultType) is not null)
+            resultConventions.Create(resultType).Emit(code, writer =>
             {
-                EmitMemberResultAddress(request, code);
-            }
-            else
-            {
-                EmitBoxPayloadAddress(
-                    code,
-                    request.Local(0, CliValueKind.ManagedReference),
-                    resultType);
-            }
+                if (nullableTypes.Resolve(resultType) is not null) EmitMemberResultAddress(request, writer);
+                else EmitBoxPayloadAddress(writer, request.Local(0, CliValueKind.ManagedReference), resultType);
+            }, new(request.Instruction.Context.StructResultLocals, request.Instruction.Context.VectorScratch), EmitCall);
         }
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)receiverLocal)));
-        for (var index = 0; index < method.Signature.ParameterSignatureTypes.Length; index++)
+        else
         {
-            EmitCallArgument(
-                request,
-                code,
-                argumentsLocal,
-                index,
-                method.Signature.ParameterSignatureTypes[index]);
+            EmitCall(code);
         }
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned(
-                (uint)request.Instruction.Target.FunctionIndices
-                    .GetDelegateInvokeHelper(method.DeclaringType.CanonicalName).Value)));
         PreserveInvocationResult(request, code, resultType);
     }
 
@@ -271,22 +278,29 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
             return;
         }
 
+        if (signatureType.StackKind == CliValueKind.ValueType)
+        {
+            // A struct goes from its box, by its address or its fields as the invoke's parameter takes it.
+            argumentConventions.Create(signatureType).Emit(code, writer =>
+            {
+                EmitArgumentReference(writer, argumentsLocal, index);
+                EmitBoxPayloadAddress(writer, signatureType);
+            }, new(Scratch: request.Instruction.Context.VectorScratch));
+            return;
+        }
         EmitArgumentReference(code, argumentsLocal, index);
         if (signatureType.StackKind == CliValueKind.ManagedReference)
         {
             return;
         }
         EmitBoxPayloadAddress(code, signatureType);
-        if (signatureType.StackKind != CliValueKind.ValueType)
-        {
-            var layout = values.GetValueLayout(signatureType);
-            ManagedMemoryEmitter.EmitLoadByType(
-                code,
-                layouts.Target,
-                0,
-                signatureType,
-                layout.Size, scratch: request.Instruction.Context.VectorScratch);
-        }
+        var layout = values.GetValueLayout(signatureType);
+        ManagedMemoryEmitter.EmitLoadByType(
+            code,
+            layouts.Target,
+            0,
+            signatureType,
+            layout.Size, scratch: request.Instruction.Context.VectorScratch);
     }
 
     private void PreserveInvocationResult(
@@ -391,7 +405,8 @@ internal sealed class DelegateDynamicInvokeIntrinsicEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned(
-                (uint)runtimeImports.Resolve(RuntimeImportSymbol.IsAssignable))));
+                (uint)runtimeImports.Resolve(request.Instruction.Target.RuntimeImportSelection.IsAssignable,
+                    request.Instruction.Target.RuntimeImportSelection))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.If,

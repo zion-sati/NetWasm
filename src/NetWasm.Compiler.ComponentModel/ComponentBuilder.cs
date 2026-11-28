@@ -55,6 +55,7 @@ public sealed class ComponentBuilder(
         {
             OptimizationOverrides = request.OptimizationOverrides,
             PlainCoreModule = request.PlainCoreModule,
+            DebugInformation = request.DebugInformation,
         });
         return manifest;
     }

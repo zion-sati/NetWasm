@@ -13,8 +13,8 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 // Plans storage placement only. Root publication and exception ownership remain
 // separate emission contracts; a plan does not authorize changing either one.
 //
-// A method whose body is a leading if, and whose frames only one side of it needs, enters them
-// on that side. Either one arm always returns or throws, so what follows the if belongs to the
+// A method whose body is an if, after regions that need no frame, and whose frames only one side of
+// it needs, enters them on that side. Either one arm always returns or throws, so what follows the if belongs to the
 // other arm alone; or both arms flow into a straight-line tail that ends the method, which each
 // arm then carries where tails may be copied; or, when the method needs only a root frame and no
 // safepoint after the if holds a root, the framed arm leaves the frame where it ends and the code
@@ -42,40 +42,10 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
                 argumentTypes.Resolve(method.Header, index).StackKind == CliValueKind.ValueType) ||
             !layout.NativeArgumentOffsets.IsEmpty ||
             !layout.MemberResultOffsets.IsEmpty || !layout.CallReceiverOffsets.IsEmpty ||
-            method.Body.Regions.Length < 2 || method.Body.Regions[0] is not StructuredIf branch)
+            method.Body.Regions.Length < 2)
         {
             return null;
         }
-
-        var first = new HashSet<StructuredBlockId>();
-        var second = new HashSet<StructuredBlockId>();
-        if (!Collect(branch.WhenTrue, first) || !Collect(branch.WhenFalse, second))
-        {
-            return null;
-        }
-        var tail = method.Body.Regions.Skip(1).ToImmutableArray();
-        var tailBlocks = new HashSet<StructuredBlockId>();
-        if (!tail.All(region => Collect(region, tailBlocks)))
-        {
-            return null;
-        }
-
-        // An arm that always leaves the method never reaches the tail, so the tail belongs to the
-        // other arm and is not copied; otherwise each arm carries a copy of a tail that ends the
-        // method in straight-line code, or the framed arm leaves its frame before the tail.
-        var firstLeaves = Leaves(method, branch.WhenTrue);
-        var secondLeaves = Leaves(method, branch.WhenFalse);
-        var early = firstLeaves != secondLeaves;
-        if (!early && firstLeaves)
-        {
-            return null;
-        }
-        var leavesBeforeTail = !early && !(copyTails && IsTerminalStraightLine(method, tail));
-        if (early)
-        {
-            (secondLeaves ? first : second).UnionWith(tailBlocks);
-        }
-        var common = early ? [branch.Condition.Block] : tailBlocks.Append(branch.Condition.Block).ToHashSet();
 
         var scalars = layout.SpilledScalarLocals;
         if (scalars.Any(index => !layout.LocalOffsets.ContainsKey(index) ||
@@ -87,10 +57,23 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
             return null;
         }
 
+        // The blocks of each top-level region, those that need the value frame, and the safepoints that
+        // hold roots by their blocks.
+        var regions = method.Body.Regions;
+        var regionBlocks = new HashSet<StructuredBlockId>[regions.Length];
+        for (var index = 0; index < regions.Length; index++)
+        {
+            regionBlocks[index] = [];
+            if (!Collect(regions[index], regionBlocks[index]))
+            {
+                return null;
+            }
+        }
+        var all = regionBlocks.SelectMany(blocks => blocks).ToHashSet();
         var required = new HashSet<StructuredBlockId>();
         var temporaryOffsets = layout.TemporaryOffsets.Keys.ToHashSet();
         var observedTemporaries = new HashSet<int>();
-        foreach (var block in first.Concat(second).Concat(common).Distinct())
+        foreach (var block in all)
         {
             foreach (var instruction in method.Blocks[block].Instructions)
             {
@@ -126,10 +109,8 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
         {
             return null;
         }
-
-        // The safepoints that hold roots, by the blocks they are in.
         var blockOf = new Dictionary<int, StructuredBlockId>();
-        foreach (var id in first.Concat(second).Concat(common).Distinct())
+        foreach (var id in all)
         {
             foreach (var offset in Offsets(method.Blocks[id]))
             {
@@ -148,74 +129,124 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
             }
             rootedBlocks.Add(id);
         }
-        // The root frame moves only where every root-holding safepoint is on the framed side.
-        var deferRoots = roots.SlotCount != 0 && !rootedBlocks.Overlaps(common) &&
-            ((rootedBlocks.IsSubsetOf(first) && !rootedBlocks.Overlaps(second) && !required.Overlaps(second)) ||
-             (rootedBlocks.IsSubsetOf(second) && !rootedBlocks.Overlaps(first) && !required.Overlaps(first)));
-        // A frame left before the tail can hold only roots: nothing copies a value frame's
-        // contents back into the locals the tail would read.
-        if (leavesBeforeTail && (!deferRoots || layout.Size != 0))
-        {
-            return null;
-        }
-        if (deferRoots)
-        {
-            required.UnionWith(rootedBlocks);
-        }
-        if (required.Count == 0 || required.Overlaps(common) || (layout.Size == 0 && !deferRoots))
-        {
-            return null;
-        }
-        var frameFirst = required.IsSubsetOf(first) && !required.Overlaps(second);
-        var frameSecond = required.IsSubsetOf(second) && !required.Overlaps(first);
-        if (!frameFirst && !frameSecond)
-        {
-            return null;
-        }
 
-        var unframed = (frameFirst ? second : first).Concat(common).ToHashSet();
-        if (!deferRoots && rooted.Where(point => unframed.Contains(blockOf[point.IlOffset]))
-            .SelectMany(point => point.Roots.Concat(point.ConstructorCallRoots))
-            .Any(root => root.Kind == RootSourceKind.StackStorageAnchor ||
-                root.Kind is RootSourceKind.Local or RootSourceKind.ManagedAddressLocal &&
-                layout.LocalOffsets.ContainsKey(root.Index)))
-        {
-            return null;
-        }
+        // The if goes as deep into the body as it can: the regions before the first that needs a frame run
+        // without one (the checks a method makes of its arguments before it does anything, as
+        // `if (buffer == null) throw ...; if (n <= 0) return 0;` before `if (n <= 8) copy bytes; else
+        // Buffer.BlockCopy(...)`), and that region, an if, places the frames in its arms. Failing that, the
+        // body's leading if does.
+        var first = Array.FindIndex(regionBlocks, blocks => blocks.Overlaps(required) || blocks.Overlaps(rootedBlocks));
+        return first > 0 && first < regions.Length - 1 ? PlanAt(first) ?? PlanAt(0) : PlanAt(0);
 
-        if (leavesBeforeTail)
+        TerminalBranchValueFramePlan? PlanAt(int at)
         {
-            return new(branch.Condition, branch.WhenTrue, branch.WhenFalse, frameFirst, scalars)
+            if (regions[at] is not StructuredIf branch)
             {
-                DefersRootFrame = true,
-                UnframedTail = new(tail),
-            };
-        }
-        if (early)
-        {
+                return null;
+            }
+            var firstArm = new HashSet<StructuredBlockId>();
+            var secondArm = new HashSet<StructuredBlockId>();
+            Collect(branch.WhenTrue, firstArm);
+            Collect(branch.WhenFalse, secondArm);
+            var tail = regions.Skip(at + 1).ToImmutableArray();
+            var tailBlocks = regionBlocks.Skip(at + 1).SelectMany(blocks => blocks).ToHashSet();
+            var prefix = regions.Take(at).ToImmutableArray();
+            var prefixBlocks = regionBlocks.Take(at).SelectMany(blocks => blocks).ToHashSet();
+
+            // An arm that always leaves the method never reaches the tail, so the tail belongs to the
+            // other arm and is not copied; otherwise each arm carries a copy of a tail that ends the
+            // method in straight-line code, or the framed arm leaves its frame before the tail.
+            var firstLeaves = Leaves(method, branch.WhenTrue);
+            var secondLeaves = Leaves(method, branch.WhenFalse);
+            var early = firstLeaves != secondLeaves;
+            if (!early && firstLeaves)
+            {
+                return null;
+            }
+            var leavesBeforeTail = !early && !(copyTails && IsTerminalStraightLine(method, tail));
+            if (early)
+            {
+                (secondLeaves ? firstArm : secondArm).UnionWith(tailBlocks);
+            }
+            // What runs on both paths: the regions before the if, its condition and, unless an arm leaves, the
+            // tail after it.
+            var common = (early ? [branch.Condition.Block] : tailBlocks.Append(branch.Condition.Block))
+                .Concat(prefixBlocks).ToHashSet();
+
+            // The root frame moves only where every root-holding safepoint is on the framed side.
+            var deferRoots = roots.SlotCount != 0 && !rootedBlocks.Overlaps(common) &&
+                ((rootedBlocks.IsSubsetOf(firstArm) && !rootedBlocks.Overlaps(secondArm) && !required.Overlaps(secondArm)) ||
+                 (rootedBlocks.IsSubsetOf(secondArm) && !rootedBlocks.Overlaps(firstArm) && !required.Overlaps(firstArm)));
+            // A frame left before the tail can hold only roots: nothing copies a value frame's
+            // contents back into the locals the tail would read.
+            if (leavesBeforeTail && (!deferRoots || layout.Size != 0))
+            {
+                return null;
+            }
+            var framed = new HashSet<StructuredBlockId>(required);
+            if (deferRoots)
+            {
+                framed.UnionWith(rootedBlocks);
+            }
+            if (framed.Count == 0 || framed.Overlaps(common) || (layout.Size == 0 && !deferRoots))
+            {
+                return null;
+            }
+            var frameFirst = framed.IsSubsetOf(firstArm) && !framed.Overlaps(secondArm);
+            var frameSecond = framed.IsSubsetOf(secondArm) && !framed.Overlaps(firstArm);
+            if (!frameFirst && !frameSecond)
+            {
+                return null;
+            }
+
+            var unframed = (frameFirst ? secondArm : firstArm).Concat(common).ToHashSet();
+            if (!deferRoots && rooted.Where(point => unframed.Contains(blockOf[point.IlOffset]))
+                .SelectMany(point => point.Roots.Concat(point.ConstructorCallRoots))
+                .Any(root => root.Kind == RootSourceKind.StackStorageAnchor ||
+                    root.Kind is RootSourceKind.Local or RootSourceKind.ManagedAddressLocal &&
+                    layout.LocalOffsets.ContainsKey(root.Index)))
+            {
+                return null;
+            }
+
+            var unframedPrefix = prefix.IsEmpty ? null : new StructuredSequence(prefix);
+            if (leavesBeforeTail)
+            {
+                return new(branch.Condition, branch.WhenTrue, branch.WhenFalse, frameFirst, scalars)
+                {
+                    DefersRootFrame = true,
+                    UnframedPrefix = unframedPrefix,
+                    UnframedTail = new(tail),
+                };
+            }
+            if (early)
+            {
+                return new(branch.Condition,
+                    secondLeaves ? new([.. branch.WhenTrue.Regions, .. tail]) : branch.WhenTrue,
+                    firstLeaves ? new([.. branch.WhenFalse.Regions, .. tail]) : branch.WhenFalse,
+                    frameFirst,
+                    scalars)
+                {
+                    DefersRootFrame = deferRoots,
+                    UnframedPrefix = unframedPrefix,
+                };
+            }
+            // One copy retains ownership; the other is explicitly an executing
+            // replica, preserving the original block-accounting contract.
+            var replicaTail = tail.Cast<StructuredCode>().Select(code => (StructuredRegion)(code with
+            {
+                Occurrence = code.Occurrence with { Role = StructuredBlockRole.ExecutingReplica },
+            }));
             return new(branch.Condition,
-                secondLeaves ? new([.. branch.WhenTrue.Regions, .. tail]) : branch.WhenTrue,
-                firstLeaves ? new([.. branch.WhenFalse.Regions, .. tail]) : branch.WhenFalse,
+                new([.. branch.WhenTrue.Regions, .. tail]),
+                new([.. branch.WhenFalse.Regions, .. replicaTail]),
                 frameFirst,
                 scalars)
             {
                 DefersRootFrame = deferRoots,
+                UnframedPrefix = unframedPrefix,
             };
         }
-        // One copy retains ownership; the other is explicitly an executing
-        // replica, preserving the original block-accounting contract.
-        var replicaTail = tail.Cast<StructuredCode>().Select(code => (StructuredRegion)(code with
-        {
-            Occurrence = code.Occurrence with { Role = StructuredBlockRole.ExecutingReplica },
-        }));
-        return new(branch.Condition,
-            new([.. branch.WhenTrue.Regions, .. tail]),
-            new([.. branch.WhenFalse.Regions, .. replicaTail]),
-            frameFirst,
-            scalars)
-        {
-            DefersRootFrame = deferRoots,
-        };
     }
 
     // A tail the arms can each carry: straight-line blocks in order, each entered with an empty
@@ -277,7 +308,14 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
             "primitive:i1" or "primitive:u1" or "primitive:i2" or "primitive:u2" or
             "primitive:bool" or "primitive:char";
 
-    private static bool Collect(StructuredRegion region, HashSet<StructuredBlockId> blocks)
+    // The blocks an arm or the tail runs, or false for a region the plan does not take. A branch to a label goes
+    // only to one the same arm opened (a flattened else-if chain's, or a switch table's): a framed arm releases its
+    // frame where it ends, and a branch to a label outside it would leave without doing so.
+    private static bool Collect(StructuredRegion region, HashSet<StructuredBlockId> blocks) =>
+        Collect(region, blocks, []);
+
+    private static bool Collect(StructuredRegion region, HashSet<StructuredBlockId> blocks,
+        HashSet<StructuredBlockId> labels)
     {
         IEnumerable<StructuredRegion> children;
         switch (region)
@@ -307,11 +345,25 @@ internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeReso
                 blocks.UnionWith(dispatcher.Blocks.Select(block => block.Occurrence.Block));
                 children = dispatcher.Exits.Select(exit => exit.Body);
                 break;
+            case StructuredLabeledBlock labeled:
+                labels.Add(labeled.Next);
+                children = [labeled.Body];
+                break;
+            case StructuredLabeledLoop loop:
+                labels.Add(loop.Header);
+                children = [loop.Body];
+                break;
+            case StructuredLabelBranch branch:
+                return labels.Contains(branch.Target);
+            case StructuredSwitch table:
+                blocks.Add(table.Head.Block);
+                blocks.UnionWith(table.Chain.Select(block => block.Block));
+                return table.Cases.All(labels.Contains) && labels.Contains(table.Default);
             case StructuredLoopBreak or StructuredLoopContinue or StructuredDispatcherContinue:
                 return true;
             default:
                 return false;
         }
-        return children.All(child => Collect(child, blocks));
+        return children.All(child => Collect(child, blocks, labels));
     }
 }

@@ -33,6 +33,8 @@ public sealed class StructLocalScalarReplacerTests
     private static readonly Struct Sized = new("Sized", 4, ("A", Int32)) { DeclaredSize = 16 };
     // A span's shape: a byref and a length.
     private static readonly Struct Span = new("Span", 9, ("Reference", CliTypeIdentity.ManagedByReference(Int32)), ("Length", Int32));
+    // A struct holding others, as a suspended frame's slots hold an awaited value task: it stays whole itself.
+    private static readonly Struct Holder = new("Holder", 10, ("P", Pair.Type), ("S", Sized.Type));
 
     public static TheoryData<string> SplitShapes() =>
     [
@@ -41,7 +43,9 @@ public sealed class StructLocalScalarReplacerTests
         "element copy never read", "element copy copied to another split local", "element copy read whole outside its loop",
         "copy to a whole local outside the loop", "copy from a whole local outside the loop", "copy between whole locals",
         "two whole loads outside the loop", "mixed struct cleared", "reference field read through its address",
-        "byref field stored and read", "struct with a byref field cleared",
+        "byref field stored and read", "struct with a byref field cleared", "whole value stored into a field of its type",
+        "whole value stored through an address of its type", "whole value loaded from a field of its type",
+        "join of a cleared and a built value", "join of three paths",
     ];
 
     [Theory]
@@ -64,6 +68,25 @@ public sealed class StructLocalScalarReplacerTests
         {
             Assert.Contains(rewritten.Instructions, instruction => instruction.Operation == conversion);
         }
+        // A whole value stored into or loaded from a field of its type goes field by field through the field's address.
+        if (shape.Contains("a field of its type", StringComparison.Ordinal))
+        {
+            Assert.Contains(rewritten.Instructions, instruction => instruction is
+            { Operation: CilOperation.LoadFieldAddress, Operand: CilOperand.FieldInstance { Value: var field } } &&
+                field.Definition.Name == "P");
+        }
+        // Each path copies its value field by field into the join's target, and the join stores nothing.
+        if (shape.StartsWith("join", StringComparison.Ordinal))
+        {
+            Assert.DoesNotContain(rewritten.Instructions, instruction => instruction is
+            { Operation: CilOperation.LoadLocal or CilOperation.StoreLocal, Operand: CilOperand.Index { Value: var local } } &&
+                local < body.LocalSignatureTypes.Length && body.LocalSignatureTypes[local].Equals(Pair.Type));
+        }
+        if (shape.StartsWith("whole value", StringComparison.Ordinal))
+        {
+            Assert.DoesNotContain(rewritten.Instructions, instruction => instruction is
+            { Operation: CilOperation.LoadLocal or CilOperation.StoreLocal, Operand: CilOperand.Index { Value: 0 } });
+        }
     }
 
     public static TheoryData<string> WholeShapes() =>
@@ -71,7 +94,9 @@ public sealed class StructLocalScalarReplacerTests
         "value popped", "field of another type", "field address of another type", "address stored to a native int field",
         "clear of another type", "whole load of another type", "sized struct read whole", "sized struct copied",
         "volatile copy through a reference", "whole value's copy stored", "field address read at another width",
-        "field address popped", "field address cleared as a struct",
+        "field address popped", "field address cleared as a struct", "field of its type read from a struct value",
+        "volatile store into a field of its type", "sized struct stored into a field of its type",
+        "join whose target escapes",
     ];
 
     [Theory]
@@ -175,6 +200,35 @@ public sealed class StructLocalScalarReplacerTests
             .Local(CilOperation.LoadLocal, 0).Op(CilOperation.Pop).Local(CilOperation.LoadLocal, 0).Op(CilOperation.Pop)
             .Loop(1, inner => inner.Read(0, Pair, 0).Op(CilOperation.Pop))
             .Op(CilOperation.LoadInt32, 0).Return()),
+        // As an inlined AsSpan leaves it: a default value on one path, a built one on the other, joined on the stack.
+        "join of a cleared and a built value" => Body([Pair.Type, Pair.Type, Pair.Type], code => code
+            .Local(CilOperation.LoadArgument, 0).Branch(CilOperation.BranchIfTrue, "build")
+            .Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.InitializeObject, new CilOperand.TypeIdentity(Pair.Type))
+            .Local(CilOperation.LoadLocal, 0).Branch(CilOperation.Branch, "join")
+            .Label("build")
+            .Store(1, Pair, 0, CilOperation.LoadInt32, 1).Store(1, Pair, 1, CilOperation.LoadInt32, 2)
+            .Local(CilOperation.LoadLocal, 1)
+            .Label("join").Local(CilOperation.StoreLocal, 2)
+            .Read(2, Pair, 1).Return()),
+        "join of three paths" => Body([Pair.Type, Pair.Type, Pair.Type, Pair.Type], code => code
+            .Local(CilOperation.LoadArgument, 0).Branch(CilOperation.BranchIfTrue, "second")
+            .Store(0, Pair, 0, CilOperation.LoadInt32, 1).Local(CilOperation.LoadLocal, 0).Branch(CilOperation.Branch, "join")
+            .Label("second").Local(CilOperation.LoadArgument, 0).Branch(CilOperation.BranchIfFalse, "third")
+            .Store(1, Pair, 1, CilOperation.LoadInt32, 2).Local(CilOperation.LoadLocal, 1).Branch(CilOperation.Branch, "join")
+            .Label("third").Store(2, Pair, 0, CilOperation.LoadInt32, 3).Local(CilOperation.LoadLocal, 2)
+            .Label("join").Local(CilOperation.StoreLocal, 3)
+            .Read(3, Pair, 0).Read(3, Pair, 1).Op(CilOperation.Add).Return()),
+        // The join's target stays whole, so the values joined into it do too.
+        "join whose target escapes" => Body([Pair.Type, Pair.Type, Pair.Type], code => code
+            .Local(CilOperation.LoadArgument, 0).Branch(CilOperation.BranchIfTrue, "build")
+            .Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.InitializeObject, new CilOperand.TypeIdentity(Pair.Type))
+            .Local(CilOperation.LoadLocal, 0).Branch(CilOperation.Branch, "join")
+            .Label("build")
+            .Store(1, Pair, 0, CilOperation.LoadInt32, 1)
+            .Local(CilOperation.LoadLocal, 1)
+            .Label("join").Local(CilOperation.StoreLocal, 2)
+            .Escape(2)
+            .Op(CilOperation.LoadInt32, 0).Return()),
         "mixed struct cleared" => Body([Mixed.Type], code => code
             .Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.InitializeObject, new CilOperand.TypeIdentity(Mixed.Type))
             .Read(0, Mixed, 3).Op(CilOperation.ConvertInt32).Return()),
@@ -209,6 +263,38 @@ public sealed class StructLocalScalarReplacerTests
             .Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.LoadFieldAddress, Field(Pair, 0))
             .Op(CilOperation.InitializeObject, new CilOperand.TypeIdentity(Pair.Type))
             .Read(0, Pair, 0).Return()),
+        // A suspension saves its awaited value into its frame and restores it once resumed.
+        "whole value stored into a field of its type" => Body([Pair.Type, Holder.Type], code => code
+            .Store(0, Pair, 0, CilOperation.LoadInt32, 1)
+            .Store(0, Pair, 1, CilOperation.LoadInt32, 2)
+            .Local(CilOperation.LoadLocalAddress, 1).Local(CilOperation.LoadLocal, 0)
+            .Op(CilOperation.StoreField, Field(Holder, 0))
+            .Read(0, Pair, 1).Return()),
+        "whole value stored through an address of its type" => Body([Pair.Type], code => code
+            .Store(0, Pair, 0, CilOperation.LoadInt32, 1)
+            .Local(CilOperation.LoadArgument, 1).Local(CilOperation.LoadLocal, 0)
+            .Op(CilOperation.StoreObject, new CilOperand.TypeIdentity(Pair.Type))
+            .Read(0, Pair, 0).Return()),
+        "whole value loaded from a field of its type" => Body([Pair.Type, Holder.Type], code => code
+            .Local(CilOperation.LoadLocalAddress, 1).Op(CilOperation.LoadField, Field(Holder, 0))
+            .Local(CilOperation.StoreLocal, 0)
+            .Read(0, Pair, 1).Return()),
+        // A struct value's field has no address to read from.
+        "field of its type read from a struct value" => Body([Pair.Type, Holder.Type], code => code
+            .Local(CilOperation.LoadLocal, 1).Op(CilOperation.LoadField, Field(Holder, 0))
+            .Local(CilOperation.StoreLocal, 0)
+            .Read(0, Pair, 1).Return()),
+        "volatile store into a field of its type" => Body([Pair.Type, Holder.Type], code => code
+            .Store(0, Pair, 0, CilOperation.LoadInt32, 1)
+            .Local(CilOperation.LoadLocalAddress, 1).Local(CilOperation.LoadLocal, 0)
+            .Op(CilOperation.Volatile).Op(CilOperation.StoreField, Field(Holder, 0))
+            .Read(0, Pair, 0).Return()),
+        // Its bytes past the field reach the destination only whole.
+        "sized struct stored into a field of its type" => Body([Sized.Type, Holder.Type], code => code
+            .Store(0, Sized, 0, CilOperation.LoadInt32, 1)
+            .Local(CilOperation.LoadLocalAddress, 1).Local(CilOperation.LoadLocal, 0)
+            .Op(CilOperation.StoreField, Field(Holder, 1))
+            .Read(0, Sized, 0).Return()),
         "value popped" => Body([Pair.Type], code => code
             .Store(0, Pair, 0, CilOperation.LoadInt32, 1)
             .Local(CilOperation.LoadLocal, 0).Op(CilOperation.Pop)
@@ -354,10 +440,13 @@ public sealed class StructLocalScalarReplacerTests
 
     private static StructLocalScalarReplacer Replacer(params Struct[] structs)
     {
-        var program = new Program([Pair, Other, Mixed, Sized, Span, .. structs]);
-        return new(new ControlFlowGraphBuilderFactory().Create(), Validator(program),
-            new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer()), program, program,
-            new VectorLaneFields(program, program), enabled: true);
+        var program = new Program([Pair, Other, Mixed, Sized, Span, Holder, .. structs]);
+        var graphs = new ControlFlowGraphBuilderFactory().Create();
+        var validator = Validator(program);
+        return new(graphs, validator,
+            new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder())), program, program,
+            new VectorLaneFields(program, program), new StructLocalJoinFinder(), new StructJoinSplitConstraint(),
+            new NetWasm.Compiler.Analysis.StackDepthFitter(graphs, validator), enabled: true);
     }
 
     private static ITypedStackValidator Validator(Program program) =>

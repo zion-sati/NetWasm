@@ -123,6 +123,38 @@ public sealed class TerminalBranchValueFramePlannerTests
         Assert.Same(loop, plan.WhenTrue.Regions[0]);
     }
 
+    // A flattened else-if chain in an arm is a labeled block its conditions branch to the end of: the branches stay in
+    // the arm, so the plan takes it. A branch to a label the arm did not open would leave the framed arm without
+    // releasing its frame, so the plan does not.
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void ALabeledBlockInAnArmTakesOnlyItsOwnLabelsBranches(bool outsideLabel, bool accepted)
+    {
+        var method = Method();
+        var branch = (StructuredIf)method.Body.Regions[0];
+        var chain = new StructuredLabeledBlock(new(5), new([
+            new StructuredIf(new(new(4), StructuredBlockRole.Owner),
+                new([new StructuredLabelBranch(outsideLabel ? new(9) : new(5))]), StructuredSequence.Empty),
+            Code(1),
+        ]));
+        method = method with
+        {
+            Blocks = method.Blocks.Add(new(4), Block(4, [], new StructuredFallthroughExit(new(1)))),
+            Body = new([branch with { WhenTrue = new([chain]) }, Code(3)]),
+        };
+
+        var plan = _planner.Plan(method, Layout(), _roots, copyTails: true);
+
+        if (!accepted)
+        {
+            Assert.Null(plan);
+            return;
+        }
+        Assert.True(Assert.IsType<TerminalBranchValueFramePlan>(plan).FramedWhenTrue);
+        Assert.Same(chain, plan.WhenTrue.Regions[0]);
+    }
+
     [Fact]
     public void DispatcherContinuationDoesNotIntroduceAnotherStorageOwner()
     {
@@ -191,6 +223,26 @@ public sealed class TerminalBranchValueFramePlannerTests
         Assert.Equal(StructuredBlockRole.Owner,
             ((StructuredCode)method.Body.Regions[1]).Occurrence.Role);
     }
+
+    // Regions before the if that need no frame (a method's argument checks) run without one, and the if places
+    // the frame in its arm as a leading if would.
+    [Fact]
+    public void AnIfAfterRegionsThatNeedNoFramePlacesItsFrameAfterThem()
+    {
+        var method = WithPrefix(Method(), I(40, CilOperation.Nop));
+
+        var plan = Assert.IsType<TerminalBranchValueFramePlan>(_planner.Plan(method, Layout(), _roots, copyTails: true));
+
+        Assert.Same(method.Body.Regions[0], Assert.Single(plan.UnframedPrefix!.Regions));
+        Assert.Equal(((StructuredIf)method.Body.Regions[1]).Condition, plan.Condition);
+        Assert.True(plan.FramedWhenTrue);
+    }
+
+    // A region before the if that takes the framed local's address needs the frame from the method's entry.
+    [Fact]
+    public void ARegionBeforeTheIfThatNeedsTheFrameKeepsItAtTheEntry() =>
+        Assert.Null(_planner.Plan(WithPrefix(Method(), I(40, CilOperation.LoadLocalAddress, new CilOperand.Index(0))),
+            Layout(), _roots, copyTails: true));
 
     // When both arms leave the method, no tail follows the branch for a frame to move into: nothing is placed.
     [Fact]
@@ -553,6 +605,16 @@ public sealed class TerminalBranchValueFramePlannerTests
             new([new StructuredIf(new(new(0), StructuredBlockRole.Owner),
                 new([Code(1)]), new([Code(2)])), Code(3)]), [], [], []);
     }
+
+    // The method with a block before its if: the instruction, then the if's condition block.
+    private static StructuredMethod WithPrefix(StructuredMethod method, CilInstruction instruction) => method with
+    {
+        Header = method.Header with { Instructions = [instruction, .. method.Header.Instructions] },
+        EntryBlock = new(4),
+        Blocks = method.Blocks.Add(new(4), Block(4, instruction.Operation == CilOperation.LoadLocalAddress
+            ? [instruction, I(41, CilOperation.Pop)] : [instruction], new StructuredFallthroughExit(new(0)))),
+        Body = new([Code(4), .. method.Body.Regions]),
+    };
 
     private static StructuredCode Code(int id) => new(new(new(id), StructuredBlockRole.Owner));
 

@@ -25,12 +25,15 @@ public sealed class ArrayCreateRectangularInstanceIntrinsicEmitterTests
         var layout = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var integer = CliTypeIdentity.FromStackKind(CliValueKind.I4);
         var text = CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, false);
+        var wide = CliTypeIdentity.FromStackKind(CliValueKind.I8);
+        // An array of references is the shared array of its rank, so string[,,] takes no case here.
         var descriptors = new Descriptors([
             new(integer, 1, 0, 16, [], null),
             new(CliTypeIdentity.SzArray(integer), 76, 0, 16, [], null),
             new(CliTypeIdentity.Array(CliTypeIdentity.GenericParameter(false, 0), 2), 66, 0, 16, [], null),
             new(CliTypeIdentity.Array(integer, 2), 77, 0, 16, [], null),
-            new(CliTypeIdentity.Array(text, 3), 88, 0, 16, [], null)]);
+            new(CliTypeIdentity.Array(wide, 3), 88, 0, 16, [], null),
+            new(CliTypeIdentity.Array(text, 3), 89, 0, 16, [], null)]);
         var roots = new RecordingRoots();
         var addresses = new RecordingAddresses();
         var exceptions = new RecordingExceptions();
@@ -60,7 +63,7 @@ public sealed class ArrayCreateRectangularInstanceIntrinsicEmitterTests
             code.Where(i => i.Opcode == WasmOpcodes.I64Constant).Select(i => i.Operand.Signed64Value));
         Assert.Contains(code, i => i.Opcode == WasmOpcodes.I32Constant && i.Operand.SignedValue == 77);
         Assert.Contains(code, i => i.Opcode == WasmOpcodes.I32Constant && i.Operand.SignedValue == 88);
-        Assert.DoesNotContain(code, i => i.Opcode == WasmOpcodes.I32Constant && i.Operand.SignedValue is 76 or 66);
+        Assert.DoesNotContain(code, i => i.Opcode == WasmOpcodes.I32Constant && i.Operand.SignedValue is 76 or 66 or 89);
         Assert.Equal(4, code.Count(i => i.Opcode == WasmOpcodes.LocalGet &&
             i.Operand.UnsignedValue == (uint)request.Local(2, CliValueKind.NativeInt)));
         Assert.Equal(2, code.Count(i => i.Opcode == WasmOpcodes.LocalGet &&

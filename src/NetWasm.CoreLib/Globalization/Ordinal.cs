@@ -448,5 +448,9 @@ namespace System.Globalization
                 }
             }
         }
+
+        // NLS only, as CompareInfo.NlsGetSortHandle: Rune's ToUpper and ToLower call it only when GlobalizationMode.UseNls,
+        // which NetWasm's invariant mode never is.
+        internal static uint PreserveNlsOrdinalCasingClass(uint source, uint destination) => throw new PlatformNotSupportedException();
     }
 }

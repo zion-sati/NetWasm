@@ -17,6 +17,7 @@ internal sealed class ReachableMethodAnalyzerFactory(
     Arrays.IArrayBoundsCheckEliminatorFactory arrayBounds,
     Arrays.IRepeatedArrayAccessEliminatorFactory repeatedAccesses,
     NullChecks.IConstructedObjectNullCheckEliminatorFactory constructedObjects,
+    NullChecks.IByRefNullCheckEliminatorFactory byRefNullChecks,
     IIntegerCheckEliminatorFactory integerChecks,
     ILogger<DiagnosticReachableMethodAnalyzer> logger) : IReachableMethodAnalyzerFactory
 {
@@ -26,12 +27,14 @@ internal sealed class ReachableMethodAnalyzerFactory(
         Arrays.IArrayBoundsCheckEliminatorFactory arrayBounds,
         Arrays.IRepeatedArrayAccessEliminatorFactory repeatedAccesses,
         NullChecks.IConstructedObjectNullCheckEliminatorFactory constructedObjects,
+        NullChecks.IByRefNullCheckEliminatorFactory byRefNullChecks,
         IIntegerCheckEliminatorFactory integerChecks) : this(
             stackValidators,
             graphBuilders,
             arrayBounds,
             repeatedAccesses,
             constructedObjects,
+            byRefNullChecks,
             integerChecks,
             NullLogger<DiagnosticReachableMethodAnalyzer>.Instance)
     {
@@ -47,6 +50,8 @@ internal sealed class ReachableMethodAnalyzerFactory(
         throw new ArgumentNullException(nameof(repeatedAccesses));
     private readonly NullChecks.IConstructedObjectNullCheckEliminatorFactory _constructedObjects = constructedObjects ??
         throw new ArgumentNullException(nameof(constructedObjects));
+    private readonly NullChecks.IByRefNullCheckEliminatorFactory _byRefNullChecks = byRefNullChecks ??
+        throw new ArgumentNullException(nameof(byRefNullChecks));
     private readonly IIntegerCheckEliminatorFactory _integerChecks = integerChecks ??
         throw new ArgumentNullException(nameof(integerChecks));
     private readonly ILogger<DiagnosticReachableMethodAnalyzer> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -59,6 +64,7 @@ internal sealed class ReachableMethodAnalyzerFactory(
         IMethodSpecializer specializer,
         IManagedMethodOptimizer optimizer,
         ICalledMethodResolver calledMethods,
+        IRuntimeIntrinsicRegistry intrinsics,
         WasmOptimizationSettings settings,
         IImplicitExceptionDiscovery exceptionDiscovery,
         IReachabilityInstructionAnalyzer instructionAnalyzer) =>
@@ -71,7 +77,7 @@ internal sealed class ReachableMethodAnalyzerFactory(
             specializer,
             optimizer,
             // A body a whole-program reduction rewrote finds its proofs again.
-            CreateProofs(types, fields, methods, calledMethods, settings),
+            CreateProofs(types, fields, methods, calledMethods, intrinsics, settings),
             exceptionDiscovery,
             _stackValidators,
             _graphBuilders.Create(),
@@ -84,15 +90,17 @@ internal sealed class ReachableMethodAnalyzerFactory(
         IFieldRepository fields,
         IMethodRepository methods,
         ICalledMethodResolver calledMethods,
+        IRuntimeIntrinsicRegistry intrinsics,
         WasmOptimizationSettings settings)
     {
         var graphBuilder = _graphBuilders.Create();
         var stackValidator = _stackValidators.Create(types, fields, methods);
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
         return new(
             _arrayBounds.Create(graphBuilder, stackValidator, dominance, settings),
             _repeatedAccesses.Create(graphBuilder, stackValidator, dominance, calledMethods, settings),
             _constructedObjects.Create(graphBuilder, stackValidator, dominance, calledMethods, settings),
+            _byRefNullChecks.Create(graphBuilder, stackValidator, dominance, calledMethods, intrinsics, settings),
             _integerChecks.Create(graphBuilder, stackValidator, calledMethods, settings));
     }
 }
