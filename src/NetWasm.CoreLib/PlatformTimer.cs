@@ -76,7 +76,7 @@ namespace System.Runtime.InteropServices
             }
 
             _changeVersion = unchecked(_changeVersion + 1);
-            _schedule?.Dispose();
+            _schedule?.Cancel();
             _schedule = null;
             _period = period;
             Schedule(dueTime);
@@ -91,7 +91,7 @@ namespace System.Runtime.InteropServices
             }
 
             _disposed = true;
-            _schedule?.Dispose();
+            _schedule?.Cancel();
             _schedule = null;
         }
 

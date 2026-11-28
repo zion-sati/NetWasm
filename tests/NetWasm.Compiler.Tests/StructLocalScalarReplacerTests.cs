@@ -72,20 +72,20 @@ public sealed class StructLocalScalarReplacerTests
         if (shape.Contains("a field of its type", StringComparison.Ordinal))
         {
             Assert.Contains(rewritten.Instructions, instruction => instruction is
-                { Operation: CilOperation.LoadFieldAddress, Operand: CilOperand.FieldInstance { Value: var field } } &&
+            { Operation: CilOperation.LoadFieldAddress, Operand: CilOperand.FieldInstance { Value: var field } } &&
                 field.Definition.Name == "P");
         }
         // Each path copies its value field by field into the join's target, and the join stores nothing.
         if (shape.StartsWith("join", StringComparison.Ordinal))
         {
             Assert.DoesNotContain(rewritten.Instructions, instruction => instruction is
-                { Operation: CilOperation.LoadLocal or CilOperation.StoreLocal, Operand: CilOperand.Index { Value: var local } } &&
+            { Operation: CilOperation.LoadLocal or CilOperation.StoreLocal, Operand: CilOperand.Index { Value: var local } } &&
                 local < body.LocalSignatureTypes.Length && body.LocalSignatureTypes[local].Equals(Pair.Type));
         }
         if (shape.StartsWith("whole value", StringComparison.Ordinal))
         {
             Assert.DoesNotContain(rewritten.Instructions, instruction => instruction is
-                { Operation: CilOperation.LoadLocal or CilOperation.StoreLocal, Operand: CilOperand.Index { Value: 0 } });
+            { Operation: CilOperation.LoadLocal or CilOperation.StoreLocal, Operand: CilOperand.Index { Value: 0 } });
         }
     }
 

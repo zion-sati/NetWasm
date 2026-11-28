@@ -153,7 +153,7 @@ public sealed class RuntimeAsyncBodyBuilderTests : IDisposable
         // Only local 3 is saved, besides the await's own temporary: the frame's type keeps an int and a Task in fields
         // of their own types, RuntimeAsyncFrame<RuntimeAsyncSlots<int, Task>, Task>, made from the method's delegate.
         var newFrame = lowered.Instructions.ToList().FindIndex(instruction => instruction is
-            { Operation: CilOperation.NewObject, Operand: CilOperand.MethodInstance { Value.DeclaringType.ElementType.FullName: { } name } } &&
+        { Operation: CilOperation.NewObject, Operand: CilOperand.MethodInstance { Value.DeclaringType.ElementType.FullName: { } name } } &&
             name.StartsWith("System.Runtime.CompilerServices.RuntimeAsyncFrame", StringComparison.Ordinal));
         var frameType = Assert.IsType<CilOperand.MethodInstance>(lowered.Instructions[newFrame].Operand).Value.DeclaringType;
         Assert.Equal(["System.Runtime.CompilerServices.RuntimeAsyncSlots`2", "System.Threading.Tasks.Task"],
@@ -165,7 +165,7 @@ public sealed class RuntimeAsyncBodyBuilderTests : IDisposable
         Assert.Equal(1, Stores(lowered, "Item1"));
         Assert.Equal(2, Stores(lowered, "Item2"));
         Assert.Equal(1, lowered.Instructions.Count(instruction => instruction is
-            { Operation: CilOperation.LoadField, Operand: CilOperand.FieldInstance { Value.Definition.Name: "Item2" } }));
+        { Operation: CilOperation.LoadField, Operand: CilOperand.FieldInstance { Value.Definition.Name: "Item2" } }));
         Assert.DoesNotContain(lowered.Instructions, instruction => instruction.Operation is CilOperation.Box or CilOperation.UnboxAny);
         // The frame is made at an activation's first suspension only: a later one, or a resumed activation's, branches
         // past its construction to reuse it, one call suspends it after its saves (where it resumes, the subscription,
@@ -261,13 +261,15 @@ public sealed class RuntimeAsyncBodyBuilderTests : IDisposable
             definition.Signature);
         var stubKey = new EntityKey(Assembly, RuntimeAsyncResumers.Token(0x06000001));
         var stub = new MethodDefinitionModel(stubKey, new(Assembly, 0x02000002), "<resume>M", true,
-            new MethodSignatureModel(task, []), 0) { RuntimeAsyncResumer = definition.Key };
+            new MethodSignatureModel(task, []), 0)
+        { RuntimeAsyncResumer = definition.Key };
         var body = new CilMethodBody(definition, 4, [],
         [
             new(0, 1, CilOperation.LoadNull, new CilOperand.None()),
             new(1, 2, CilOperation.Call, new CilOperand.MethodInstance(AwaitTask())),
             new(2, 3, CilOperation.Return, new CilOperand.None()),
-        ]) { MethodInstance = method };
+        ])
+        { MethodInstance = method };
         var builder = new RuntimeAsyncBodyBuilder(() => _members, () => _frames, _definitions, new CilBodyLayout(), new Symbols(),
             new Stubs([stub]), _fields,
             new MetadataStackTypeResolver(_definitions), new AnyRuntimeAsyncMethodMaySuspend(), Guards(), DirectSites());
@@ -432,7 +434,8 @@ public sealed class RuntimeAsyncBodyBuilderTests : IDisposable
         var method = new MethodInstanceModel(definition, CliTypeIdentity.Named(Assembly, "", "Shapes", false), [],
             definition.Signature);
         var calleeDefinition = new MethodDefinitionModel(new(Assembly, 0x06000002), new(Assembly, 0x02000002), "N",
-            false, new MethodSignatureModel(task, []), 0) { IsVirtual = true };
+            false, new MethodSignatureModel(task, []), 0)
+        { IsVirtual = true };
         var callee = new CilOperand.MethodInstance(new MethodInstanceModel(calleeDefinition,
             CliTypeIdentity.Named(Assembly, "", "Shapes", false), [], calleeDefinition.Signature));
         var body = new CilMethodBody(definition, 2, [],
@@ -444,7 +447,8 @@ public sealed class RuntimeAsyncBodyBuilderTests : IDisposable
             new(2, 3, CilOperation.CallVirtual, callee),
             new(3, 4, CilOperation.Call, new CilOperand.MethodInstance(AwaitTask())),
             new(4, 5, CilOperation.Return, new CilOperand.None()),
-        ]) { MethodInstance = method };
+        ])
+        { MethodInstance = method };
         var builder = new RuntimeAsyncBodyBuilder(() => _members, () => _frames, _definitions, new CilBodyLayout(), new Symbols(),
             new Stubs([]), _fields,
             new MetadataStackTypeResolver(_definitions), new AnyRuntimeAsyncMethodMaySuspend(), Guards(), DirectSites());
@@ -474,7 +478,8 @@ public sealed class RuntimeAsyncBodyBuilderTests : IDisposable
         var method = new MethodInstanceModel(definition, CliTypeIdentity.Named(Assembly, "", "Shapes", false), [],
             definition.Signature);
         var calleeDefinition = new MethodDefinitionModel(new(Assembly, 0x06000002), new(Assembly, 0x02000002), "N", true,
-            new MethodSignatureModel(task, []), 0) { IsRuntimeAsync = true };
+            new MethodSignatureModel(task, []), 0)
+        { IsRuntimeAsync = true };
         var callee = new CilOperand.MethodInstance(new MethodInstanceModel(calleeDefinition,
             CliTypeIdentity.Named(Assembly, "", "Shapes", false), [], calleeDefinition.Signature));
         var taskType = _types.FindType("System.Threading.Tasks.Task");
@@ -495,7 +500,8 @@ public sealed class RuntimeAsyncBodyBuilderTests : IDisposable
             new(3, 4, CilOperation.Call, new CilOperand.MethodInstance(new MethodInstanceModel(awaitConfigured,
                 CliTypeIdentity.FromDefinition(helpers), [], awaitConfigured.Signature))),
             new(4, 5, CilOperation.Return, new CilOperand.None()),
-        ]) { MethodInstance = method };
+        ])
+        { MethodInstance = method };
         var builder = new RuntimeAsyncBodyBuilder(() => _members, () => _frames, _definitions, new CilBodyLayout(), new Symbols(),
             new Stubs([]), _fields,
             new MetadataStackTypeResolver(_definitions), new AnyRuntimeAsyncMethodMaySuspend(), Guards(), DirectSites());
@@ -526,7 +532,8 @@ public sealed class RuntimeAsyncBodyBuilderTests : IDisposable
         var method = new MethodInstanceModel(definition, CliTypeIdentity.Named(Assembly, "", "Shapes", false), [],
             definition.Signature);
         var calleeDefinition = new MethodDefinitionModel(new(Assembly, 0x06000002), new(Assembly, 0x02000002), "N", true,
-            new MethodSignatureModel(valueTask, []), 0) { IsRuntimeAsync = true };
+            new MethodSignatureModel(valueTask, []), 0)
+        { IsRuntimeAsync = true };
         var callee = new CilOperand.MethodInstance(new MethodInstanceModel(calleeDefinition,
             CliTypeIdentity.Named(Assembly, "", "Shapes", false), [], calleeDefinition.Signature));
         var valueTaskType = _types.FindType("System.Threading.Tasks.ValueTask");
@@ -689,12 +696,15 @@ public sealed class RuntimeAsyncBodyBuilderTests : IDisposable
             MethodInstance = method,
         };
         if (value == "conversion")
-            body = body with { Instructions = [new(0, 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(300)),
+            body = body with
+            {
+                Instructions = [new(0, 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(300)),
                 .. body.Instructions.Select(instruction => instruction with
                 {
                     Offset = instruction.Offset + 1,
                     NextOffset = instruction.NextOffset + 1,
-                })] };
+                })]
+            };
         var builder = new RuntimeAsyncBodyBuilder(() => _members, () => _frames, _definitions, new CilBodyLayout(), new Symbols(),
             new Stubs([]), _fields,
             new MetadataStackTypeResolver(_definitions), new AnyRuntimeAsyncMethodMaySuspend(), Guards(), DirectSites());
@@ -761,5 +771,5 @@ public sealed class RuntimeAsyncBodyBuilderTests : IDisposable
     }
 
     private static int Stores(CilMethodBody body, string field) => body.Instructions.Count(instruction => instruction is
-        { Operation: CilOperation.StoreField, Operand: CilOperand.FieldInstance { Value.Definition.Name: var name } } && name == field);
+    { Operation: CilOperation.StoreField, Operand: CilOperand.FieldInstance { Value.Definition.Name: var name } } && name == field);
 }

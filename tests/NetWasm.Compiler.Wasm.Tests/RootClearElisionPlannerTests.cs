@@ -292,7 +292,8 @@ public sealed class RootClearElisionPlannerTests
             new(1, [Source], []) { Deferrable = [Source] },
             new(2, [Source], []),
             new(3, [Source], []) { Deferrable = [Source] },
-        ]) with { RootFrameStartsZeroed = zeroed };
+        ]) with
+        { RootFrameStartsZeroed = zeroed };
 
         var plan = _planner.Plan(Method(Enumerable.Range(0, 4).Select(i => I(i, CilOperation.Call)).ToImmutableArray()), context);
 

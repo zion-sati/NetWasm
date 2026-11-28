@@ -54,7 +54,8 @@ public sealed class FallbackPublicationClassifierTests
     {
         var blocks = ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>.Empty
             .Add(new(0), new(new(0), 0, [I(0, CilOperation.NewObject), I(1, CilOperation.Call)], [],
-                new StructuredTerminalExit(I(2, CilOperation.Return))) { EndOffset = 2 });
+                new StructuredTerminalExit(I(2, CilOperation.Return)))
+            { EndOffset = 2 });
         var definition = new MethodDefinitionModel(EntryKey, TypeKey, "Run", true, MethodSignatureModel.Create(CliValueKind.Void), 1);
         return new(new(definition, null, 1, [], [], []), new(0), blocks, StructuredSequence.Empty, [], [], []);
     }

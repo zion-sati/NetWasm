@@ -99,7 +99,8 @@ public sealed class RootMapAnalyzer(
                 block,
                 instruction,
                 allocatingMethods,
-                allocatingConstructedMethods) { IgnoresHandlers = true });
+                allocatingConstructedMethods)
+            { IgnoresHandlers = true });
             selected.Add((instruction, entryStack, calleeRooted, throwsOnly ? block : null));
         }
         var storage = selected.Count == 0

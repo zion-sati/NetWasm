@@ -287,12 +287,12 @@ internal sealed class ReceiverFlowSummarizer(
                     Push(LoadField(instruction.Operand));
                     return;
                 case CilOperation.StoreField:
-                {
-                    var value = Pop();
-                    Pop();
-                    StoreField(instruction.Operand, value);
-                    return;
-                }
+                    {
+                        var value = Pop();
+                        Pop();
+                        StoreField(instruction.Operand, value);
+                        return;
+                    }
                 case CilOperation.StoreStaticField:
                     StoreField(instruction.Operand, Pop());
                     return;
@@ -304,70 +304,70 @@ internal sealed class ReceiverFlowSummarizer(
                     Push(FieldAddress(instruction.Operand));
                     return;
                 case CilOperation.LoadObject:
-                {
-                    var address = Pop();
-                    var type = TypeOf(instruction);
-                    Push(type is not null && !IsReference(type) ? Slot.Empty
-                        : address.Address is { } node ? Slot.Of(new FlowSource.Node(node, []))
-                        : Bounded(type, PointeeOf(address), "load through an address of unknown origin"));
-                    return;
-                }
+                    {
+                        var address = Pop();
+                        var type = TypeOf(instruction);
+                        Push(type is not null && !IsReference(type) ? Slot.Empty
+                            : address.Address is { } node ? Slot.Of(new FlowSource.Node(node, []))
+                            : Bounded(type, PointeeOf(address), "load through an address of unknown origin"));
+                        return;
+                    }
                 // Array elements have no nodes: an element, or a load through an element's address, is what the
                 // array's declared type holds.
                 case CilOperation.LoadArrayElementReference:
-                {
-                    Escape(Pop());
-                    var array = Pop();
-                    Escape(array);
-                    Push(Bounded(null, ElementOf(array), "array element"));
-                    return;
-                }
+                    {
+                        Escape(Pop());
+                        var array = Pop();
+                        Escape(array);
+                        Push(Bounded(null, ElementOf(array), "array element"));
+                        return;
+                    }
                 case CilOperation.LoadArrayElementAddress when TypeOf(instruction) is { } element:
                     Escape(Pop());
                     Escape(Pop());
                     Push(Slot.Empty with { Declared = Declaring(CliTypeIdentity.ManagedByReference(element)) });
                     return;
                 case CilOperation.StoreObject:
-                {
-                    var value = Pop();
-                    var address = Pop();
-                    if (address.Address is { } node) Flow(value, node, null);
-                    else Escape(value);
-                    return;
-                }
-                case CilOperation.CopyObject:
-                {
-                    var source = Pop();
-                    var destination = Pop();
-                    var type = TypeOf(instruction);
-                    if (type is not null && IsReference(type) && destination.Address is { } node)
                     {
-                        if (source.Address is { } from) _edges.Add(new(new FlowSource.Node(from, []), node, type));
-                        else Seed(node, type, "copy from an address of unknown origin");
+                        var value = Pop();
+                        var address = Pop();
+                        if (address.Address is { } node) Flow(value, node, null);
+                        else Escape(value);
+                        return;
                     }
-                    return;
-                }
+                case CilOperation.CopyObject:
+                    {
+                        var source = Pop();
+                        var destination = Pop();
+                        var type = TypeOf(instruction);
+                        if (type is not null && IsReference(type) && destination.Address is { } node)
+                        {
+                            if (source.Address is { } from) _edges.Add(new(new FlowSource.Node(from, []), node, type));
+                            else Seed(node, type, "copy from an address of unknown origin");
+                        }
+                        return;
+                    }
                 case CilOperation.InitializeObject:
                     Pop();
                     return;
                 case CilOperation.CompareExchange:
-                {
-                    var comparand = Pop();
-                    var value = Pop();
-                    var address = Pop();
-                    Escape(comparand);
-                    if (address.Address is { } node)
                     {
-                        Flow(value, node, null);
-                        Push(Slot.Of(new FlowSource.Node(node, [])));
+                        var comparand = Pop();
+                        var value = Pop();
+                        var address = Pop();
+                        Escape(comparand);
+                        if (address.Address is { } node)
+                        {
+                            Flow(value, node, null);
+                            Push(Slot.Of(new FlowSource.Node(node, [])));
+                        }
+                        else
+                        {
+                            Escape(value);
+                            Push(Slot.Top(null, "compare-exchange through an address of unknown origin"));
+                        }
+                        return;
                     }
-                    else
-                    {
-                        Escape(value);
-                        Push(Slot.Top(null, "compare-exchange through an address of unknown origin"));
-                    }
-                    return;
-                }
                 case CilOperation.Call or CilOperation.CallVirtual:
                     Call(instruction);
                     return;
@@ -392,35 +392,35 @@ internal sealed class ReceiverFlowSummarizer(
                     Push(WithDeclared(Cast(Pop(), castType), castType));
                     return;
                 case CilOperation.UnboxAny when TypeOf(instruction) is { } unboxed:
-                {
-                    var value = Pop();
-                    Push(IsReference(unboxed) ? Cast(value, unboxed) : Slot.Empty);
-                    return;
-                }
-                case CilOperation.Box when TypeOf(instruction) is { } boxed:
-                {
-                    var value = Pop();
-                    // A box of a reference type leaves the reference; a boxed Nullable<T> is a boxed T (or null).
-                    if (IsReference(boxed))
                     {
-                        Push(value);
+                        var value = Pop();
+                        Push(IsReference(unboxed) ? Cast(value, unboxed) : Slot.Empty);
                         return;
                     }
-                    if (boxed is { Shape: CliTypeShape.GenericInstantiation, ElementType.FullName: "System.Nullable`1" } &&
-                        boxed.TypeArguments.Length == 1)
+                case CilOperation.Box when TypeOf(instruction) is { } boxed:
                     {
-                        boxed = boxed.TypeArguments[0];
+                        var value = Pop();
+                        // A box of a reference type leaves the reference; a boxed Nullable<T> is a boxed T (or null).
+                        if (IsReference(boxed))
+                        {
+                            Push(value);
+                            return;
+                        }
+                        if (boxed is { Shape: CliTypeShape.GenericInstantiation, ElementType.FullName: "System.Nullable`1" } &&
+                            boxed.TypeArguments.Length == 1)
+                        {
+                            boxed = boxed.TypeArguments[0];
+                        }
+                        Push(Slot.Of(new FlowSource.Object(new FlowObject.Exact(boxed))));
+                        return;
                     }
-                    Push(Slot.Of(new FlowSource.Object(new FlowObject.Exact(boxed))));
-                    return;
-                }
                 case CilOperation.NewArray when TypeOf(instruction) is { } element:
-                {
-                    Pop();
-                    var array = CliTypeIdentity.SzArray(element);
-                    Push(Slot.Of(new FlowSource.Object(new FlowObject.Exact(array))) with { Declared = Declaring(array) });
-                    return;
-                }
+                    {
+                        Pop();
+                        var array = CliTypeIdentity.SzArray(element);
+                        Push(Slot.Of(new FlowSource.Object(new FlowObject.Exact(array))) with { Declared = Declaring(array) });
+                        return;
+                    }
                 case CilOperation.Return:
                     // A runtime-async method returning a task without a value has nothing on the stack at its ret.
                     if (body.Method.Signature.ReturnType != CliValueKind.Void && _stack.Count > 0)
@@ -750,19 +750,19 @@ internal sealed class ReceiverFlowSummarizer(
             switch (operand)
             {
                 case CilOperand.FieldInstance { Value: var field }:
-                {
-                    var name = field.DeclaringType.TypeArguments.IsDefaultOrEmpty
-                        ? field.Definition.Key.ToString()
-                        : $"{field.Definition.Key}|{field.DeclaringType.CanonicalName}";
-                    return (new FlowNodeKey(FlowNodeKind.Field, name), field.FieldType,
-                        field.Definition.ExplicitOffset is not null, owner._runtimeFields.IsWritten(field.Definition));
-                }
+                    {
+                        var name = field.DeclaringType.TypeArguments.IsDefaultOrEmpty
+                            ? field.Definition.Key.ToString()
+                            : $"{field.Definition.Key}|{field.DeclaringType.CanonicalName}";
+                        return (new FlowNodeKey(FlowNodeKind.Field, name), field.FieldType,
+                            field.Definition.ExplicitOffset is not null, owner._runtimeFields.IsWritten(field.Definition));
+                    }
                 case CilOperand.Entity { Key: var key }:
-                {
-                    var field = owner._fields.GetField(key);
-                    return (new FlowNodeKey(FlowNodeKind.Field, key.ToString()), field.SignatureType,
-                        field.ExplicitOffset is not null, owner._runtimeFields.IsWritten(field));
-                }
+                    {
+                        var field = owner._fields.GetField(key);
+                        return (new FlowNodeKey(FlowNodeKind.Field, key.ToString()), field.SignatureType,
+                            field.ExplicitOffset is not null, owner._runtimeFields.IsWritten(field));
+                    }
                 default:
                     return null;
             }

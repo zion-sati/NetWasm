@@ -686,6 +686,7 @@
     <Compile Include="Runtime/InteropServices/Input/WasiStandardInputInvokers.cs" />
     <Compile Include="Runtime/InteropServices/Input/WasiStandardInputReader.cs" />
     <Compile Include="Runtime/InteropServices/Streams/IWasiByteStreamReadInvoker.cs" />
+    <Compile Include="Runtime/InteropServices/Streams/WasiStreamKinds.cs" />
     <Compile Include="Runtime/InteropServices/Streams/IWasiByteStreamReadableDropInvoker.cs" />
     <Compile Include="Runtime/InteropServices/Streams/WasiReadableStreamEnds.cs" />
     <Compile Include="CommandWorldScheduler.cs" />

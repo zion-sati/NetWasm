@@ -385,30 +385,30 @@ internal static class StackTypeTableAssemblyBuilder
                 code.Emit(OpCodes.Conv_I8);
                 goto case StackKind.Int64;
             case StackKind.Int64:
-            {
-                var wide = code.DeclareLocal(typeof(long));
-                code.Emit(OpCodes.Stloc, wide);
-                code.Emit(OpCodes.Ldloc, wide);
-                code.Emit(OpCodes.Conv_I4);
-                code.Emit(OpCodes.Ldloc, wide);
-                code.Emit(OpCodes.Ldc_I4, 32);
-                code.Emit(OpCodes.Shr);
-                code.Emit(OpCodes.Conv_I4);
-                code.Emit(OpCodes.Ldc_I4, 1_000_003);
-                code.Emit(OpCodes.Mul);
-                code.Emit(OpCodes.Xor);
-                return;
-            }
+                {
+                    var wide = code.DeclareLocal(typeof(long));
+                    code.Emit(OpCodes.Stloc, wide);
+                    code.Emit(OpCodes.Ldloc, wide);
+                    code.Emit(OpCodes.Conv_I4);
+                    code.Emit(OpCodes.Ldloc, wide);
+                    code.Emit(OpCodes.Ldc_I4, 32);
+                    code.Emit(OpCodes.Shr);
+                    code.Emit(OpCodes.Conv_I4);
+                    code.Emit(OpCodes.Ldc_I4, 1_000_003);
+                    code.Emit(OpCodes.Mul);
+                    code.Emit(OpCodes.Xor);
+                    return;
+                }
             case StackKind.Float32:
             case StackKind.Float64:
-            {
-                var real = code.DeclareLocal(typeof(double));
-                code.Emit(OpCodes.Conv_R8);
-                code.Emit(OpCodes.Stloc, real);
-                code.Emit(OpCodes.Ldloca, real);
-                code.Emit(OpCodes.Ldind_I8);
-                goto case StackKind.Int64;
-            }
+                {
+                    var real = code.DeclareLocal(typeof(double));
+                    code.Emit(OpCodes.Conv_R8);
+                    code.Emit(OpCodes.Stloc, real);
+                    code.Emit(OpCodes.Ldloca, real);
+                    code.Emit(OpCodes.Ldind_I8);
+                    goto case StackKind.Int64;
+                }
             case StackKind.Address:
                 code.Emit(OpCodes.Ldind_I4);
                 return;

@@ -242,7 +242,8 @@ namespace System.Text
                 case 28591: return SR.Globalization_cp_28591;
                 case 65000: return SR.Globalization_cp_65000;
                 case 65001: return SR.Globalization_cp_65001;
-            };
+            }
+            ;
 
             Debug.Fail("Unexpected code page");
             return "";

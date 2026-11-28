@@ -3,7 +3,8 @@
 
 namespace System.Runtime.InteropServices.Output;
 
-internal interface IWasiOutputStreamHandOffInvoker
+// TStream names the stream (Streams.WasiStreamKinds): an implementation serves one stream only.
+internal interface IWasiOutputStreamHandOffInvoker<TStream>
 {
     // Gives the host the readable end and returns the completion future.
     int HandOff(int readable);

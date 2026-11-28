@@ -85,7 +85,8 @@ public sealed class RuntimeAsyncSeparateBodyTests : IDisposable
         var source = new CilMethodBody(method.Definition, 1, [],
         [
             new(0, 1, CilOperation.Return, new CilOperand.None()),
-        ]) { MethodInstance = method };
+        ])
+        { MethodInstance = method };
 
         var lowered = Builder(new Repository(method.Definition, body)).Build(bodyInstance,
             source with { Instructions = [new(0, 1, CilOperation.Call, new CilOperand.MethodInstance(CompletedTask())), new(1, 2, CilOperation.Return, new CilOperand.None())] });
@@ -107,7 +108,8 @@ public sealed class RuntimeAsyncSeparateBodyTests : IDisposable
     {
         var (callee, calleeBody) = Pair(0x06000003, isStatic, []);
         var caller = Instance(new MethodDefinitionModel(new(Assembly, 0x06000004), new(Assembly, 0x02000002), "Caller", true,
-            new MethodSignatureModel(Identity("System.Threading.Tasks.Task"), []), 1) { IsRuntimeAsync = true });
+            new MethodSignatureModel(Identity("System.Threading.Tasks.Task"), []), 1)
+        { IsRuntimeAsync = true });
         ImmutableArray<CilInstruction> instructions = isStatic
             ?
             [

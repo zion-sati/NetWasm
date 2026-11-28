@@ -119,6 +119,7 @@ internal sealed class MethodSpecializerFactory(
             new ExecutingAssemblyCallRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols,
                 typeIdentities),
             new PlatformWorldCallRewriter(calledMethods, symbols, world),
+            new HardwareIntrinsicSupportCallRewriter(calledMethods, symbols),
             new FeatureSwitchCallRewriter(_graphBuilders.Create(), calledMethods, effectFreeLoads, featureSwitches),
             new RuntimeConfigurationRewriter(symbols, world.RuntimeProperties),
             new PlatformServices.PlatformServiceBindingRewriter(calledMethods, symbols, world),
@@ -158,12 +159,9 @@ internal sealed class MethodSpecializerFactory(
             new EnumEqualsCallRewriter(typeDefinitions, calledMethods, symbols,
                 optimizationSettings.AllocationElimination != AllocationEliminationPolicy.Disabled),
             new BoxedReceiverCallRewriter(
-                typeDefinitions,
                 methods,
-                calledMethods,
                 new NullableTypeResolver(),
                 relationships,
-                constrainedTargets,
                 stackEffects),
             new ConstrainedCallRewriter(
                 types,
@@ -171,7 +169,8 @@ internal sealed class MethodSpecializerFactory(
                 methods,
                 methodInstances,
                 symbols,
-                constrainedTargets),
+                constrainedTargets,
+                intrinsics),
             new ClosedTypeComparisonRewriter(
                 _graphBuilders.Create(),
                 calledMethods,

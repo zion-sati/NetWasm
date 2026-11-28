@@ -3,14 +3,14 @@
 
 namespace System.Runtime.InteropServices.Output;
 
-internal sealed class WasiOutputStreamOpener : IWasiOutputStreamOpener
+internal sealed class WasiOutputStreamOpener<TStream> : IWasiOutputStreamOpener<TStream>
 {
-    private readonly IWasiOutputStreamCreateInvoker _create;
-    private readonly IWasiOutputStreamHandOffInvoker _handOff;
+    private readonly IWasiOutputStreamCreateInvoker<TStream> _create;
+    private readonly IWasiOutputStreamHandOffInvoker<TStream> _handOff;
 
     internal WasiOutputStreamOpener(
-        IWasiOutputStreamCreateInvoker create,
-        IWasiOutputStreamHandOffInvoker handOff)
+        IWasiOutputStreamCreateInvoker<TStream> create,
+        IWasiOutputStreamHandOffInvoker<TStream> handOff)
     {
         _create = create ?? throw new ArgumentNullException();
         _handOff = handOff ?? throw new ArgumentNullException();

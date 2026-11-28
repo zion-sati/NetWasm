@@ -79,9 +79,9 @@ internal sealed class AttributeQueryLowerer(
                         break;
                     case AttributeQueryAnswer.Unbuildable { Broad: false, Exception: var unbuildable }:
                         throw unbuildable;
-                    // An attribute the program did not name that cannot be built here, or a target or filter the body
-                    // does not name: the query keeps its fallback, and the settled program reports it
-                    // (UnplannedAttributeQueryFinder, NW1019) unless the reducer answers it there.
+                        // An attribute the program did not name that cannot be built here, or a target or filter the body
+                        // does not name: the query keeps its fallback, and the settled program reports it
+                        // (UnplannedAttributeQueryFinder, NW1019) unless the reducer answers it there.
                 }
             }
             catch (CompilerException exception)

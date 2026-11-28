@@ -394,7 +394,7 @@ namespace System.Runtime.InteropServices
 
         private sealed class UnpumpedWork : IPlatformSchedule
         {
-            public void Dispose()
+            public void Cancel()
             {
             }
         }
@@ -445,7 +445,7 @@ namespace System.Runtime.InteropServices
             return true;
         }
 
-        public void Dispose()
+        public void Cancel()
         {
             if (_active)
             {

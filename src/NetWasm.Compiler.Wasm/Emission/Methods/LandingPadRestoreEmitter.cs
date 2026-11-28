@@ -58,50 +58,50 @@ internal sealed class LandingPadRestoreEmitter(ITargetLayout layouts, IRuntimeIm
                     Read(code, RuntimeImportSymbol.FrameMarkStackTrace, method.StackTrace, context);
                 return;
             case LandingPadRestoreStep.BlockEntry:
-            {
-                var (plan, marks) = Block(context, group);
-                if (plan.Root == ArenaRestoreSource.BlockMark) Read(code, RuntimeImportSymbol.FrameMarkRoot, marks.Root, context);
-                if (plan.Value == ArenaRestoreSource.BlockMark)
-                    Read(code, RuntimeImportSymbol.FrameMarkValueCursor, marks.ValueCursor, context);
-                return;
-            }
-            case LandingPadRestoreStep.Pad:
-            {
-                var (plan, marks) = Block(context, group);
-                var entry = context.EntryMarks ?? marks;
-                switch (plan.Root)
                 {
-                    case ArenaRestoreSource.OwnedFrame:
-                        Get(code, context.RootFrame);
-                        ManagedMemoryEmitter.EmitAddressConstant(code, _layouts.Target,
-                            checked(context.RootSlotCount * _layouts.Target.ObjectReferenceSize));
-                        code.Write(WasmInstruction.NoOperand(
-                            _layouts.Target.UsesMemory64 ? WasmOpcodes.I64Add : WasmOpcodes.I32Add));
-                        break;
-                    case ArenaRestoreSource.EntryMark:
-                        Get(code, entry.Root);
-                        break;
-                    case ArenaRestoreSource.BlockMark:
-                        Get(code, marks.Root);
-                        break;
-                    default:
-                        throw new InvalidOperationException("A root arena is always restored.");
-                }
-                if (plan.Value == ArenaRestoreSource.OwnedFrame)
-                {
-                    // The method's value frame and its size; the runtime finds its chunk and map in its header.
-                    Get(code, context.ValueFrame);
-                    ManagedMemoryEmitter.EmitAddressConstant(code, _layouts.Target, context.ValueLayout.Size);
-                    StackTrace(code, plan, entry);
-                    Call(code, RuntimeImportSymbol.FramesUnwind, context);
+                    var (plan, marks) = Block(context, group);
+                    if (plan.Root == ArenaRestoreSource.BlockMark) Read(code, RuntimeImportSymbol.FrameMarkRoot, marks.Root, context);
+                    if (plan.Value == ArenaRestoreSource.BlockMark)
+                        Read(code, RuntimeImportSymbol.FrameMarkValueCursor, marks.ValueCursor, context);
                     return;
                 }
-                // The value arena's cursor: the runtime finds the value list's head and the cursor's chunk from it.
-                Get(code, (plan.Value == ArenaRestoreSource.BlockMark ? marks : entry).ValueCursor);
-                StackTrace(code, plan, entry);
-                Call(code, RuntimeImportSymbol.FrameMarksRewind, context);
-                return;
-            }
+            case LandingPadRestoreStep.Pad:
+                {
+                    var (plan, marks) = Block(context, group);
+                    var entry = context.EntryMarks ?? marks;
+                    switch (plan.Root)
+                    {
+                        case ArenaRestoreSource.OwnedFrame:
+                            Get(code, context.RootFrame);
+                            ManagedMemoryEmitter.EmitAddressConstant(code, _layouts.Target,
+                                checked(context.RootSlotCount * _layouts.Target.ObjectReferenceSize));
+                            code.Write(WasmInstruction.NoOperand(
+                                _layouts.Target.UsesMemory64 ? WasmOpcodes.I64Add : WasmOpcodes.I32Add));
+                            break;
+                        case ArenaRestoreSource.EntryMark:
+                            Get(code, entry.Root);
+                            break;
+                        case ArenaRestoreSource.BlockMark:
+                            Get(code, marks.Root);
+                            break;
+                        default:
+                            throw new InvalidOperationException("A root arena is always restored.");
+                    }
+                    if (plan.Value == ArenaRestoreSource.OwnedFrame)
+                    {
+                        // The method's value frame and its size; the runtime finds its chunk and map in its header.
+                        Get(code, context.ValueFrame);
+                        ManagedMemoryEmitter.EmitAddressConstant(code, _layouts.Target, context.ValueLayout.Size);
+                        StackTrace(code, plan, entry);
+                        Call(code, RuntimeImportSymbol.FramesUnwind, context);
+                        return;
+                    }
+                    // The value arena's cursor: the runtime finds the value list's head and the cursor's chunk from it.
+                    Get(code, (plan.Value == ArenaRestoreSource.BlockMark ? marks : entry).ValueCursor);
+                    StackTrace(code, plan, entry);
+                    Call(code, RuntimeImportSymbol.FrameMarksRewind, context);
+                    return;
+                }
             default:
                 throw new ArgumentOutOfRangeException(nameof(step));
         }

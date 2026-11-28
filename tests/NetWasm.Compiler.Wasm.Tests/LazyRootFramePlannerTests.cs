@@ -64,8 +64,11 @@ public sealed class LazyRootFramePlannerTests
     {
         var method = Branching(new StructuredTerminalExit(I(3, CilOperation.Throw)));
         Assert.NotNull(_planner.Plan(method, Context(3)));
-        Assert.Null(_planner.Plan(method with { Blocks = method.Blocks.SetItem(new(2), Block(2, 2, [I(2, CilOperation.Nop)],
-            new StructuredTerminalExit(I(4, CilOperation.Throw)))) }, Context(4)));
+        Assert.Null(_planner.Plan(method with
+        {
+            Blocks = method.Blocks.SetItem(new(2), Block(2, 2, [I(2, CilOperation.Nop)],
+            new StructuredTerminalExit(I(4, CilOperation.Throw))))
+        }, Context(4)));
     }
 
     [Fact]
@@ -204,7 +207,8 @@ public sealed class LazyRootFramePlannerTests
             {
                 HandlerBlock = handler,
             },
-        ], [], null, null) { ProtectedBlocks = [new(0), new(1), new(2)] };
+        ], [], null, null)
+        { ProtectedBlocks = [new(0), new(1), new(2)] };
 
     private sealed class Fallbacks(ImmutableHashSet<int> offsets) : IFallbackPublicationClassifier
     {

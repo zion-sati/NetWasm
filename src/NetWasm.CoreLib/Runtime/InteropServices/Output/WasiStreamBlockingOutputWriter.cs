@@ -13,25 +13,25 @@ using System.Runtime.InteropServices.Concurrency;
 // does only when it next runs, so the writer then yields to it: output appears
 // as the program writes it, as on desktop .NET, even when the program never
 // waits again (issue 224).
-// Either standard stream's writer: the stream is the one its bindings open. The stream stays open
-// until the process exits (WasiOutputStreamResource.EndOpened).
-internal sealed unsafe class WasiStreamBlockingOutputWriter :
-    WebAssembly.IStandardOutputWriter,
-    WebAssembly.IStandardErrorWriter
+// One standard stream's writer: the stream is the one its bindings open, and TStream names it, so
+// standard output's writer reaches none of standard error's imports. It serves no facade contract:
+// the standard streams facade holds each stream's writer by its own type. The stream stays open until
+// the process exits (WasiOutputStreamResource<TStream>.EndOpened).
+internal sealed unsafe class WasiStreamBlockingOutputWriter<TStream>
 {
     private const int Blocked = -1;
     private const uint Completed = 0;
     private const uint Dropped = 1;
 
-    private readonly WasiOutputStreamResource _resource;
-    private readonly IWasiByteStreamWriteInvoker _write;
+    private readonly WasiOutputStreamResource<TStream> _resource;
+    private readonly IWasiByteStreamWriteInvoker<TStream> _write;
     private readonly IWaitableEventAwaiter _awaiter;
     private readonly IWasiThreadYieldInvoker _yield;
     private bool _readerGone;
 
     internal WasiStreamBlockingOutputWriter(
-        WasiOutputStreamResource resource,
-        IWasiByteStreamWriteInvoker write,
+        WasiOutputStreamResource<TStream> resource,
+        IWasiByteStreamWriteInvoker<TStream> write,
         IWaitableEventAwaiter awaiter,
         IWasiThreadYieldInvoker yield)
     {

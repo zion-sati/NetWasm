@@ -2001,7 +2001,18 @@ public sealed class MethodSpecializerTests
             new ConstrainedCallTargetResolver(
                 types,
                 methods,
-                new EmptyMethodImplementationResolver()));
+                new EmptyMethodImplementationResolver()),
+            new NoRuntimeIntrinsics());
+
+    // The rewriter's tests name no runtime intrinsic.
+    private sealed class NoRuntimeIntrinsics : IRuntimeIntrinsicRegistry
+    {
+        public bool TryGetIntrinsic(EntityKey method, out RuntimeIntrinsic intrinsic)
+        {
+            intrinsic = default;
+            return false;
+        }
+    }
 
     private static CilMethodBody Specialize<TSpecializer>(
         TSpecializer specializer,

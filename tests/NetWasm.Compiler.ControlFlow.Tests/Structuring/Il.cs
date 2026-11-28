@@ -31,5 +31,6 @@ internal sealed class Il
             int constant => new CilOperand.ConstantI4(constant),
             CilOperand operand => operand,
             _ => null,
-        }))]) with { ExceptionRegions = [.. regions] };
+        }))]) with
+    { ExceptionRegions = [.. regions] };
 }

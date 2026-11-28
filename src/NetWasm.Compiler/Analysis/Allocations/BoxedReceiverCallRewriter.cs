@@ -12,26 +12,25 @@ using NetWasm.Compiler.Metadata;
 namespace NetWasm.Compiler.Analysis.Allocations;
 
 // `((ISpanFormattable)value).TryFormat(...)` on a type parameter compiles to
-// box, castclass and callvirt. Once the parameter is a value type that declares
-// the method the call reaches, the box only carries a copy of the value to that
-// method: a local holds the copy instead, and the call becomes the constrained
-// call it would be on the value, which binds to the method directly. .NET's JIT
-// removes such boxes when it devirtualizes the call.
+// box, castclass and callvirt. Once the parameter is a value type, the box only
+// carries a copy of the value to the method the call reaches: a local holds the
+// copy instead, and the call becomes the constrained call it would be on the
+// value, which ConstrainedCallRewriter binds to that method directly: the value
+// type's own, or the one it inherits (System.Enum's for an enum, ValueType's or
+// Object's) or a default interface method, called on a box of the copy. Either
+// way the call has one target, where callvirt on the box dispatched over every
+// type that implements the interface (at O0, which narrows no receivers, that
+// reached each such type's formatting and the host imports behind it). .NET's
+// JIT removes such boxes when it devirtualizes the call.
 internal sealed class BoxedReceiverCallRewriter(
-    ITypeDefinitionResolver typeDefinitions,
     IMethodRepository methods,
-    ICalledMethodResolver calledMethods,
     INullableTypeResolver nullableTypes,
     ITypeRelationshipClassifier relationships,
-    IConstrainedCallTargetResolver targets,
     IStackEffectResolver effects) : IMethodRewriteRule
 {
-    private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ?? throw new ArgumentNullException(nameof(typeDefinitions));
     private readonly IMethodRepository _methods = methods ?? throw new ArgumentNullException(nameof(methods));
-    private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly INullableTypeResolver _nullableTypes = nullableTypes ?? throw new ArgumentNullException(nameof(nullableTypes));
     private readonly ITypeRelationshipClassifier _relationships = relationships ?? throw new ArgumentNullException(nameof(relationships));
-    private readonly IConstrainedCallTargetResolver _targets = targets ?? throw new ArgumentNullException(nameof(targets));
     private readonly IStackEffectResolver _effects = effects ?? throw new ArgumentNullException(nameof(effects));
 
     public CilMethodBody Rewrite(CilMethodBody body)
@@ -52,7 +51,7 @@ internal sealed class BoxedReceiverCallRewriter(
     }
 
     // The call that takes the box as its receiver, when nothing else in the
-    // box's block reads it and the value type declares the method it reaches.
+    // box's block reads it.
     private Site? FindReceiverCall(ImmutableArray<CilInstruction> instructions, HashSet<int> entries, int box, CliTypeIdentity type)
     {
         int? cast = null;
@@ -81,7 +80,7 @@ internal sealed class BoxedReceiverCallRewriter(
             if (pops == above + 1)
             {
                 return instruction.Operation == CilOperation.CallVirtual &&
-                    instructions[index - 1].Operation != CilOperation.Constrained && ReachesOwnMethod(type, instruction)
+                    instructions[index - 1].Operation != CilOperation.Constrained && DispatchesOnTheBox(instruction)
                     ? new Site(box, cast, index, type)
                     : null;
             }
@@ -89,33 +88,12 @@ internal sealed class BoxedReceiverCallRewriter(
         }
     }
 
-    private bool ReachesOwnMethod(CliTypeIdentity type, CilInstruction call)
-    {
-        // A call names its method by definition or by instantiation, and only
-        // a virtual method, which is an instance method, dispatches on the box.
-        var declaration = call.Operand is CilOperand.MethodInstance instance
+    // A call names its method by definition or by instantiation, and only a
+    // virtual method, which is an instance method, dispatches on the box.
+    private bool DispatchesOnTheBox(CilInstruction call) =>
+        (call.Operand is CilOperand.MethodInstance instance
             ? instance.Value.Definition
-            : _methods.GetMethod(((CilOperand.Entity)call.Operand).Key);
-        if (!declaration.IsVirtual)
-        {
-            return false;
-        }
-        var concreteType = _typeDefinitions.ResolveTypeIdentity(type);
-        if (concreteType.IsEnum)
-        {
-            // An enum declares no methods: System.Enum implements them on the box.
-            return false;
-        }
-        var implementation = _targets.Resolve(new ConstrainedCallTargetRequest(
-            type,
-            concreteType,
-            declaration,
-            call.Operand is CilOperand.MethodInstance instanceCall ? instanceCall.Value.Signature : declaration.Signature,
-            type.Shape == CliTypeShape.GenericInstantiation ? type.TypeArguments : [],
-            call.Operand is CilOperand.MethodInstance methodCall ? methodCall.Value.MethodArguments : []));
-        // An inherited or default interface method takes the object itself.
-        return implementation.DeclaringType == concreteType.Key;
-    }
+            : _methods.GetMethod(((CilOperand.Entity)call.Operand).Key)).IsVirtual;
 
     // The box becomes a store to a new local and that local's address, the cast
     // goes, and the call gains the constrained prefix the receiver now needs.

@@ -77,12 +77,15 @@ public sealed class UnansweredAttributeQueryCompilationTests
             WasmTarget.Wasm32, result.StaticDataEnd));
     }
 
+    // The unwritten-static-field fold runs at every level, so the branch is gone and no level warns: what a build
+    // reports does not depend on its optimization level.
     [Theory]
-    [InlineData(FinalWasmOptimization.None, 1)]
-    [InlineData(FinalWasmOptimization.O1, 1)]
+    [InlineData(FinalWasmOptimization.None, 0)]
+    [InlineData(FinalWasmOptimization.O0, 0)]
+    [InlineData(FinalWasmOptimization.O1, 0)]
     [InlineData(FinalWasmOptimization.O3, 0)]
     [InlineData(FinalWasmOptimization.Oz, 0)]
-    public void AQueryInABranchTheOptimizerFoldsAwayWarnsOnlyWhereTheBranchStays(FinalWasmOptimization optimization,
+    public void AQueryInABranchTheUnwrittenFieldFoldRemovesWarnsAtNoLevel(FinalWasmOptimization optimization,
         int expected)
     {
         using var assets = TestAssets.Create();

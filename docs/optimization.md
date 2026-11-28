@@ -82,9 +82,11 @@ listed after the table.
 | `NetWasmManagedStaticDataViewElimination` | Reads a `ReadOnlySpan<T>` over constant data directly, without building the span. | `O2`, `O3`, `Oz` |
 | `NetWasmManagedStructScalarReplacement` | Splits a struct local used field by field into a local per field. | `O1`, `O2`, `O3`, `Os`, `Oz` |
 | `NetWasmManagedSwitchBitTests` | Tests a bit mask for a `switch` with one or two targets. | `O1`, `O2`, `O3`, `Os`, `Oz` |
-| `NetWasmManagedUnwrittenStaticFieldFolding` | Reads a static field no code writes as its default value. | `O2`, `O3`, `Os`, `Oz` |
+| `NetWasmManagedUnwrittenStaticFieldFolding` | Reads a static field no code writes as its default value. | Every level |
 
-`None` and `O0` turn every one of them off.
+`None` and `O0` turn every one of them off except
+`NetWasmManagedUnwrittenStaticFieldFolding`, which runs at every level so that
+every level reaches the same host imports.
 
 Other values:
 

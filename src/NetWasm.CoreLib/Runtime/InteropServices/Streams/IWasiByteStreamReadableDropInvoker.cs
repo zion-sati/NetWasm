@@ -3,7 +3,8 @@
 
 namespace System.Runtime.InteropServices.Streams;
 
-internal interface IWasiByteStreamReadableDropInvoker
+// TStream names the stream (Streams.WasiStreamKinds): an implementation serves one stream only.
+internal interface IWasiByteStreamReadableDropInvoker<TStream>
 {
     void Drop(int readable);
 }

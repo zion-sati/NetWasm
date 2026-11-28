@@ -1512,7 +1512,7 @@ namespace System.Threading.Tasks
             var registration = default(Threading.CancellationTokenRegistration);
             registration = cancellationToken.UnsafeRegister(_ =>
             {
-                scheduled?.Dispose();
+                scheduled?.Cancel();
                 scheduled = null;
                 task.TrySetCanceled(
                     new TaskCanceledException(
@@ -1526,7 +1526,7 @@ namespace System.Threading.Tasks
                 scheduled = PlatformServices.Scheduler.Schedule(
                     () =>
                     {
-                        scheduled?.Dispose();
+                        scheduled?.Cancel();
                         scheduled = null;
                         registration.Dispose();
                         task.TrySetResult();
@@ -2196,7 +2196,7 @@ namespace System.Threading.Tasks
                 {
                     return;
                 }
-                scheduled?.Dispose();
+                scheduled?.Cancel();
                 scheduled = null;
                 registration.Dispose();
                 if (IsFaulted)
@@ -2217,7 +2217,7 @@ namespace System.Threading.Tasks
             }
             void Cancel()
             {
-                scheduled?.Dispose();
+                scheduled?.Cancel();
                 scheduled = null;
                 completion.TrySetCanceled(cancellationToken);
             }
@@ -2642,7 +2642,9 @@ namespace System.Threading.Tasks
             }
         }
 
-        internal virtual bool TrySetResult()
+        internal virtual bool TrySetResult() => CompleteWithResult(forceAsyncContinuations: false);
+
+        private protected bool CompleteWithResult(bool forceAsyncContinuations)
         {
             if (_status != 0)
             {
@@ -2657,7 +2659,7 @@ namespace System.Threading.Tasks
             _cancellationRegistration = default;
             ClearExecutionReferences();
             NotifyParentOfCompletion();
-            DispatchContinuation();
+            DispatchContinuation(forceAsyncContinuations);
             return true;
         }
 
@@ -2669,7 +2671,8 @@ namespace System.Threading.Tasks
 
         internal bool TrySetException(
             Exception exception,
-            bool aggregateContainer)
+            bool aggregateContainer,
+            bool forceAsyncContinuations = false)
         {
             if (exception == null)
             {
@@ -2691,7 +2694,7 @@ namespace System.Threading.Tasks
             _cancellationRegistration = default;
             ClearExecutionReferences();
             NotifyParentOfCompletion();
-            DispatchContinuation();
+            DispatchContinuation(forceAsyncContinuations);
             return true;
         }
 
@@ -2731,12 +2734,23 @@ namespace System.Threading.Tasks
         internal void SetCanceled(Exception exception) =>
             EnsureCompletion(TrySetCanceled(exception));
 
+        // A JavaScript import's task completes in the call that brings its promise's result into the module, after which
+        // the host runs the module's event loop in the same reaction. Its continuations are queued, not run inside that
+        // call, so the code after the await runs as the loop's work: still inside the promise's reaction, and counted in
+        // the turn's 30 ms batch, so a Task.Yield after the batch has run returns to the browser. Run inline, that code
+        // would run before the batch began, and a Task.Yield after it would run as the batch's first item.
+        internal void SetResultForJavaScriptInterop() =>
+            EnsureCompletion(CompleteWithResult(forceAsyncContinuations: true));
+
         internal void SetCanceledForJavaScriptInterop() =>
-            SetCanceled(new TaskCanceledException());
+            EnsureCompletion(TrySetCanceled(new TaskCanceledException(), forceAsyncContinuations: true));
 
         // A rejected JavaScript promise faults its task with the exception for the reason it rejected with.
         internal void SetExceptionForJavaScriptInterop() =>
-            SetException(System.Runtime.InteropServices.JavaScript.JSHostError.TakeFailure());
+            EnsureCompletion(TrySetException(
+                System.Runtime.InteropServices.JavaScript.JSHostError.TakeFailure(),
+                aggregateContainer: false,
+                forceAsyncContinuations: true));
 
         // As upstream's WrappedTryRunInline (InternalWaitCore, WaitAllCore, GetResultCore): a wait with no timeout and no
         // cancellation first runs this task on the waiting thread if it is still queued to its scheduler. A wait that
@@ -3406,6 +3420,20 @@ namespace System.Threading.Tasks
             }
         }
 
+        // As Task.SetResultForJavaScriptInterop: the import's continuations run as the event loop's queued work.
+        internal void SetResultForJavaScriptInterop(T result)
+        {
+            if (IsCompleted)
+            {
+                throw new InvalidOperationException();
+            }
+            _result = result;
+            if (!CompleteWithResult(forceAsyncContinuations: true))
+            {
+                throw new InvalidOperationException();
+            }
+        }
+
         protected override void ExecuteAction()
         {
             if (IsCompleted)
@@ -3628,7 +3656,7 @@ namespace System.Threading.Tasks
                 {
                     return;
                 }
-                scheduled?.Dispose();
+                scheduled?.Cancel();
                 scheduled = null;
                 registration.Dispose();
                 if (IsFaulted)
@@ -3649,7 +3677,7 @@ namespace System.Threading.Tasks
             }
             void Cancel()
             {
-                scheduled?.Dispose();
+                scheduled?.Cancel();
                 scheduled = null;
                 completion.TrySetCanceled(cancellationToken);
             }

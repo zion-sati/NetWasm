@@ -40,7 +40,8 @@ public sealed class ImportParityCompilationTests
         using var assets = TestAssets.Create();
         var assembly = assets.CompileOptimizedSource("ImportParity", Source);
         var options = new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
-            Optimization: FinalWasmOptimization.O0) { VerifyImportParity = true };
+            Optimization: FinalWasmOptimization.O0)
+        { VerifyImportParity = true };
 
         var failure = Assert.ThrowsAny<Exception>(() => NetWasmCompiler.Compile(options));
 
@@ -58,7 +59,8 @@ public sealed class ImportParityCompilationTests
             Source.Replace("private static object Kept = new Native();", "private static object Kept = new Square();",
                 StringComparison.Ordinal));
         var options = new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
-            Optimization: FinalWasmOptimization.O0) { VerifyImportParity = true };
+            Optimization: FinalWasmOptimization.O0)
+        { VerifyImportParity = true };
 
         Assert.NotEmpty(NetWasmCompiler.Compile(options).ApplicationModule);
     }

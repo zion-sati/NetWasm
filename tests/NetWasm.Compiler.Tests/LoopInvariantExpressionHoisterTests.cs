@@ -70,6 +70,26 @@ public sealed class LoopInvariantExpressionHoisterTests
         { "both arms jump to the end", true },
     };
 
+    // A run that begins in the body and ends on the test's first instruction, where the loop's entry jump lands:
+    // `ldarg.0; brtrue test; test: ldarg.0` leaves one value, but the entry jump arrives at its last instruction
+    // without the value its first two would have left, so moving it ahead of that jump would underflow the stack.
+    [Fact]
+    public void ARunThatEndsWhereTheEntryJumpLandsStaysInTheLoop()
+    {
+        var body = Method(
+        [
+            I(CilOperation.LoadInt32, 0), Store(0),
+            Branch(CilOperation.Branch, 9),
+            Local(0), I(CilOperation.LoadInt32, 1), I(CilOperation.Add), Store(0),
+            Arg(0), Branch(CilOperation.BranchIfTrue, 9),
+            Arg(0), I(CilOperation.Pop),
+            Local(0), I(CilOperation.LoadInt32, 3), Branch(CilOperation.BranchIfLessThanSigned, 3),
+            Local(0), I(CilOperation.Return),
+        ]);
+
+        Assert.Same(body, Hoister(enabled: true).Rewrite(body));
+    }
+
     [Theory]
     [InlineData("long choice", "primitive:i8")]
     [InlineData("float choice", "primitive:f4")]
@@ -393,6 +413,12 @@ public sealed class LoopInvariantExpressionHoisterTests
         code.Add(Local(1));
         code.Add(I(CilOperation.Return));
         code[jump] = Branch(CilOperation.Branch, test);
+        return Method(code);
+    }
+
+    // The method Run(int a, int b, int[] values) with these instructions, numbered from 0.
+    private static CilMethodBody Method(IEnumerable<CilInstruction> code)
+    {
         var instructions = code.Select(static (instruction, index) => instruction with { Offset = index, NextOffset = index + 1 })
             .ToImmutableArray();
         var signature = MethodSignatureModel.Create(Int32, Int32, Int32, CliTypeIdentity.SzArray(Int32));

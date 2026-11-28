@@ -335,8 +335,12 @@ public sealed class SwitchTableCompilationTests
         static int Plain(int x) => x is >= 0 and < 20 ? new[] { 3, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79 }[x] : -1;
         static int Shared(int x) => x switch
         {
-            >= 0 and <= 3 => 5, >= 4 and <= 7 => x * 3, >= 8 and <= 11 => x + 9, >= 12 and <= 15 => x ^ 21,
-            >= 16 and <= 19 => x - 2, _ => 0,
+            >= 0 and <= 3 => 5,
+            >= 4 and <= 7 => x * 3,
+            >= 8 and <= 11 => x + 9,
+            >= 12 and <= 15 => x ^ 21,
+            >= 16 and <= 19 => x - 2,
+            _ => 0,
         };
         static int InTry(int x) => x switch { 2 => -5, >= 0 and < 20 => (x + 1) * 2, _ => 0 };
         static int Expression(int x) => x is >= 0 and < 20 ? 100 + x : 0;
@@ -351,13 +355,26 @@ public sealed class SwitchTableCompilationTests
                 steps++;
                 switch (state)
                 {
-                    case 0: value += 1; goto case 3; case 1: value *= 3; state = 5; break; case 2: value -= 7; goto case 9;
-                    case 3: value ^= 0x55; state = 11; break; case 4: value += 13; state = 0; break; case 5: value >>= 1; goto case 4;
-                    case 6: value += 6; state = 19; break; case 7: value -= 7; state = 2; break; case 8: value *= 5; state = 17; break;
-                    case 9: value ^= 9; state = 1; break; case 10: value += 10; state = 6; break; case 11: value -= 11; state = 7; break;
-                    case 12: value += 12; state = 8; break; case 13: value -= 13; state = 10; break; case 14: value += 14; state = 12; break;
-                    case 15: value -= 15; state = 13; break; case 16: value += 16; state = 14; break; case 17: value -= 17; state = 15; break;
-                    case 18: value += 18; state = 16; break; case 19: return value;
+                    case 0: value += 1; goto case 3;
+                    case 1: value *= 3; state = 5; break;
+                    case 2: value -= 7; goto case 9;
+                    case 3: value ^= 0x55; state = 11; break;
+                    case 4: value += 13; state = 0; break;
+                    case 5: value >>= 1; goto case 4;
+                    case 6: value += 6; state = 19; break;
+                    case 7: value -= 7; state = 2; break;
+                    case 8: value *= 5; state = 17; break;
+                    case 9: value ^= 9; state = 1; break;
+                    case 10: value += 10; state = 6; break;
+                    case 11: value -= 11; state = 7; break;
+                    case 12: value += 12; state = 8; break;
+                    case 13: value -= 13; state = 10; break;
+                    case 14: value += 14; state = 12; break;
+                    case 15: value -= 15; state = 13; break;
+                    case 16: value += 16; state = 14; break;
+                    case 17: value -= 17; state = 15; break;
+                    case 18: value += 18; state = 16; break;
+                    case 19: return value;
                 }
             }
             return value;
@@ -369,11 +386,26 @@ public sealed class SwitchTableCompilationTests
             {
                 switch (code[pc++])
                 {
-                    case 0: acc += 1; break; case 1: acc *= 3; break; case 2: acc -= 7; break; case 3: acc ^= 0x55; break;
-                    case 4: acc += 13; break; case 5: acc >>= 1; break; case 6: acc += 6; break; case 7: return acc;
-                    case 8: acc *= 5; break; case 9: acc ^= 9; break; case 10: acc += 10; break; case 11: acc -= 11; break;
-                    case 12: acc += 12; break; case 13: acc -= 13; break; case 14: acc += 14; break; case 15: acc -= 15; break;
-                    case 16: acc += 16; break; case 17: acc -= 17; break; case 18: pc += 1; break; case 19: acc = -acc; break;
+                    case 0: acc += 1; break;
+                    case 1: acc *= 3; break;
+                    case 2: acc -= 7; break;
+                    case 3: acc ^= 0x55; break;
+                    case 4: acc += 13; break;
+                    case 5: acc >>= 1; break;
+                    case 6: acc += 6; break;
+                    case 7: return acc;
+                    case 8: acc *= 5; break;
+                    case 9: acc ^= 9; break;
+                    case 10: acc += 10; break;
+                    case 11: acc -= 11; break;
+                    case 12: acc += 12; break;
+                    case 13: acc -= 13; break;
+                    case 14: acc += 14; break;
+                    case 15: acc -= 15; break;
+                    case 16: acc += 16; break;
+                    case 17: acc -= 17; break;
+                    case 18: pc += 1; break;
+                    case 19: acc = -acc; break;
                     default: throw new System.InvalidOperationException();
                 }
             }
@@ -387,13 +419,26 @@ public sealed class SwitchTableCompilationTests
                 steps++;
                 switch (state)
                 {
-                    case 0: value += 1; state = 3; break; case 1: value *= 3; state = 5; break; case 2: value -= 7; state = 9; break;
-                    case 3: value ^= 0x55; state = 11; break; case 4: value += 13; state = 0; break; case 5: value >>= 1; state = 4; break;
-                    case 6: value += 6; state = 19; break; case 7: value -= 7; state = 2; break; case 8: value *= 5; state = 17; break;
-                    case 9: value ^= 9; state = steps > 40 ? 19 : 1; break; case 10: value += 10; state = 6; break; case 11: value -= 11; state = 7; break;
-                    case 12: value += 12; state = 8; break; case 13: value -= 13; state = 10; break; case 14: value += 14; state = 12; break;
-                    case 15: value -= 15; state = 13; break; case 16: value += 16; state = 14; break; case 17: value -= 17; state = 15; break;
-                    case 18: value += 18; state = 16; break; case 19: return value;
+                    case 0: value += 1; state = 3; break;
+                    case 1: value *= 3; state = 5; break;
+                    case 2: value -= 7; state = 9; break;
+                    case 3: value ^= 0x55; state = 11; break;
+                    case 4: value += 13; state = 0; break;
+                    case 5: value >>= 1; state = 4; break;
+                    case 6: value += 6; state = 19; break;
+                    case 7: value -= 7; state = 2; break;
+                    case 8: value *= 5; state = 17; break;
+                    case 9: value ^= 9; state = steps > 40 ? 19 : 1; break;
+                    case 10: value += 10; state = 6; break;
+                    case 11: value -= 11; state = 7; break;
+                    case 12: value += 12; state = 8; break;
+                    case 13: value -= 13; state = 10; break;
+                    case 14: value += 14; state = 12; break;
+                    case 15: value -= 15; state = 13; break;
+                    case 16: value += 16; state = 14; break;
+                    case 17: value -= 17; state = 15; break;
+                    case 18: value += 18; state = 16; break;
+                    case 19: return value;
                     default: return -value;
                 }
             }
@@ -407,11 +452,26 @@ public sealed class SwitchTableCompilationTests
             {
                 switch (v)
                 {
-                    case 0: a += 1; break; case 1: b += 2; break; case 2: a ^= 3; break; case 3: b -= 4; break;
-                    case 4: a += 5; break; case 5: b ^= 6; break; case 6: a -= 7; break; case 7: b += 8; break;
-                    case 8: a ^= 9; break; case 9: b -= 10; break; case 10: a += 11; break; case 11: b ^= 12; break;
-                    case 12: a -= 13; break; case 13: b += 14; break; case 14: a ^= 15; break; case 15: b -= 16; break;
-                    case 16: a += 17; break; case 17: b ^= 18; break; case 18: a -= 19; break; case 19: b += 20; break;
+                    case 0: a += 1; break;
+                    case 1: b += 2; break;
+                    case 2: a ^= 3; break;
+                    case 3: b -= 4; break;
+                    case 4: a += 5; break;
+                    case 5: b ^= 6; break;
+                    case 6: a -= 7; break;
+                    case 7: b += 8; break;
+                    case 8: a ^= 9; break;
+                    case 9: b -= 10; break;
+                    case 10: a += 11; break;
+                    case 11: b ^= 12; break;
+                    case 12: a -= 13; break;
+                    case 13: b += 14; break;
+                    case 14: a ^= 15; break;
+                    case 15: b -= 16; break;
+                    case 16: a += 17; break;
+                    case 17: b ^= 18; break;
+                    case 18: a -= 19; break;
+                    case 19: b += 20; break;
                     default: (a, b) = (b, a); break;
                 }
             }
@@ -425,13 +485,26 @@ public sealed class SwitchTableCompilationTests
                 steps++;
                 switch (state)
                 {
-                    case 0: value += 1; goto case 3; case 1: value *= 3; state = 5; break; case 2: value -= 7; goto case 9;
-                    case 3: value ^= 0x55; state = 11; break; case 4: value += 13; state = 0; break; case 5: value >>= 1; goto case 4;
-                    case 6: value += 6; state = 19; break; case 7: value -= 7; state = 2; break; case 8: value *= 5; state = 17; break;
-                    case 9: value ^= 9; state = steps > 40 ? 19 : 1; break; case 10: value += 10; state = 6; break; case 11: value -= 11; state = 7; break;
-                    case 12: value += 12; state = 8; break; case 13: value -= 13; state = 10; break; case 14: value += 14; state = 12; break;
-                    case 15: value -= 15; state = 13; break; case 16: value += 16; state = 14; break; case 17: value -= 17; state = 15; break;
-                    case 18: value += 18; state = 16; break; case 19: return value;
+                    case 0: value += 1; goto case 3;
+                    case 1: value *= 3; state = 5; break;
+                    case 2: value -= 7; goto case 9;
+                    case 3: value ^= 0x55; state = 11; break;
+                    case 4: value += 13; state = 0; break;
+                    case 5: value >>= 1; goto case 4;
+                    case 6: value += 6; state = 19; break;
+                    case 7: value -= 7; state = 2; break;
+                    case 8: value *= 5; state = 17; break;
+                    case 9: value ^= 9; state = steps > 40 ? 19 : 1; break;
+                    case 10: value += 10; state = 6; break;
+                    case 11: value -= 11; state = 7; break;
+                    case 12: value += 12; state = 8; break;
+                    case 13: value -= 13; state = 10; break;
+                    case 14: value += 14; state = 12; break;
+                    case 15: value -= 15; state = 13; break;
+                    case 16: value += 16; state = 14; break;
+                    case 17: value -= 17; state = 15; break;
+                    case 18: value += 18; state = 16; break;
+                    case 19: return value;
                     default: return -value;
                 }
             }
@@ -443,11 +516,26 @@ public sealed class SwitchTableCompilationTests
             {
                 switch (v)
                 {
-                    case 0: sum += 1; break; case 1: sum += 2; break; case 2: continue; case 3: sum *= 2; break;
-                    case 4: sum -= 3; break; case 5: sum ^= 5; break; case 6: sum += v; break; case 7: continue;
-                    case 8: sum += 8; break; case 9: sum -= 9; break; case 10: sum += 10; break; case 11: sum ^= 11; break;
-                    case 12: sum += 12; break; case 13: sum -= 13; break; case 14: sum += 14; break; case 15: sum ^= 15; break;
-                    case 16: sum += 16; break; case 17: sum -= 17; break; case 18: sum += 18; break; case 19: goto done;
+                    case 0: sum += 1; break;
+                    case 1: sum += 2; break;
+                    case 2: continue;
+                    case 3: sum *= 2; break;
+                    case 4: sum -= 3; break;
+                    case 5: sum ^= 5; break;
+                    case 6: sum += v; break;
+                    case 7: continue;
+                    case 8: sum += 8; break;
+                    case 9: sum -= 9; break;
+                    case 10: sum += 10; break;
+                    case 11: sum ^= 11; break;
+                    case 12: sum += 12; break;
+                    case 13: sum -= 13; break;
+                    case 14: sum += 14; break;
+                    case 15: sum ^= 15; break;
+                    case 16: sum += 16; break;
+                    case 17: sum -= 17; break;
+                    case 18: sum += 18; break;
+                    case 19: goto done;
                     default: sum++; break;
                 }
                 sum += 1;

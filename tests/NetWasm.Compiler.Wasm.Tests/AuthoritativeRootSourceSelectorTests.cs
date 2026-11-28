@@ -131,7 +131,8 @@ public sealed class AuthoritativeRootSourceSelectorTests
     {
         var blocks = ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>.Empty
             .Add(new(0), new(new(0), 0, [I(0, CilOperation.StoreLocal, new CilOperand.Index(0)), I(1, CilOperation.Call)], [],
-                new StructuredFallthroughExit(new(1))) { EndOffset = 2 })
+                new StructuredFallthroughExit(new(1)))
+            { EndOffset = 2 })
             .Add(new(1), new(new(1), 2, [I(2, CilOperation.Call)], [], new StructuredBranchExit(3, new(1))) { EndOffset = 3 });
         var definition = new MethodDefinitionModel(EntryKey, TypeKey, "Run", true, MethodSignatureModel.Create(CliValueKind.Void), 1);
         return new(new(definition, null, 1, [], [], []), new(0), blocks, StructuredSequence.Empty, [], [], []);

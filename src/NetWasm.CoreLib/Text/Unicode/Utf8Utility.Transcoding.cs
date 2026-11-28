@@ -418,7 +418,7 @@ namespace System.Text.Unicode
                     }
                 }
 
-            // Check the 3-byte case.
+                // Check the 3-byte case.
 
             BeforeProcessThreeByteSequence:
 
@@ -1298,7 +1298,7 @@ namespace System.Text.Unicode
                     }
                 }
 
-            // Check the 3-byte case.
+                // Check the 3-byte case.
 
             BeforeProcessThreeByteSequence:
 

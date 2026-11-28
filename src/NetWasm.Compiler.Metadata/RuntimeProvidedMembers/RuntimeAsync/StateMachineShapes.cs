@@ -724,16 +724,16 @@ internal static class StateMachineShapes
     // A replacement written against MoveNext's numbering, in the draft's terms: its locals and labels.
     internal static CilBodyElement Labeled(CilBodyElement element, ImmutableArray<CilBodyLocal> locals,
         ImmutableDictionary<int, CilBodyLabel> labels) => element switch
-    {
-        CilBodyElement.Instruction
         {
-            Operation: CilOperation.LoadLocal or CilOperation.StoreLocal or CilOperation.LoadLocalAddress,
-            Operand: CilOperand.Index { Value: var local },
-        } instruction => new CilBodyElement.LocalInstruction(instruction.Operation, locals[local]),
-        CilBodyElement.Instruction { Operand: CilOperand.BranchTarget branch } instruction =>
-            new CilBodyElement.Branch(instruction.Operation, labels[branch.Offset]),
-        _ => element,
-    };
+            CilBodyElement.Instruction
+            {
+                Operation: CilOperation.LoadLocal or CilOperation.StoreLocal or CilOperation.LoadLocalAddress,
+                Operand: CilOperand.Index { Value: var local },
+            } instruction => new CilBodyElement.LocalInstruction(instruction.Operation, locals[local]),
+            CilBodyElement.Instruction { Operand: CilOperand.BranchTarget branch } instruction =>
+                new CilBodyElement.Branch(instruction.Operation, labels[branch.Offset]),
+            _ => element,
+        };
 
     internal static bool IsThis(CilInstruction instruction) =>
         instruction is { Operation: CilOperation.LoadArgument, Operand: CilOperand.Index { Value: 0 } };

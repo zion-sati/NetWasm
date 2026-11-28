@@ -3,7 +3,8 @@
 
 namespace System.Runtime.InteropServices.Output;
 
-internal interface IWasiOutputStreamCreateInvoker
+// TStream names the stream (Streams.WasiStreamKinds): an implementation serves one stream only.
+internal interface IWasiOutputStreamCreateInvoker<TStream>
 {
     // stream.new: the readable end in the low 32 bits, the writable end above.
     long Create();

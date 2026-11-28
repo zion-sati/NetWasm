@@ -95,7 +95,7 @@ namespace System.Threading
 
             private void Run()
             {
-                _schedule?.Dispose();
+                _schedule?.Cancel();
                 _schedule = null;
                 if (_executionContext is null)
                 {

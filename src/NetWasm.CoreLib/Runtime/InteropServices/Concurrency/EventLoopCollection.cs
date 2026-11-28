@@ -75,9 +75,9 @@ internal sealed class EventLoopCollection : IEventLoopCollection
 
     public void LoopEnded()
     {
-        _idleTimer?.Dispose();
+        _idleTimer?.Cancel();
         _idleTimer = null;
-        _quietTimer?.Dispose();
+        _quietTimer?.Cancel();
         _quietTimer = null;
         _ranSinceQuietTimer = false;
     }

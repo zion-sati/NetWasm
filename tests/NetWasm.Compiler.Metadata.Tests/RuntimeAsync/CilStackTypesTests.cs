@@ -175,7 +175,12 @@ public sealed class CilStackTypesTests
             "int" => Instruction(CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
             _ => Instruction(CilOperation.LoadLocal, new CilOperand.Index(what switch
             {
-                "Holder" => 0, "Other" => 1, "bool" => 2, "Point" => 3, "Color" => 5, _ => 4,
+                "Holder" => 0,
+                "Other" => 1,
+                "bool" => 2,
+                "Point" => 3,
+                "Color" => 5,
+                _ => 4,
             })),
         };
         var (left, right) = shape switch
@@ -196,7 +201,8 @@ public sealed class CilStackTypesTests
             Push(right),                                                                  // 4
             Instruction(CilOperation.Pop),                                                // 5: the join
             Instruction(CilOperation.Return),                                             // 6
-        ]) with { LocalSignatureTypes = [Holder, other, boolean, Point, size, color] };
+        ]) with
+        { LocalSignatureTypes = [Holder, other, boolean, Point, size, color] };
 
         var top = CilStackTypes.Compute(method, body)![5][^1];
 

@@ -57,8 +57,11 @@ internal static class ArgumentLanes
             var instructions = block.Instructions;
             for (var call = 0; call < instructions.Length; call++)
             {
-                if (instructions[call] is not { Operation: CilOperation.Call or CilOperation.CallVirtual,
-                        Operand: CilOperand.MethodInstance { Value: var called } } ||
+                if (instructions[call] is not
+                    {
+                        Operation: CilOperation.Call or CilOperation.CallVirtual,
+                        Operand: CilOperand.MethodInstance { Value: var called }
+                    } ||
                     !callsBody(called))
                 {
                     continue;

@@ -228,8 +228,10 @@ public sealed class StateMachineKickoffTests : IDisposable
         {
             { Operand: CilOperand.MethodInstance call } => call.Value.Definition.Name == "Start" ||
                 call.Value.Definition.DeclaringType == moveNext.DeclaringType,
-            { Operation: CilOperation.LoadField or CilOperation.LoadFieldAddress or CilOperation.StoreField,
-                Operand: CilOperand.Entity entity } => fields.GetField(entity.Key).DeclaringType == moveNext.DeclaringType,
+            {
+                Operation: CilOperation.LoadField or CilOperation.LoadFieldAddress or CilOperation.StoreField,
+                Operand: CilOperand.Entity entity
+            } => fields.GetField(entity.Key).DeclaringType == moveNext.DeclaringType,
             _ => false,
         });
     }

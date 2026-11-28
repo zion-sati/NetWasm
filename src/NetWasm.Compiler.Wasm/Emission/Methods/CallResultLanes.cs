@@ -55,8 +55,11 @@ internal static class CallResultLanes
             var instructions = block.Instructions;
             for (var index = 0; index + 1 < instructions.Length; index++)
             {
-                if (instructions[index] is not { Operation: CilOperation.Call or CilOperation.CallVirtual,
-                        Operand: CilOperand.MethodInstance { Value: var called } } ||
+                if (instructions[index] is not
+                    {
+                        Operation: CilOperation.Call or CilOperation.CallVirtual,
+                        Operand: CilOperand.MethodInstance { Value: var called }
+                    } ||
                     called.Signature.ReturnSignatureType.StackKind != CliValueKind.ValueType ||
                     // An intrinsic or an import has an emitter of its own, which may use the call's temporary.
                     !callsBody(called) ||

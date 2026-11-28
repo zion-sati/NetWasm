@@ -52,7 +52,8 @@ public sealed class SharedArrayCompilationTests(CorrectnessTestRunner runner)
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource($"SharedArrays{target}{optimization}", Source);
         var compilation = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
-            assets, assembly, EntryType, "Print", target) with { Optimization = optimization });
+            assets, assembly, EntryType, "Print", target) with
+        { Optimization = optimization });
         var actual = CompilerTestSupport.ExecuteWithStandardWasiNodeCapturingOutput(
                 compilation.ApplicationModule, assets.Directory, 0, target, compilation.StaticDataEnd)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)

@@ -76,7 +76,7 @@ namespace System.Runtime.InteropServices
             if (_count == 0 && _armed is { } armed)
             {
                 _armed = null;
-                armed.Dispose();
+                armed.Cancel();
             }
         }
 
@@ -103,7 +103,7 @@ namespace System.Runtime.InteropServices
             if (_armed is { } previous)
             {
                 _armed = null;
-                previous.Dispose();
+                previous.Cancel();
             }
 
             _armedDeadline = deadline;
@@ -222,7 +222,7 @@ namespace System.Runtime.InteropServices
 
         internal void Post(CommandWorldScheduler scheduler) => _posted = scheduler.Post(_continuation);
 
-        public void Dispose()
+        public void Cancel()
         {
             if (!_active)
             {
@@ -232,7 +232,7 @@ namespace System.Runtime.InteropServices
             _active = false;
             if (_posted is { } posted)
             {
-                posted.Dispose();
+                posted.Cancel();
             }
             else
             {

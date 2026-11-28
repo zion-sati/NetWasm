@@ -87,7 +87,7 @@ namespace System.Runtime.InteropServices
             }
         }
 
-        public void Dispose()
+        public void Cancel()
         {
             _active = false;
             Timer?.Dispose();
