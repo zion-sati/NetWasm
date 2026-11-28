@@ -16,4 +16,6 @@ public enum CompilerProgressStage
     Validation = 8,
     InteropManifest = 9,
     Complete = 10,
+    // The compilation ended without a module (a failure or a cancellation), in place of Complete.
+    Failed = 11,
 }

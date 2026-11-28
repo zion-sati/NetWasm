@@ -97,7 +97,10 @@ public sealed class JSImportForwarderFunctionEmitterTests
         Assert.IsAssignableFrom<IJSImportForwarderFunctionEmitter>(new JSImportForwarderFunctionEmitter(
             new RecordingLayoutProvider(WasmTargetLayout.For(target)),
             invocations,
-            new GeneratedFunctionWriterFactory()));
+            new GeneratedFunctionWriterFactory(),
+            new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier(),
+            new RecordingLayoutProvider(WasmTargetLayout.For(target)),
+            WasmRuntimeImports.CreateCatalog()));
 
     private static MethodInstanceModel Import(
         FakeProgram program,

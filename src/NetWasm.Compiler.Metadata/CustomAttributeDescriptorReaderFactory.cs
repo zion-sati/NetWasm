@@ -16,6 +16,15 @@ public sealed class CustomAttributeDescriptorReaderFactory : ICustomAttributeDes
             new MetadataSignatureTypeResolver(new MetadataTypeResolver(definitions), identities));
 }
 
+public sealed class ModuleAttributeDescriptorReaderFactory : IModuleAttributeDescriptorReaderFactory
+{
+    public IModuleAttributeDescriptorReader Create(MetadataCompilationSnapshot metadata,
+        ITypeDefinitionResolver definitions, ITypeIdentityResolver identities) =>
+        new ModuleAttributeDescriptorReader(
+            metadata.Assemblies.ToImmutableDictionary(assembly => assembly.Identity, assembly => assembly.Metadata),
+            new MetadataSignatureTypeResolver(new MetadataTypeResolver(definitions), identities));
+}
+
 public sealed class AssemblyAttributeDescriptorReaderFactory : IAssemblyAttributeDescriptorReaderFactory
 {
     public IAssemblyAttributeDescriptorReader Create(MetadataCompilationSnapshot metadata,

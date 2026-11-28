@@ -11,6 +11,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Dispatch;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
+using NetWasm.Compiler.Wasm.Emission.StructResults;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 
@@ -21,7 +22,9 @@ internal sealed class CallIndirectEmitter(
     IKeyedDispatchEmitter keyedDispatch,
     IImplicitExceptionEmitter exceptions,
     IValueFrameAddressEmitter valueFrames,
-    INativeAbiCallEmitter nativeCalls) : InstructionCommandProvider
+    INativeAbiCallEmitter nativeCalls,
+    IValueTypeArgumentConventionFactory argumentConventions,
+    IValueTypeResultConventionFactory resultConventions) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -79,18 +82,28 @@ internal sealed class CallIndirectEmitter(
 
         void EmitTargetCall(MethodInstanceModel target)
         {
+            void EmitCall(IWasmInstructionWriter code)
+            {
+                for (var index = 0; index < signature.ParameterTypes.Length; index++)
+                {
+                    var local = GetStackLocal(request.Context, argumentBase + index, request.Stack[argumentBase + index]);
+                    argumentConventions.Create(StructParameters.Parameter(target.Signature, true, index)).Emit(code,
+                        writer => writer.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local))), new(request.Context, Scratch: request.Context.VectorScratch));
+                }
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(functionIndices.Resolve(target)))));
+            }
+            // The target's own signature decides how it returns a value type, as its function type does.
             if (returnsValue)
             {
-                valueFrames.Emit(code, request.Context, returnOffset);
+                resultConventions.Create(target.Signature.ReturnSignatureType).Emit(code,
+                    writer => valueFrames.Emit(writer, request.Context, returnOffset), new(request.Context.StructResultLocals,
+                        request.Context.VectorScratch),
+                    EmitCall);
             }
-            for (var index = 0; index < signature.ParameterTypes.Length; index++)
+            else
             {
-                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-                    request.Context,
-                    argumentBase + index,
-                    request.Stack[argumentBase + index])))));
+                EmitCall(code);
             }
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(functionIndices.Resolve(target)))));
             if (!returnsValue && signature.ReturnType != CliValueKind.Void)
             {
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(

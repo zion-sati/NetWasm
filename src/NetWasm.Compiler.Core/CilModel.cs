@@ -161,6 +161,9 @@ public abstract record CilOperand
     public sealed record TypeIdentity(CliTypeIdentity Value) : CilOperand;
     // The one type a GetObjectType's receiver can have, when it is not null.
     public sealed record ExactType(CliTypeIdentity Value) : CilOperand;
+    // A throw that never runs: the one after a call to a method that never returns, which ends the call's block
+    // (NonReturningCallRewriter). It lowers to Wasm's unreachable.
+    public sealed record NeverRuns : CilOperand;
     // A calli's signature. An unmanaged one (delegate* unmanaged) calls native code through the
     // C ABI, with its arguments lowered as a DllImport's (issue 226).
     public sealed record CallSite(MethodSignatureModel Signature, bool Unmanaged = false) : CilOperand;
@@ -192,7 +195,16 @@ public sealed record CilInstruction(
 {
     public int? OriginalOffset { get; init; }
 
+    // Where the instruction came from in the IL as read: a rewrite keeps it for everything it makes from an
+    // instruction, so measures of the code left (the inliner's) count that instruction once.
     public int SourceOffset => OriginalOffset ?? Offset;
+
+    // The IL offset whose sequence point the instruction reports in stack traces and the line table, when that is not
+    // where it came from: a return folded into the branch to a shared epilogue reports the epilogue's, the method's
+    // closing brace, while it still measures as the branch it replaced.
+    public int? SequencePointOffset { get; init; }
+
+    public int LineOffset => SequencePointOffset ?? SourceOffset;
 }
 
 public sealed record CilMethodBody(
@@ -282,6 +294,12 @@ public sealed record CilExceptionRegion(
 {
     // Definition keys alone cannot distinguish constructed exception types.
     public CliTypeIdentity? CatchTypeIdentity { get; init; }
+
+    // A catch that takes part in the first pass of exception dispatch only while this local is zero. While it is
+    // nonzero the search passes the protected block by, as if it had no handler, and the handler, which then ends in
+    // a rethrow, runs as the exception unwinds through the block: runtime async's catch in a direct call, where it
+    // only puts its caller's state back, as desktop's direct call has no handler there.
+    public int? PassThroughLocal { get; init; }
 }
 
 public static class SupportedCil

@@ -1662,8 +1662,8 @@ public sealed class InteropContractCoverageTests
                 .Add(new EntityKey(Assembly, 27), Method("GetVoidResult", 27,
                     MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.I4)))
                 .Add(new EntityKey(Assembly, 20), Method(
-                    "SetResult", 20, MethodSignatureModel.Create(CliValueKind.Void)))
-                .Add(new EntityKey(Assembly, 21), Method("SetResult", 21,
+                    "SetResultForJavaScriptInterop", 20, MethodSignatureModel.Create(CliValueKind.Void)))
+                .Add(new EntityKey(Assembly, 21), Method("SetResultForJavaScriptInterop", 21,
                     MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.I4)) with
                 {
                     DeclaringType = genericTaskDefinition.Key,

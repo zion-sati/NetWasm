@@ -42,7 +42,7 @@ internal sealed class ReceiverProverFactory(
     {
         var called = _calledMethods.Create(methods, methodInstances, symbols);
         return new ReceiverProver(
-            new ConstructedReceiverPlanner(new ControlFlowDominanceAnalyzer(), new StackEffectResolver(called), called),
+            new ConstructedReceiverPlanner(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()), new StackEffectResolver(called), called),
             called,
             _graphBuilders.Create(),
             _stackValidators.Create(types, fields, methods),

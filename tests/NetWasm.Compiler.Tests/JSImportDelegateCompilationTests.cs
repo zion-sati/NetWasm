@@ -53,7 +53,7 @@ public sealed class JSImportDelegateCompilationTests
 
         ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Equal(["report", "resolve"],
-            result.InteropManifest.Imports.Select(import => import.Name).Order(StringComparer.Ordinal));
+            ProgramImports(result.InteropManifest.Imports).Select(import => import.Name).Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -181,7 +181,7 @@ public sealed class JSImportDelegateCompilationTests
             target));
 
         ValidateWithNode(result.ApplicationModule, assets.Directory);
-        Assert.Equal(["date"], Assert.Single(result.InteropManifest.Imports).Parameters.ToArray());
+        Assert.Equal(["date"], Assert.Single(ProgramImports(result.InteropManifest.Imports)).Parameters.ToArray());
     }
 
     private static CompilerException CompileRejected(string source)

@@ -42,5 +42,6 @@ public interface IManagedCompilerOptimizationOverridesParser
         string? loopStrengthReduction = null,
         string? rangeBranchFolding = null,
         string? unwrittenStaticFieldFolding = null,
-        string? conditionalSelects = null);
+        string? conditionalSelects = null,
+        string? byRefNullCheckElimination = null);
 }

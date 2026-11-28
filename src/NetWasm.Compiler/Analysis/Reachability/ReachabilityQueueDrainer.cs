@@ -105,11 +105,11 @@ internal sealed class ReachabilityQueueDrainer(
 
                 resolvedDispatchCount++;
 
-                if (!session.State.DispatchTargets.TryGetValue(work.DispatchKey, out var targets))
+                if (!session.State.DispatchTargets.TryGetValue(work.Slot, out var targets))
                 {
                     targets = new Dictionary<string, DispatchTargetModel>(
                         StringComparer.Ordinal);
-                    session.State.DispatchTargets.Add(work.DispatchKey, targets);
+                    session.State.DispatchTargets.Add(work.Slot, targets);
                 }
                 targets.TryAdd(target.ReceiverType.CanonicalName, target);
                 // A delegate's Invoke has no body: its type's invoke helper serves it.
@@ -121,7 +121,7 @@ internal sealed class ReachabilityQueueDrainer(
                 {
                     var previousPath = session.CurrentDependencyPath;
                     session.CurrentDependencyPath = session.State.DispatchDependencyPaths.GetValueOrDefault(
-                        work.DispatchKey, ImmutableStack<CompilerDependencyStep>.Empty);
+                        work.Slot, ImmutableStack<CompilerDependencyStep>.Empty);
                     session.CurrentReceiver = work.Receiver;
                     try
                     {

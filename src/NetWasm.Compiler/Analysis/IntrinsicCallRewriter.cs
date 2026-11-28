@@ -45,16 +45,26 @@ internal sealed class IntrinsicCallRewriter(
             {
                 continue;
             }
+            // A constrained GetType becomes GetObjectType of the constrained type, which takes the prefix's managed
+            // pointer itself: the prefix goes, as ConstrainedCallRewriter drops it, so the next call does not take it.
+            var constrained = replacement == CilOperation.GetObjectType && index > 0 &&
+                instructions[index - 1] is { Operation: CilOperation.Constrained, Operand: CilOperand.TypeIdentity prefix }
+                    ? prefix
+                    : null;
+            if (constrained is not null)
+            {
+                instructions[index - 1] = instructions[index - 1] with
+                {
+                    Operation = CilOperation.Nop,
+                    Operand = new CilOperand.None(),
+                };
+            }
             instructions[index] = call with
             {
                 Operation = replacement.Value,
                 Operand = replacement switch
                 {
-                    CilOperation.GetObjectType when
-                        index > 0 &&
-                        instructions[index - 1].Operation == CilOperation.Constrained &&
-                        instructions[index - 1].Operand is CilOperand.TypeIdentity constrained =>
-                        constrained,
+                    CilOperation.GetObjectType when constrained is not null => constrained,
                     CilOperation.MaterializeMethod or CilOperation.MaterializeField =>
                         new CilOperand.Index(target.Signature.ParameterTypes.Length),
                     _ => new CilOperand.None(),

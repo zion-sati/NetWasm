@@ -1,0 +1,10 @@
+<Project Sdk="NetWasm.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netwasm0.1</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ComponentExportControl</AssemblyName>
+    <NetWasmRawWasm>false</NetWasmRawWasm>
+    <NetWasmOptimization>None</NetWasmOptimization>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+</Project>

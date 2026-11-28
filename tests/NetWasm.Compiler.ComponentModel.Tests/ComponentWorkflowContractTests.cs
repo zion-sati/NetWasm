@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
+using NetWasm.Compiler.ComponentModel.Debugging;
+using NetWasm.Compiler.ComponentModel.Tests.Debugging;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Optimization;
@@ -139,7 +141,8 @@ public sealed class ComponentWorkflowContractTests
                     new ComponentPackageOperationRunner(tools),
                     linker,
                     new SystemFileMover(),
-                    new PlainCoreModuleImportValidator()),
+                    new PlainCoreModuleImportValidator(),
+                    new RecordingDebugInformation()),
                 capability)),
             new ComponentPackageRequest(
                 core,
@@ -177,7 +180,8 @@ public sealed class ComponentWorkflowContractTests
                     new ComponentPackageOperationRunner(tools),
                     linker,
                     new SystemFileMover(),
-                    imports),
+                    imports,
+                    new RecordingDebugInformation()),
                 new RecordingCapability())),
             new ComponentPackageRequest(core, wit, null, output, ComponentTarget.Wasm32Wasi02, runtime)
             {
@@ -209,7 +213,8 @@ public sealed class ComponentWorkflowContractTests
                     new ComponentPackageOperationRunner(new RecordingWasmTools()),
                     linker,
                     new SystemFileMover(),
-                    new PlainCoreModuleImportValidator()),
+                    new PlainCoreModuleImportValidator(),
+                    new RecordingDebugInformation()),
                 new RecordingCapability())),
             new ComponentPackageRequest(
                 core,
@@ -223,6 +228,47 @@ public sealed class ComponentWorkflowContractTests
         Assert.True(File.Exists(output));
         Assert.Equal(1, linker.Calls);
         Assert.Equal(ManagedInliningHints.Preserve, linker.Request!.OptimizationOverrides!.ManagedInliningHints);
+    }
+
+    // With debug information a linked module gains its names and DWARF before it is packaged, and the strip keeps
+    // them; a core module packaged as it is gets nothing written into it, and a product package strips everything.
+    [Theory]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    public void PackagerWritesDebugInformationIntoTheLinkedModuleAndKeepsItThroughTheStrip(bool linked, bool plain,
+        bool withDebugInformation)
+    {
+        using var files = new ComponentModelTestFiles();
+        var core = files.Create("core.wasm", 0);
+        var runtime = linked ? files.Create("runtime.wasm", 0) : null;
+        var wit = files.Create("contract.wit", 0);
+        var output = files.PathFor("component.wasm");
+        var tools = new RecordingWasmTools();
+        var linker = new RecordingCoreModuleLinker();
+        var debugLines = new RecordingDebugInformation();
+        var debug = withDebugInformation ? new WasmDebugInformation("program.wasm.method-symbols", "/src") : null;
+        InvokePackage(
+            AsPackager(new ComponentPackager(
+                new ComponentPackageInputValidator(new SystemFileExistence(), new SystemDirectoryExistence()),
+                new ComponentPackageWorkspaceFactory(new SystemDirectoryCreator(), new SystemDirectoryDeleter()),
+                new ComponentPackageExecution(new ComponentPackageOperationRunner(tools), linker, new SystemFileMover(),
+                    new RecordingImportValidator(), debugLines),
+                new RecordingCapability())),
+            new ComponentPackageRequest(core, wit, null, output, ComponentTarget.Wasm32Wasi02, runtime)
+            {
+                DebugInformation = debug,
+                PlainCoreModule = plain,
+            });
+
+        if (linked) Assert.Same(debug, linker.Request!.DebugInformation);
+        if (linked && debug is not null) Assert.Equal([(linker.Request!.OutputPath, debug)], debugLines.Calls);
+        else Assert.Empty(debugLines.Calls);
+        var strip = Assert.Single(tools.Invocations, invocation => invocation[0] == "strip");
+        Assert.Equal(debug is null ? ["strip", "--all"] : ["strip", "--delete", ComponentPackageExecution.NonDebugSections],
+            strip[..^3]);
     }
 
     private static void InvokeLink(
@@ -277,10 +323,12 @@ public sealed class ComponentWorkflowContractTests
     private sealed class RecordingWasmTools : IWasmTools
     {
         public List<string> Operations { get; } = [];
+        public List<string[]> Invocations { get; } = [];
 
         public ToolResult Run(params IEnumerable<string> arguments)
         {
             var values = arguments.ToArray();
+            Invocations.Add(values);
             Operations.Add(values[0] switch
             {
                 "component" when values[1] == "embed" => "component embed",
@@ -317,7 +365,8 @@ public sealed class ComponentWorkflowContractTests
             ComponentTarget target,
             FinalWasmOptimization optimization,
             bool converge,
-            bool lowMemoryUnused)
+            bool lowMemoryUnused,
+            bool keepNames)
         {
             Calls++;
             InputPath = inputPath;

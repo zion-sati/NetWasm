@@ -14,7 +14,7 @@ internal sealed class ControlFlowPostDominatorFinder(IControlFlowPostDominanceAn
 {
     private readonly IControlFlowPostDominanceAnalyzer _postDominance = postDominance ?? throw new ArgumentNullException(nameof(postDominance));
 
-    public Dictionary<int, ImmutableHashSet<int>> Find(ControlFlowStructuringState state,
+    public DominatorTree Find(ControlFlowStructuringState state,
         int? stop,
         ImmutableHashSet<int> allowed)
     {

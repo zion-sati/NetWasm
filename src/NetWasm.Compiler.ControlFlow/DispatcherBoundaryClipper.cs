@@ -15,7 +15,7 @@ public sealed class DispatcherBoundaryClipper : IDispatcherBoundaryClipper
     {
         ArgumentNullException.ThrowIfNull(component);
         ArgumentNullException.ThrowIfNull(allowed);
-        var clipped = component.Intersect(allowed);
+        var clipped = component.Within(allowed);
         return boundary is int stop ? clipped.Remove(stop) : clipped;
     }
 }

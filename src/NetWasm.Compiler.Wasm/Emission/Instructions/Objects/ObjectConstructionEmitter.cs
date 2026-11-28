@@ -28,7 +28,8 @@ internal sealed class ObjectConstructionEmitter(
     INativeIntegerConstructionEmitter nativeIntegerConstructions,
     IStaticInitializationEmitter initialization,
     IStaticInitializerGuardResolver guards,
-    IDelegateTargetCheckSelector delegateTargets) :
+    IDelegateTargetCheckSelector delegateTargets,
+    NetWasm.Compiler.Wasm.Emission.StructResults.IValueTypeArgumentConventionFactory argumentConventions) :
     InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
@@ -335,10 +336,9 @@ internal sealed class ObjectConstructionEmitter(
     {
         for (var index = 0; index < signature.ParameterTypes.Length; index++)
         {
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-                request.Context,
-                argumentBase + index,
-                request.Stack[argumentBase + index])))));
+            var local = GetStackLocal(request.Context, argumentBase + index, request.Stack[argumentBase + index]);
+            argumentConventions.Create(NetWasm.Compiler.Wasm.Emission.StructResults.StructParameters.Parameter(signature, true, index)).Emit(code,
+                writer => writer.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local))), new(request.Context, Scratch: request.Context.VectorScratch));
         }
     }
 

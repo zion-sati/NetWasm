@@ -429,7 +429,8 @@ public sealed class VirtualDispatchCallEmitterTests
     {
         public ImmutableArray<VirtualDispatchCase> Plan(
             ImmutableArray<DispatchTargetModel> checkedTargets,
-            ImmutableArray<DispatchTargetModel> receivers) => cases;
+            ImmutableArray<DispatchTargetModel> receivers,
+            bool exhaustive) => cases;
     }
 
     [Theory]
@@ -936,7 +937,17 @@ public sealed class VirtualDispatchCallEmitterTests
         new ConstrainedReferenceReceiverEmitter(layouts),
         initialization ?? new StaticInitializationEmitter(new StaticInitializerGuardResolver(new FakeProgram(), new FakeProgram()),
             new NetWasm.Compiler.Wasm.Emission.Support.AddressInstructionEmitter(layouts)),
-        initializationTriggers ?? new MethodInitializationTriggerClassifier(new FakeProgram()));
+        initializationTriggers ?? new MethodInitializationTriggerClassifier(new FakeProgram()), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory(),
+        new NoReceiverFlowAudits());
+
+    // These sites are not audited; ReceiverFlowAuditCompilationTests covers audited calls end to end.
+    private sealed class NoReceiverFlowAudits : IReceiverFlowAuditEmitter
+    {
+        public void Emit(IWasmInstructionWriter code, DispatchCallSiteModel site, int receiverLocal, int typeIdLocal,
+            IFunctionIndexResolver functionIndices)
+        {
+        }
+    }
 
     private static CallEmissionRequest CreateDispatchRequest(
         MethodInstanceModel method,

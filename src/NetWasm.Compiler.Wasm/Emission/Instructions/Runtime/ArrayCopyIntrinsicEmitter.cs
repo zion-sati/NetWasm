@@ -19,7 +19,8 @@ internal sealed class ArrayCopyIntrinsicEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
-                RuntimeImportSymbol.ArrayCopy))));
+                request.Instruction.Target.RuntimeImportSelection.ArrayCopy,
+                request.Instruction.Target.RuntimeImportSelection))));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)request.Local(0, CliValueKind.I4))));

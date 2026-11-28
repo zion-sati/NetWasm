@@ -59,7 +59,7 @@ public sealed class CilDecoderTests
             new MetadataMethodBodyBlockReader(new FixedSymbols()), new FixedSymbols(),
             new FixedMethodReferences(method), entities,
             new FixedFieldReferences(MetadataActorTestData.Field, false), signatures,
-            new FixedCallSiteSignatures(), new IdentityMetadataStackTypeResolver(), new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new NoTypedReferences()));
+            new FixedCallSiteSignatures(), new IdentityMetadataStackTypeResolver(), new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new CilLeaveChainer(), new NoTypedReferences()));
 
         var body = decoder.Decode(assembly, new MethodInstanceModel(method,
             context.TypeArguments.IsEmpty ? ownerIdentity
@@ -739,7 +739,7 @@ public sealed class CilDecoderTests
                 new FixedTypeSignatures(),
                 new FixedCallSiteSignatures(),
                 new IdentityMetadataStackTypeResolver(),
-                new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new NoTypedReferences());
+                new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new CilLeaveChainer(), new NoTypedReferences());
 
             var body = ((ICilDecoder)decoder).Decode(
                 assembly,
@@ -796,7 +796,7 @@ public sealed class CilDecoderTests
             new FixedTypeSignatures(),
             new FixedCallSiteSignatures(),
             new IdentityMetadataStackTypeResolver(),
-            new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(),
+            new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new CilLeaveChainer(),
             new NoTypedReferences());
 
         var body = ((ICilDecoder)decoder).Decode(assembly, new MethodInstanceModel(method,
@@ -860,7 +860,7 @@ public sealed class CilDecoderTests
                 new FixedTypeSignatures(),
                 new FixedCallSiteSignatures(),
                 new IdentityMetadataStackTypeResolver(),
-                new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(),
+                new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new CilLeaveChainer(),
                 new FixedTypedReferences(new FixedMethodReferences(method), assembly.Metadata));
             try
             {
@@ -959,7 +959,7 @@ public sealed class CilDecoderTests
                 new FixedTypeSignatures(),
                 new FixedCallSiteSignatures(),
                 new IdentityMetadataStackTypeResolver(),
-                new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new NoTypedReferences());
+                new IdentitySwitchLowerer(), new PlatformGuardPlanner(new RawCilInstructionReader()), new CilTryReentryLowerer(), new CilLeaveChainer(), new NoTypedReferences());
             try
             {
                 var body = ((ICilDecoder)decoder).Decode(

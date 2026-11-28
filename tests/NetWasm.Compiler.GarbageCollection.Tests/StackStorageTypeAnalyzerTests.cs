@@ -114,7 +114,7 @@ public sealed class StackStorageTypeAnalyzerTests
             I(3, CilOperation.LoadLocal, new CilOperand.Index(0)), I(4, CilOperation.Pop), I(5, CilOperation.Return));
         var storage = new FixedStorage(new([], [])
         {
-            Locals = ImmutableDictionary<int, ImmutableArray<StackStorageType>>.Empty.Add(2, [new(null, false)]),
+            Locals = ImmutableDictionary<int, StackStorageLocals>.Empty.Add(2, new([new(null, false)])),
         });
         var anchors = new RecordingAnchorPlanner();
         var analyzer = new IRootMapAnalyzer[] { new RootMapAnalyzer(repository, storage,
@@ -1141,6 +1141,42 @@ public sealed class StackStorageTypeAnalyzerTests
 
     private static ImmutableDictionary<int, ImmutableArray<StackStorageType>> Analyze(Repository repository, ManagedMethodBody method)
         => AnalyzeStorage(repository, method).Entries;
+
+    // Only byref locals address storage, so a method's other locals cost nothing per instruction: instructions with no
+    // store to a byref local between them share one view of the locals, and every other local reads as addressing none.
+    // A method of 20,000 object locals and 4,000 instructions would otherwise copy 80 million entries.
+    [Fact]
+    public void InstructionsBetweenByrefStoresShareTheirLocalsAndOtherLocalsAddressNone()
+    {
+        const int objects = 20_000;
+        const int reads = 2_000;
+        var repository = new Repository(4);
+        var byref = CliTypeIdentity.ManagedByReference(Pair);
+        var instructions = new List<CilInstruction>
+        {
+            I(0, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+            I(1, CilOperation.StoreLocal, new CilOperand.Index(1)),
+        };
+        for (var read = 0; read < reads; read++)
+        {
+            instructions.Add(I(instructions.Count, CilOperation.LoadLocal, new CilOperand.Index(1)));
+            instructions.Add(I(instructions.Count, CilOperation.Pop));
+        }
+        instructions.Add(I(instructions.Count, CilOperation.Return));
+        var method = Body(repository, Method(EntryKey, Void),
+            [Pair, byref, .. Enumerable.Repeat(CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference), objects)],
+            [.. instructions]);
+
+        var analysis = AnalyzeStorage(repository, method);
+
+        var afterStore = analysis.Locals[2];
+        Assert.Equal(objects + 2, afterStore.Length);
+        Assert.Equal(byref, afterStore[1].Type);
+        Assert.Null(afterStore[objects + 1].Type);
+        Assert.False(afterStore[objects + 1].CompleteBackingKnown);
+        Assert.All(Enumerable.Range(3, 2 * reads - 1), offset => Assert.Same(afterStore, analysis.Locals[offset]));
+        Assert.NotSame(afterStore, analysis.Locals[1]);
+    }
 
     [Theory]
     [InlineData(4)]

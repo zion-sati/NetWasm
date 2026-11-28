@@ -10,6 +10,11 @@ internal sealed class ConsoleCompilerProgressReporter : ICompilerProgressReporte
 {
     public void Report(CompilerProgressStage stage)
     {
+        // A failure is an outcome, not progress toward Complete; the host reports it through its exit.
+        if (stage == CompilerProgressStage.Failed)
+        {
+            return;
+        }
         Console.Error.WriteLine(
             $"NETWASM_PROGRESS {(int)stage}/{(int)CompilerProgressStage.Complete}");
     }

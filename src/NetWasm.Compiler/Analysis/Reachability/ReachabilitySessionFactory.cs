@@ -35,8 +35,11 @@ internal sealed class ReachabilitySessionFactory(
     ITypeDefinitionResolver typeDefinitions,
     ITypeFinder typeFinder,
     ITypeIdentityResolver typeIdentities,
-    ITypeRepository typeRepository) : IReachabilitySessionFactory
+    ITypeRepository typeRepository,
+    IEffectFreeTypeInitializerClassifier effectFreeInitializers) : IReachabilitySessionFactory
 {
+    private readonly IEffectFreeTypeInitializerClassifier _effectFreeInitializers = effectFreeInitializers ??
+        throw new ArgumentNullException(nameof(effectFreeInitializers));
     private readonly IReachabilityLedgerFactory _ledgers = ledgers ??
         throw new ArgumentNullException(nameof(ledgers));
     private readonly IGenericCycleSessionFactory _genericCycles = genericCycles ??
@@ -107,6 +110,7 @@ internal sealed class ReachabilitySessionFactory(
             _typeDefinitions,
             _typeFinder,
             _typeIdentities,
-            _typeRepository);
+            _typeRepository,
+            _effectFreeInitializers);
     }
 }

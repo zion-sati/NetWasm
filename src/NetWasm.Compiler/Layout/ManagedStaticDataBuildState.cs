@@ -21,6 +21,8 @@ internal sealed class ManagedStaticDataBuildState
     public int TypeObjectCacheAddress { get; set; }
     public int TypeObjectCount { get; set; }
     public int TypeObjectSize { get; set; }
+    public int SharedArrayTargetsAddress { get; set; }
+    public int SharedArrayTargetCount { get; set; }
     public ImmutableArray<DataSegment>.Builder Segments { get; } =
         ImmutableArray.CreateBuilder<DataSegment>();
     public ImmutableArray<TypeDescriptorLayout>.Builder TypeDescriptors { get; } =

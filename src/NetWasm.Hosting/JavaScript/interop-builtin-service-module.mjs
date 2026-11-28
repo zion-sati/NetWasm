@@ -13,6 +13,7 @@ const requestKeys = [
   "consumerModules",
   "contract",
   "createStatusService",
+  "errors",
   "exceptionReporter",
   "handles",
   "readMemory",
@@ -60,7 +61,8 @@ export function createInteropBuiltinServiceModule(request) {
   };
   const generatedServices = {
     ...createGeneratedHostServices(request.consumerModules),
-    ...createJavaScriptValueServices(request.handles, globalThis.FinalizationRegistry, request.readMemory),
+    ...request.errors.services,
+    ...createJavaScriptValueServices(request.handles, globalThis.FinalizationRegistry, request.readMemory, request.errors),
   };
   for (const descriptor of request.contract.imports) {
     if (descriptor.module !== builtinModule) continue;
@@ -129,7 +131,8 @@ class ManagedError extends Error {
 // receiver of a handle releases it. Managed objects and exceptions keep their
 // managed GC handle, which value_collected reports once JavaScript collects them;
 // without a FinalizationRegistry they stay pinned.
-export function createJavaScriptValueServices(handles, Registry = globalThis.FinalizationRegistry, readMemory = null) {
+export function createJavaScriptValueServices(
+  handles, Registry = globalThis.FinalizationRegistry, readMemory = null, errors = null) {
   const managed = new WeakMap();
   const collected = [];
   const registry = typeof Registry === "function"
@@ -167,10 +170,9 @@ export function createJavaScriptValueServices(handles, Registry = globalThis.Fin
     },
     value_bigint: handle => BigInt.asIntN(64, value(handle)),
     value_string: handle => String(value(handle)),
-    value_message(handle) {
-      const item = value(handle);
-      return item instanceof Error ? String(item.message) : String(item);
-    },
+    // An exception's message, as .NET's browser runtime reads a JavaScript value crossing as one
+    // (marshal_exception_to_cs): its toString(), so an Error reads as "Name: message".
+    value_message: handle => String(value(handle).toString()),
     value_bytes: value,
     value_int32s: value,
     value_doubles: value,
@@ -209,6 +211,12 @@ export function createJavaScriptValueServices(handles, Registry = globalThis.Fin
     value_from_managed_error: (message, handle) => track(new ManagedError(message), handle),
     // Any order frees them; taking the last costs the same however many JavaScript collected.
     value_collected: () => collected.pop() ?? 0n,
+    // A failed import's pending error that is a managed exception crossing back: its managed GC handle, else 0, as
+    // .NET's marshal_exception_to_cs gives a ManagedError back as the exception it came from.
+    error_pending_managed() {
+      const pending = errors?.pendingValue();
+      return pending instanceof ManagedError && managed.has(pending) ? managed.get(pending) : 0n;
+    },
   };
 }
 

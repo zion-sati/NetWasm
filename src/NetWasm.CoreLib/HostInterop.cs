@@ -1,18 +1,17 @@
 // Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
 // SPDX-License-Identifier: MIT
 
-namespace System
+namespace System.Runtime.InteropServices.JavaScript
 {
+    // .NET's browser JSException (dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce,
+    // src/libraries/System.Runtime.InteropServices.JavaScript/src/System/Runtime/InteropServices/JavaScript/JSException.cs),
+    // holding the JavaScript error as a host handle where .NET holds a JSObject proxy.
     public sealed class JSException : Exception
     {
-        // A JavaScript error this exception came from, which it gives back when it
-        // crosses to JavaScript again. Only an error crossing as a value has one, so
-        // an exception from a failed import pays for no finalizer.
-        private readonly System.Runtime.InteropServices.JavaScript.JSHandleOwner? _error;
-
-        public JSException()
-        {
-        }
+        // The JavaScript error this exception came from, which it gives back when it crosses to JavaScript again: what
+        // a failed import threw or rejected with, or an error crossing as a value.
+        private JSHandleOwner? _error;
+        private string? _combinedStackTrace;
 
         public JSException(string msg)
             : base(msg)
@@ -22,12 +21,60 @@ namespace System
         internal JSException(string message, int error)
             : base(message) => _error = new(error);
 
-        internal int Error => _error?.Handle ?? 0;
-    }
-}
+        // A failure the boundary found with no JavaScript value behind it, such as a result it refused.
+        internal JSException()
+        {
+        }
 
-namespace System.Runtime.InteropServices.JavaScript
-{
+        internal int Error => _error?.Handle ?? 0;
+
+        // As .NET's: the managed frames, then the JavaScript error's stack, without the message a JavaScript engine
+        // puts at its top. Reading it releases the error, as .NET disposes its proxy.
+        public override string? StackTrace
+        {
+            get
+            {
+                if (_combinedStackTrace != null)
+                {
+                    return _combinedStackTrace;
+                }
+                var bs = base.StackTrace;
+                if (_error == null)
+                {
+                    return bs;
+                }
+                string? jsStackTrace = JSHostError.Stack(_error.Handle);
+                _error.Release();
+                _error = null;
+                if (jsStackTrace == null)
+                {
+                    _combinedStackTrace = bs;
+                    return _combinedStackTrace;
+                }
+                else if (jsStackTrace.StartsWith(Message + "\n", StringComparison.Ordinal))
+                {
+                    jsStackTrace = jsStackTrace.Substring(Message.Length + 1);
+                }
+                _combinedStackTrace = bs != null
+                    ? bs + Environment.NewLine + jsStackTrace
+                    : jsStackTrace;
+                return _combinedStackTrace;
+            }
+        }
+
+        // As .NET's: exceptions holding the same JavaScript error are equal, and so are two that hold none.
+        public override bool Equals(object? obj) =>
+            obj is JSException other && (other._error == null
+                ? _error == null
+                : _error != null && JSHostError.Same(other._error.Handle, _error.Handle));
+
+        public override int GetHashCode() =>
+            _error == null ? base.GetHashCode() : base.GetHashCode() * _error.Handle;
+
+        // As .NET's, which leaves out the expensive stack trace.
+        public override string ToString() => Message;
+    }
+
     public class JSObject : IDisposable
     {
         private int _handle;
@@ -446,7 +493,7 @@ namespace System.Runtime.InteropServices.JavaScript
         public void Reject()
         {
             Complete();
-            _completion.SetException(new JSException());
+            _completion.SetException(JSHostError.TakeFailure());
         }
 
         private void Complete()
@@ -475,7 +522,7 @@ namespace System.Runtime.InteropServices.JavaScript
         public void Reject()
         {
             Complete();
-            _completion.SetException(new JSException());
+            _completion.SetException(JSHostError.TakeFailure());
         }
 
         private void Complete()

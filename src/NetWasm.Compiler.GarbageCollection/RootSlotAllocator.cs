@@ -9,6 +9,15 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.GarbageCollection;
 
+// Each root source, in (Kind, Index, ByteOffset) order, takes the lowest slot that no source before it holds at a
+// safepoint where both are roots: a greedy coloring of the graph in which each safepoint's roots are all adjacent. The
+// graph's edges are never listed (a safepoint with R roots has R squared of them, and a Debug method keeps most of its
+// locals live at every safepoint): identical safepoints count once, and each keeps the slots its colored roots hold and
+// the lowest slot none of them holds. Every slot below the highest of those lowest slots among a source's safepoints is
+// held at one of them, so the source takes that slot unless one of its safepoints holds it; only then does it read the
+// slots its safepoints hold.
+// Cost: linear in the roots of the distinct safepoints, except that a source whose starting slot is held reads the slots
+// held at its safepoints once (what the pairwise graph cost for every source).
 public sealed class RootSlotAllocator : IRootSlotAllocator
 {
     public ImmutableDictionary<RootSource, int> Allocate(
@@ -16,46 +25,68 @@ public sealed class RootSlotAllocator : IRootSlotAllocator
     {
         ArgumentNullException.ThrowIfNull(safepoints);
 
-        var interference = new Dictionary<RootSource, HashSet<RootSource>>();
+        var cliques = new HashSet<ImmutableArray<RootSource>>(RootsComparer.Instance);
+        var memberships = new Dictionary<RootSource, List<int>>();
         foreach (var safepoint in safepoints)
         {
-            AddInterference(safepoint.Roots);
-            AddInterference(safepoint.ConstructorCallRoots);
+            Add(safepoint.Roots);
+            Add(safepoint.ConstructorCallRoots);
         }
 
+        var held = new HashSet<int>?[cliques.Count];
+        var lowest = new int[cliques.Count];
         var slots = ImmutableDictionary.CreateBuilder<RootSource, int>();
-        foreach (var source in interference.Keys
+        foreach (var source in memberships.Keys
                      .OrderBy(source => source.Kind)
                      .ThenBy(source => source.Index)
                      .ThenBy(source => source.ByteOffset))
         {
-            var unavailable = interference[source]
-                .Where(slots.ContainsKey)
-                .Select(neighbor => slots[neighbor])
-                .ToHashSet();
+            var memberOf = memberships[source];
             var slot = 0;
-            while (unavailable.Contains(slot))
+            foreach (var clique in memberOf) slot = Math.Max(slot, lowest[clique]);
+            if (memberOf.Exists(clique => held[clique]?.Contains(slot) == true))
             {
-                slot++;
+                var unavailable = new HashSet<int>();
+                foreach (var clique in memberOf)
+                {
+                    if (held[clique] is { } taken) unavailable.UnionWith(taken);
+                }
+                while (unavailable.Contains(slot)) slot++;
             }
             slots.Add(source, slot);
+            foreach (var clique in memberOf)
+            {
+                var taken = held[clique] ??= [];
+                taken.Add(slot);
+                while (taken.Contains(lowest[clique])) lowest[clique]++;
+            }
         }
         return slots.ToImmutable();
 
-        void AddInterference(ImmutableArray<RootSource> roots)
+        void Add(ImmutableArray<RootSource> roots)
         {
+            if (roots.Length == 0 || !cliques.Add(roots)) return;
+            var clique = cliques.Count - 1;
             foreach (var source in roots)
             {
-                interference.TryAdd(source, []);
+                if (!memberships.TryGetValue(source, out var memberOf)) memberships[source] = memberOf = [];
+                if (memberOf.Count == 0 || memberOf[^1] != clique) memberOf.Add(clique);
             }
-            for (var left = 0; left < roots.Length; left++)
-            {
-                for (var right = left + 1; right < roots.Length; right++)
-                {
-                    interference[roots[left]].Add(roots[right]);
-                    interference[roots[right]].Add(roots[left]);
-                }
-            }
+        }
+    }
+
+    // Two safepoints' roots as the same set when they list the same sources in the same order (the analyzer orders them).
+    private sealed class RootsComparer : IEqualityComparer<ImmutableArray<RootSource>>
+    {
+        public static RootsComparer Instance { get; } = new();
+
+        public bool Equals(ImmutableArray<RootSource> x, ImmutableArray<RootSource> y) => x.AsSpan().SequenceEqual(y.AsSpan());
+
+        public int GetHashCode(ImmutableArray<RootSource> obj)
+        {
+            var hash = new HashCode();
+            foreach (var source in obj) hash.Add(source);
+            return hash.ToHashCode();
         }
     }
 }

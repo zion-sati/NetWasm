@@ -325,7 +325,7 @@ namespace System.Threading
             var task = new System.Threading.Tasks.Task();
             try
             {
-                PlatformServices.Scheduler.Schedule(() =>
+                PlatformServices.Scheduler.Post(() =>
                 {
                     try
                     {
@@ -336,7 +336,7 @@ namespace System.Threading
                     {
                         task.SetException(exception);
                     }
-                }, 0);
+                });
             }
             catch (Exception exception)
             {
@@ -549,7 +549,7 @@ namespace System.Threading
 
         private ITimer CreateTimer(TimeSpan dueTime)
         {
-            using (ExecutionContext.SuppressFlow())
+            using (ExecutionContext.SuppressFlowWhileCreatingTimer())
             {
                 return (_timeProvider ?? TimeProvider.System).CreateTimer(
                     static state => ((CancellationTokenSource)state!).Cancel(),

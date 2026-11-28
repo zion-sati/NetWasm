@@ -8,6 +8,8 @@ using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 // Calls a multicast delegate's entries in order. Its invoke function calls this only for
@@ -25,7 +27,8 @@ internal sealed class DelegateMulticastFunctionEmitter(
     IDelegateInvocationTargetSelector targets,
     IGeneratedFunctionWriterFactory writers,
     IDelegateArgumentRootEmitter roots,
-    IDelegateDispatchEmitter dispatch) : IDelegateMulticastFunctionEmitter
+    IDelegateDispatchEmitter dispatch,
+    IStructResultClassifier? structResults = null) : IDelegateMulticastFunctionEmitter
 {
     public byte[] Emit(
         MethodInstanceModel invoke,
@@ -33,10 +36,10 @@ internal sealed class DelegateMulticastFunctionEmitter(
         IFunctionIndexResolver functionIndices,
         WasmFunctionIndex invokeFunction)
     {
-        var signature = DelegateInvokeSignature.Of(invoke);
+        var signature = DelegateInvokeSignature.Of(invoke, structResults);
         var parameterCount = functionTypes.Resolve(invoke).Parameters.Length;
         var resultLocal = parameterCount;
-        var rootFrameLocal = resultLocal + 1;
+        var rootFrameLocal = resultLocal + signature.ResultLocals.Length;
         var invocationListLocal = rootFrameLocal + 1;
         var invocationCountLocal = invocationListLocal + 1;
         var invocationIndexLocal = invocationCountLocal + 1;
@@ -48,15 +51,16 @@ internal sealed class DelegateMulticastFunctionEmitter(
         var code = output.Instructions;
         // A list rather than an ImmutableArray spread: NativeAOT-LLVM, which compiles this
         // compiler for the browser, crashes on that (https://github.com/dotnet/runtimelab/issues/3329).
-        List<CliValueKind> locals =
+        List<CliValueKind> locals = [];
+        locals.AddRange(signature.ResultLocals);
+        locals.AddRange(
         [
-            signature.ResultType,
             CliValueKind.ManagedAddress,
             CliValueKind.ManagedReference,
             CliValueKind.I4,
             CliValueKind.I4,
             CliValueKind.ManagedReference,
-        ];
+        ]);
         if (targetProgram.InlineMulticastDispatch)
         {
             locals.Add(CliValueKind.ManagedAddress);
@@ -101,10 +105,7 @@ internal sealed class DelegateMulticastFunctionEmitter(
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Call,
                 WasmInstructionOperand.Unsigned(checked((uint)invokeFunction.Value))));
-            if (signature.ReturnsScalar)
-            {
-                WriteLocalSet(code, resultLocal);
-            }
+            signature.EmitKeep(code, resultLocal);
         }
         WriteLocalGet(code, invocationIndexLocal);
         WriteI32Constant(code, 1);
@@ -130,10 +131,7 @@ internal sealed class DelegateMulticastFunctionEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned(checked((uint)runtimeImports.Resolve(RuntimeImportSymbol.RootFrameLeave)))));
-        if (signature.ReturnsScalar)
-        {
-            WriteLocalGet(code, resultLocal);
-        }
+        signature.EmitReturned(code, resultLocal);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         return output.Snapshots.Read();
     }

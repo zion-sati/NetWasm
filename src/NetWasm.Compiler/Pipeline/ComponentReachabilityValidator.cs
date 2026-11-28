@@ -46,13 +46,18 @@ internal sealed class ComponentReachabilityValidator : IComponentReachabilityVal
         }
         if (contract.IsEmpty)
         {
+            // The first binding by name, with how the closure reached it.
+            var first = reachableImports.Select(method => method.Key).Concat(reachableExports)
+                .Select(key => (Key: key, Name: symbols.Format(methods.GetMethod(key))))
+                .OrderBy(binding => binding.Name, StringComparer.Ordinal)
+                .First();
             throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.ComponentContract,
                 "reachable WIT imports or exports require '--wit' and a selected WIT world",
-                FormatFirstBinding(
-                    reachableImports.Select(method => method.Key).Concat(reachableExports),
-                    methods,
-                    symbols)));
+                first.Name)
+            {
+                DependencyChain = program.ImportDependencyPaths.TryGetValue(first.Key, out var path) ? [.. path.Reverse()] : [],
+            });
         }
         var declaredImports = contract.Imports
             .Where(function => function.HasManagedBinding)

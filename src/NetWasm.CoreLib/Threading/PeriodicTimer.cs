@@ -37,7 +37,7 @@ namespace System.Threading
 
             _period = period;
             _state = new State();
-            using (ExecutionContext.SuppressFlow())
+            using (ExecutionContext.SuppressFlowWhileCreatingTimer())
             {
                 _timer = timeProvider.CreateTimer(
                     static state => ((State)state!).Signal(),

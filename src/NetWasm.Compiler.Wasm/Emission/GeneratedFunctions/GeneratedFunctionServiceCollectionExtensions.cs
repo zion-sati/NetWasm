@@ -57,6 +57,7 @@ internal static class GeneratedFunctionServiceCollectionExtensions
             NativeCallbackThunkEmitter>();
         services.AddSingleton<INativeCallbackFunctionAppender,
             NativeCallbackFunctionAppender>();
+        services.AddSingleton<IAsyncImportTaskHandleEmitter, AsyncImportTaskHandleEmitter>();
         services.AddSingleton<IAsyncJSImportResolveEmitter,
             AsyncJSImportResolveEmitter>();
         services.AddSingleton<IAsyncJSImportRejectEmitter,

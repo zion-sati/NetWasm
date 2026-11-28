@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 import { open } from "./browser/BrowserPage.mjs";
+import { checkInteropCells } from "./check-cells.mjs";
 
 function check(condition, label) {
   if (!condition) throw new Error(label);
@@ -189,7 +190,7 @@ try {
   check(first.describeValue(null) === "null" && first.describeValue(true) === "bool:True"
     && first.describeValue(2.5) === "double:2.5" && first.describeValue(7n) === "long:7"
     && first.describeValue("hi") === "string:hi" && first.describeValue(new Date(Date.UTC(2001, 0, 1))) === "date:2001"
-    && first.describeValue(new RangeError("bad")) === "error:bad" && first.describeValue([1, "a", null]) === "array:3"
+    && first.describeValue(new RangeError("bad")) === "error:RangeError: bad" && first.describeValue([1, "a", null]) === "array:3"
     && first.describeValue(Uint8Array.of(1, 2, 3)) === "bytes:3" && first.describeValue(probe) === "object",
     "An object parameter lost its JavaScript type.");
   const values = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(kind => first.valueOf(kind));
@@ -206,7 +207,24 @@ try {
   check(first.upperWords(["a", null, "b"]).join() === "A,,B" && first.upperWords(null) === null,
     "A string[] did not round-trip.");
   check((await failure(() => first.upperWords([1]))).name === "NetWasmHostError", "A number was taken as a string.");
-  check(first.wrapError("boom") === "js:boom", "A JavaScript Error did not become a JSException.");
+  // As on .NET's browser runtime, an Error crossing as an exception reads as Error.prototype.toString gives it.
+  check(first.wrapError("boom") === "js:TypeError: boom", "A JavaScript Error did not become a JSException.");
+  await checkInteropCells(first, check);
+  // A JSException escaping an async export rejects its Promise with the original JavaScript error, as on .NET.
+  document.body.dataset.testCase = "export-js-error";
+  const exportError = await failure(() => first.failingExport("rejectError"));
+  check(exportError === globalThis.cellsLastFailure && exportError.name === "NotFoundError",
+    `An export's JSException reached JavaScript as ${exportError?.name}: ${exportError?.message}.`);
+  // A synchronous export throws it.
+  document.body.dataset.testCase = "sync-export-js-error";
+  const syncExportError = await failure(() => first.failingSyncExport("syncDom"));
+  check(syncExportError === globalThis.cellsLastFailure && syncExportError.name === "NotAllowedError",
+    `A sync export's JSException reached JavaScript as ${syncExportError?.name}: ${syncExportError?.message}.`);
+  check(first.add(0) !== undefined, "A sync export's JavaScript error left the session unusable.");
+  document.body.dataset.testCase = "export-parameter-objects";
+  check(await first.exportParameterCell(new AbortController(), false) === "1"
+    && await first.exportParameterCell(new AbortController(), true) === "1",
+    "An async import taking an export's JSObject parameter failed.");
   const thrownError = new RangeError("r");
   check(first.errorOf(thrownError) === thrownError && first.errorOf(null) === null,
     "A JSException did not give its Error back.");

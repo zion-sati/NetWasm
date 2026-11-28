@@ -35,10 +35,21 @@ public sealed class VirtualDispatchEmissionPlanBuilderTests
 
         var plan = new VirtualDispatchEmissionPlanBuilder().Build(
             declaration,
-            [firstInherited, overridden, secondInherited]);
+            [firstInherited, overridden, secondInherited],
+            exhaustive: true);
 
         Assert.Equal(firstInherited, plan.FallbackTarget);
         Assert.Same(overridden, Assert.Single(plan.CheckedTargets));
+
+        // Targets the receiver flow narrowed to what reached the call: a receiver outside them is an analysis gap,
+        // so it throws instead of running object's implementation.
+        var precise = new VirtualDispatchEmissionPlanBuilder().Build(
+            declaration,
+            [firstInherited, overridden, secondInherited],
+            exhaustive: false);
+
+        Assert.Null(precise.FallbackTarget);
+        Assert.Equal([firstInherited, overridden, secondInherited], precise.CheckedTargets);
     }
 
     [Theory]
@@ -62,7 +73,8 @@ public sealed class VirtualDispatchEmissionPlanBuilderTests
 
         var plan = new VirtualDispatchEmissionPlanBuilder().Build(
             declaration,
-            [target]);
+            [target],
+            exhaustive: true);
 
         Assert.Null(plan.FallbackTarget);
         Assert.Same(target, Assert.Single(plan.CheckedTargets));
@@ -85,7 +97,8 @@ public sealed class VirtualDispatchEmissionPlanBuilderTests
 
         var plan = new VirtualDispatchEmissionPlanBuilder().Build(
             declaration,
-            [target]);
+            [target],
+            exhaustive: true);
 
         Assert.Null(plan.FallbackTarget);
         Assert.Same(target, Assert.Single(plan.CheckedTargets));
@@ -94,7 +107,7 @@ public sealed class VirtualDispatchEmissionPlanBuilderTests
     [Fact]
     public void RejectsNullDeclaration() =>
         Assert.Throws<ArgumentNullException>(() =>
-            new VirtualDispatchEmissionPlanBuilder().Build(null!, []));
+            new VirtualDispatchEmissionPlanBuilder().Build(null!, [], exhaustive: true));
 
     private static MethodInstanceModel Method(
         EntityKey key,

@@ -107,6 +107,14 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ["Enabled"] = ManagedConstantCallFolding.Enabled,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
+    private static readonly FrozenDictionary<string, ManagedByRefNullCheckElimination> ByRefNullCheckEliminationValues =
+        new Dictionary<string, ManagedByRefNullCheckElimination>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedByRefNullCheckElimination.Auto,
+            ["Disabled"] = ManagedByRefNullCheckElimination.Disabled,
+            ["Enabled"] = ManagedByRefNullCheckElimination.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
     private static readonly FrozenDictionary<string, ManagedConditionalSelects> ConditionalSelectValues =
         new Dictionary<string, ManagedConditionalSelects>(StringComparer.Ordinal)
         {
@@ -373,7 +381,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
         string? loopStrengthReduction = null,
         string? rangeBranchFolding = null,
         string? unwrittenStaticFieldFolding = null,
-        string? conditionalSelects = null)
+        string? conditionalSelects = null,
+        string? byRefNullCheckElimination = null)
     {
         var fieldHoisting = ParseFieldHoisting(loopInvariantFieldHoisting);
         var staticDataViews = ParseStaticDataViews(staticDataViewElimination);
@@ -522,6 +531,11 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ? conditionalSelectsParsed
             : throw ComponentException.Invalid(
                 "Managed conditional selects must be Auto, Disabled or Enabled.");
+        var byRefNullChecksValue = ByRefNullCheckEliminationValues.TryGetValue(
+            byRefNullCheckElimination ?? "Auto", out var byRefNullChecksParsed)
+            ? byRefNullChecksParsed
+            : throw ComponentException.Invalid(
+                "Managed by-reference null check elimination must be Auto, Disabled or Enabled.");
         return fieldHoisting == ManagedLoopInvariantFieldHoisting.Auto &&
                staticDataViews == ManagedStaticDataViewElimination.Auto &&
                valuePromotion == ManagedAddressTakenValuePromotion.Auto &&
@@ -558,7 +572,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                strengthReductionValue == ManagedLoopStrengthReduction.Auto &&
                rangeBranchesValue == ManagedRangeBranchFolding.Auto &&
                unwrittenStaticFieldsValue == ManagedUnwrittenStaticFieldFolding.Auto &&
-               conditionalSelectsValue == ManagedConditionalSelects.Auto
+               conditionalSelectsValue == ManagedConditionalSelects.Auto &&
+               byRefNullChecksValue == ManagedByRefNullCheckElimination.Auto
             ? null
             : new(
                 LoopInvariantFieldHoisting: fieldHoisting,
@@ -597,7 +612,8 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                 LoopStrengthReduction: strengthReductionValue,
                 RangeBranchFolding: rangeBranchesValue,
                 UnwrittenStaticFieldFolding: unwrittenStaticFieldsValue,
-                ConditionalSelects: conditionalSelectsValue);
+                ConditionalSelects: conditionalSelectsValue,
+                ByRefNullCheckElimination: byRefNullChecksValue);
     }
 
     private static ManagedLoopInvariantFieldHoisting ParseFieldHoisting(string? value) =>

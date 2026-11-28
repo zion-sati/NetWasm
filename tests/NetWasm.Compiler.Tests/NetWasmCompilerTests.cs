@@ -118,7 +118,12 @@ public sealed class NetWasmCompilerTests
         Assert.Contains("aΩ😀\0\ud800", first.Program.StringLiterals);
         Assert.Contains("", first.Program.StringLiterals);
 
+        // A type takes a layout when it is not generic, or as the run-time type of a generic definition itself
+        // (typeof(List<>)); a closed instantiation's definition is reached without one, its layout being the
+        // instantiation's (ReachableObjectLayoutBuilder).
+        var arities = GenericArities(assets.Application, assets.Library, assets.CoreLib);
         var typeIds = first.Program.Types
+            .Where(type => arities[type] == 0 || first.Program.RuntimeTypeDefinitions.Contains(type))
             .Select(type => first.Layouts.ObjectLayouts[type].TypeId)
             .ToArray();
         Assert.Equal(typeIds.Length, typeIds.Distinct().Count());
@@ -214,4 +219,51 @@ public sealed class NetWasmCompilerTests
         }
     }
 
+
+    // The layout contract: every reached type that is not generic has an object layout, as does a generic definition
+    // that is a run-time type itself (typeof(Dictionary<,>)); a closed instantiation's definition (List<int>'s) is
+    // reached without one, its layout being the instantiation's.
+    [Fact]
+    public void ReachedTypesHaveLayoutsAsTheirGenericityRequires()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource("LayoutContract", """
+            using System;
+            using System.Collections.Generic;
+            public sealed class Item { }
+            public static class EntryPoint
+            {
+                public static int Run(int input) =>
+                    new List<Item>().GetType().Name.Length + typeof(Dictionary<,>).Name.Length + input;
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", []));
+        var arities = GenericArities(assembly, assets.CoreLib);
+
+        var closedDefinitions = result.Program.Types.Where(type => arities[type] > 0 &&
+            !result.Program.RuntimeTypeDefinitions.Contains(type)).ToArray();
+        Assert.NotEmpty(closedDefinitions);
+        Assert.NotEmpty(result.Program.RuntimeTypeDefinitions);
+        Assert.All(result.Program.Types.Where(type => arities[type] == 0).Concat(result.Program.RuntimeTypeDefinitions),
+            type => Assert.True(result.Layouts.ObjectLayouts.ContainsKey(type), $"{type} has no object layout"));
+    }
+
+    // Each type definition's generic parameter count, by its key, read from the assemblies' metadata.
+    private static Dictionary<EntityKey, int> GenericArities(params string[] assemblies)
+    {
+        var arities = new Dictionary<EntityKey, int>();
+        foreach (var path in assemblies)
+        {
+            using var stream = File.OpenRead(path);
+            using var image = new System.Reflection.PortableExecutable.PEReader(stream);
+            var metadata = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(image);
+            var assembly = new AssemblyIdentity(metadata.GetString(metadata.GetAssemblyDefinition().Name));
+            foreach (var handle in metadata.TypeDefinitions)
+            {
+                arities[new EntityKey(assembly, System.Reflection.Metadata.Ecma335.MetadataTokens.GetToken(handle))] =
+                    metadata.GetTypeDefinition(handle).GetGenericParameters().Count;
+            }
+        }
+        return arities;
+    }
 }

@@ -495,6 +495,33 @@ public static partial class PageExports
     [JSExport("upperWords")]
     public static string?[]? UpperWords(string?[]? values) => Words(values);
 
+    [JSExport("objectCell")]
+    public static Task<string> ObjectCell(string cell, bool displace) => InteropCells.Run(cell, displace);
+
+    [JSExport("failedImport")]
+    public static Task<string> FailedImport(string cell) => InteropCells.Fail(cell);
+
+    [JSExport("failureExtra")]
+    public static Task<string> FailureExtra(string cell) => InteropCells.Extra(cell);
+
+    [JSExport("failingExport")]
+    public static Task<int> FailingExport(string kind) => InteropCells.FailingExport(kind);
+
+    [JSExport("failingSyncExport")]
+    public static int FailingSyncExport(string kind) => InteropCells.FailingSyncExport(kind);
+
+    // A JSObject JavaScript passed to an export, awaited in an async import, with and without `using`.
+    [JSExport("exportParameterCell")]
+    public static async Task<string> ExportParameterCell(JSObject value, bool dispose)
+    {
+        if (!dispose)
+        {
+            return (await InteropCells.AsyncObjToInt(value)).ToString();
+        }
+        using var owned = value;
+        return (await InteropCells.AsyncObjToInt(owned)).ToString();
+    }
+
     [JSExport("wrapError")]
     public static string WrapError(string message) => Raise(message) is JSException error ? "js:" + error.Message : "none";
 

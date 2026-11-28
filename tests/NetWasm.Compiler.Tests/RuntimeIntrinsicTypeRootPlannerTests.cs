@@ -149,12 +149,79 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
         Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty, absent);
         var method = fixture.Method(RuntimeIntrinsic.ArrayCreateInstance);
         var plan = planner.Plan([method], [integer, array, generated], [integer, array]);
-        AssertTypes([integer, array, generated], plan.RuntimeTypes);
-        AssertTypes([array, generated], plan.AllocatedTypes);
+        // An array seed is a reference element, which the shared array serves.
+        AssertTypes([integer, array], plan.RuntimeTypes);
+        AssertTypes([array], plan.AllocatedTypes);
         Assert.DoesNotContain(CliTypeIdentity.SzArray(generated), plan.RuntimeTypes);
         var repeated = planner.Plan([method], plan.RuntimeTypes, [integer, array]);
         Assert.Equal<CliTypeIdentity>(plan.RuntimeTypes, repeated.RuntimeTypes);
         Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty, planner.Plan([method], [integer]));
+    }
+
+    // CreateInstance of a reference element the program has no array type of makes the shared array, one type for
+    // every such element; a value element needs its own array, which only the value types the program names by token
+    // get. Nothing is planned per reference type, nor from type-fact reads.
+    [Fact]
+    public void ArrayCreationRootsTheSharedArrayAndNamedValueArraysOnly()
+    {
+        var fixture = new Fixture();
+        var planner = fixture.CreatePlanner();
+        var integer = CliTypeIdentity.FromStackKind(CliValueKind.I8);
+        var reference = fixture.Type("Service");
+        var value = fixture.Type("Point", isValue: true);
+        var create = fixture.Method(RuntimeIntrinsic.ArrayCreateInstance);
+        var shared = fixture.Method(RuntimeIntrinsic.ArrayCreateSharedInstance);
+
+        var plan = planner.Plan([create, shared], [reference, value, integer], [reference, value, integer]);
+
+        Assert.Contains(Shapes.Vector, plan.AllocatedTypes);
+        Assert.Contains(CliTypeIdentity.SzArray(integer), plan.AllocatedTypes);
+        Assert.Contains(CliTypeIdentity.SzArray(value), plan.AllocatedTypes);
+        Assert.DoesNotContain(CliTypeIdentity.SzArray(reference), plan.RuntimeTypes);
+        Assert.DoesNotContain(Shapes.Ranked(2), plan.RuntimeTypes);
+
+        // A value type the program does not name by token gets no array; the shared array is rooted only where the
+        // shared creation is reached.
+        var unnamed = planner.Plan([create], [reference, value], [reference]);
+        Assert.DoesNotContain(CliTypeIdentity.SzArray(value), unnamed.RuntimeTypes);
+        Assert.DoesNotContain(Shapes.Vector, unnamed.RuntimeTypes);
+    }
+
+    // MakeArrayType allocates nothing: it roots the shared shapes' types, which CoreLib answers for an element the
+    // program has no array type of, the vector for MakeArrayType() and ranks one to three for MakeArrayType(rank).
+    [Fact]
+    public void MakeArrayTypeRootsTheSharedShapesWithoutAllocatingThem()
+    {
+        var fixture = new Fixture();
+        var planner = fixture.CreatePlanner();
+        var argument = CliTypeIdentity.FromStackKind(CliValueKind.I8);
+        var sequence = fixture.Close(fixture.Enum("Sequence`1", genericArity: 1), argument);
+
+        var vector = planner.Plan([fixture.TypeMethod("MakeArrayType")], [sequence], [sequence]);
+        var ranked = planner.Plan([fixture.TypeMethod("MakeArrayType", CliValueKind.I4)], [sequence], [sequence]);
+
+        AssertTypes([Shapes.Vector], vector.RuntimeTypes);
+        Assert.Empty(vector.AllocatedTypes);
+        AssertTypes([Shapes.Ranked(1), Shapes.Ranked(2), Shapes.Ranked(3)], ranked.RuntimeTypes);
+        Assert.Empty(ranked.AllocatedTypes);
+        Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty,
+            planner.Plan([fixture.TypeMethod("MakeByRefType")], [sequence], [sequence]));
+    }
+
+    // Creation with a rank allocates the shared rectangular shapes (and with bounds T[*]) where the shared creation is
+    // reached.
+    [Fact]
+    public void RankedSharedCreationAllocatesTheRankedSharedShapes()
+    {
+        var fixture = new Fixture();
+        var planner = fixture.CreatePlanner();
+        var shared = fixture.Method(RuntimeIntrinsic.ArrayCreateSharedInstance);
+
+        var rectangular = planner.Plan([fixture.Method(RuntimeIntrinsic.ArrayCreateRectangularInstance), shared], [], []);
+        var bounded = planner.Plan([fixture.Method(RuntimeIntrinsic.ArrayCreateBoundedInstance), shared], [], []);
+
+        AssertTypes([Shapes.Ranked(2), Shapes.Ranked(3)], rectangular.AllocatedTypes);
+        AssertTypes([Shapes.Ranked(1), Shapes.Ranked(2), Shapes.Ranked(3)], bounded.AllocatedTypes);
     }
 
     [Fact]
@@ -175,6 +242,11 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
         AssertTypes([CliTypeIdentity.Array(integer, 2), CliTypeIdentity.Array(integer, 3)], plan.AllocatedTypes);
         Assert.DoesNotContain(vector, plan.AllocatedTypes);
         Assert.Empty(plan.InitializedTypes);
+
+        // Only creation with lower bounds makes a rank-one array with lower bounds.
+        var bounded = planner.Plan([fixture.Method(RuntimeIntrinsic.ArrayCreateBoundedInstance)], [integer], [integer]);
+        AssertTypes([CliTypeIdentity.Array(integer, 1), CliTypeIdentity.Array(integer, 2),
+            CliTypeIdentity.Array(integer, 3)], bounded.AllocatedTypes);
     }
 
     [Fact]
@@ -221,9 +293,9 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
             text, nullable, CliTypeIdentity.SzArray(plain), CliTypeIdentity.FromStackKind(CliValueKind.Void),
             fixture.Close(generic, CliTypeIdentity.GenericParameter(method: false, 0))];
         var planner = fixture.CreatePlanner();
-        Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty, planner.Plan([fixture.Method(null)], [], [], seeds, [value]));
+        Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty, planner.Plan([fixture.Method(null)], [], seeds, [value]));
 
-        var plan = planner.Plan([fixture.Method(RuntimeIntrinsic.AllocateUninitializedObject)], [], [], seeds, [value]);
+        var plan = planner.Plan([fixture.Method(RuntimeIntrinsic.AllocateUninitializedObject)], [], seeds, [value]);
 
         AssertTypes([plain, closed, integer, value], plan.UninitializedObjectTypes);
         Assert.Empty(plan.StructMarshallingTypes);
@@ -248,7 +320,7 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
         var integer = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
         var text = CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false);
 
-        var plan = fixture.CreatePlanner().Plan([fixture.Method(intrinsic)], [], [],
+        var plan = fixture.CreatePlanner().Plan([fixture.Method(intrinsic)], [],
             [plain, value, closed, integer, text, value], [boxed, allocatedClass]);
 
         AssertTypes([boxed, plain, value, integer], plan.StructMarshallingTypes);
@@ -268,7 +340,7 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
 
         var shade = fixture.Type("Shade", isValue: true);
         var plan = fixture.CreatePlanner(new([element, embedded], [embedded], [element]) { EnumArrayElements = [shade] })
-            .Plan([fixture.Method(RuntimeIntrinsic.StructMarshallingData)], [], [], [holder], []);
+            .Plan([fixture.Method(RuntimeIntrinsic.StructMarshallingData)], [], [holder], []);
 
         AssertTypes([element, embedded, holder], plan.StructMarshallingTypes);
         AssertTypes([element, embedded], plan.UninitializedObjectTypes);
@@ -293,7 +365,7 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
         if (marshal) demands.Add(fixture.Method(RuntimeIntrinsic.StructMarshallingData));
         if (construct) demands.Add(fixture.Method(RuntimeIntrinsic.StructMarshallingConstruct));
 
-        var plan = fixture.CreatePlanner().Plan(demands, [], [], [value], []);
+        var plan = fixture.CreatePlanner().Plan(demands, [], [value], []);
 
         Assert.Equal(rooted, plan.StructMarshallingConstructors);
     }
@@ -484,17 +556,32 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
         public StructureMarshallingReach Reach(IEnumerable<CliTypeIdentity> types) => reach;
     }
 
+    // The shared shapes over a fixture element standing in for CoreLib's SharedArrayElement.
+    private sealed class Shapes : ISharedArrayShapeResolver
+    {
+        private static readonly CliTypeIdentity Element =
+            CliTypeIdentity.Named(new AssemblyIdentity("NetWasm.CoreLib"), "System", "SharedArrayElement", isValueType: false);
+
+        internal static CliTypeIdentity Vector => CliTypeIdentity.SzArray(Element);
+
+        internal static CliTypeIdentity Ranked(int rank) => CliTypeIdentity.Array(Element, rank);
+
+        public CliTypeIdentity Resolve(int rank) => rank == 0 ? Vector : Ranked(rank);
+    }
+
     [Fact]
     public void PlannerValidatesItsActorContract()
     {
         var fixture = new Fixture();
         var nullableTypes = new NullableTypeResolver();
         var closure = new Closure(Fixture.NoReach);
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(null!, nullableTypes, fixture, new ArrayCreationRootPlanner(fixture), closure));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, null!, fixture, new ArrayCreationRootPlanner(fixture), closure));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, null!, new ArrayCreationRootPlanner(fixture), closure));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, fixture, null!, closure));
-        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, fixture, new ArrayCreationRootPlanner(fixture), null!));
+        var facts = new Shapes();
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(null!, nullableTypes, fixture, new ArrayCreationRootPlanner(fixture), closure, facts));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, null!, fixture, new ArrayCreationRootPlanner(fixture), closure, facts));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, null!, new ArrayCreationRootPlanner(fixture), closure, facts));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, fixture, null!, closure, facts));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, fixture, new ArrayCreationRootPlanner(fixture), null!, facts));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeIntrinsicTypeRootPlanner(fixture, nullableTypes, fixture, new ArrayCreationRootPlanner(fixture), closure, null!));
         var planner = fixture.CreatePlanner();
         Assert.Throws<ArgumentNullException>(() => planner.Plan(null!, []));
         Assert.Throws<ArgumentNullException>(() => planner.Plan([], null!));
@@ -517,7 +604,7 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
 
         internal IRuntimeIntrinsicTypeRootPlanner CreatePlanner(StructureMarshallingReach? reach = null) =>
             ThroughContract(new RuntimeIntrinsicTypeRootPlanner(this, new NullableTypeResolver(), this, new ArrayCreationRootPlanner(this),
-                new Closure(reach ?? NoReach)));
+                new Closure(reach ?? NoReach), new Shapes()));
 
         internal CliTypeIdentity Enum(string name, int genericArity = 0)
         {
@@ -568,6 +655,15 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
             }
             return new(definition, CliTypeIdentity.Named(Assembly, "Fixtures", "Owner", isValueType: false),
                 arguments.IsDefault ? [] : arguments, definition.Signature);
+        }
+
+        // A method of System.Type with these parameters.
+        internal MethodInstanceModel TypeMethod(string name, params CliValueKind[] parameters)
+        {
+            var definition = new MethodDefinitionModel(new(Assembly, 0x06000001 + _nextMethod++),
+                new(Assembly, 0x020000fe), name, false, MethodSignatureModel.Create(CliValueKind.ManagedReference, parameters), 0);
+            return new(definition, CliTypeIdentity.Named(Assembly, "System", "Type", isValueType: false), [],
+                definition.Signature);
         }
 
         public bool TryGetIntrinsic(EntityKey candidate, out RuntimeIntrinsic intrinsic) =>

@@ -64,7 +64,7 @@ public sealed class RawModuleLinkExecution(
                 RuntimeInlineAnnotations = settings.RuntimeInlineAnnotations,
                 Exports = removedExports.IsEmpty ? null : new(null, removedExports),
                 Intermediates = new(sanitized, sanitizedRuntime, merged),
-                KeepNames = DiagnosticNames.Kept,
+                KeepNames = DiagnosticNames.KeptWith(request.DebugInformation is not null),
             });
             _optimizer.Optimize(
                 optimizerInput,
@@ -72,7 +72,8 @@ public sealed class RawModuleLinkExecution(
                 request.Target,
                 settings.BackendPreset,
                 settings.Converge,
-                settings.LowMemoryUnused);
+                settings.LowMemoryUnused,
+                request.DebugInformation is not null);
             _files.Move(workspace.LinkedModulePath, request.OutputPath);
         }
         finally

@@ -6,6 +6,7 @@ namespace NetWasm.Compiler.ComponentModel.Raw;
 using System.Collections.Immutable;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Optimization;
+using NetWasm.Compiler.ComponentModel.Debugging;
 
 public sealed record RawModuleLinkRequest(
     string ApplicationModulePath,
@@ -17,4 +18,7 @@ public sealed record RawModuleLinkRequest(
     public WasmOptimizationOverrides? OptimizationOverrides { get; init; }
     public ImmutableArray<WasmInternalExport> InternalRuntimeExports { get; init; } = [];
     public ImmutableArray<WasmInternalExport> InternalApplicationExports { get; init; } = [];
+
+    // Debug information (NetWasmDebugInfo): the module's names, and DWARF lines with the program's method symbols.
+    public WasmDebugInformation? DebugInformation { get; init; }
 }

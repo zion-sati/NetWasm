@@ -30,6 +30,11 @@ public sealed class TypeRelationshipKeyResolverTests
     private static readonly CliTypeIdentity Kennel = Named("Tests", "Kennel");
     private static readonly CliTypeIdentity Shelter = Named("Tests", "Shelter");
     private static readonly CliTypeIdentity Plain = Named("Tests", "Plain`1");
+    private static readonly CliTypeIdentity Int = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+    private static readonly CliTypeIdentity UInt = CliTypeIdentity.Primitive("u4", CliValueKind.I4);
+    private static readonly CliTypeIdentity Long = CliTypeIdentity.Primitive("i8", CliValueKind.I8);
+    // An enum, which converts through its underlying type.
+    private static readonly CliTypeIdentity Color = Named("Tests", "Color", valueType: true).WithStackStorageType(Int);
 
     [Fact]
     public void KeepsEveryPairTheClassifierFindsAssignmentCompatible()
@@ -46,6 +51,16 @@ public sealed class TypeRelationshipKeyResolverTests
             CliTypeIdentity.SzArray(String), CliTypeIdentity.SzArray(Object), CliTypeIdentity.SzArray(Dog),
             CliTypeIdentity.SzArray(Animal), CliTypeIdentity.SzArray(Value), CliTypeIdentity.Array(String, 2),
             CliTypeIdentity.Array(Object, 1), CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference),
+            Int, UInt, Long, Color, CliTypeIdentity.SzArray(Int), CliTypeIdentity.SzArray(UInt),
+            CliTypeIdentity.SzArray(Long), CliTypeIdentity.SzArray(Color), Of(List, Int), Of(List, UInt),
+            Of(List, Color), Of(ReadOnlyList, Long), Of(List, Value),
+            CliTypeIdentity.SzArray(Of(Enumerable, Dog)), CliTypeIdentity.SzArray(Of(Enumerable, Animal)),
+            CliTypeIdentity.SzArray(Of(Enumerable, String)), CliTypeIdentity.SzArray(Of(Enumerable, Object)),
+            CliTypeIdentity.Array(Of(Enumerable, Dog), 2), CliTypeIdentity.Array(Of(Enumerable, Animal), 2),
+            CliTypeIdentity.SzArray(Of(List, Dog)), CliTypeIdentity.SzArray(Of(Consumer, Animal)),
+            CliTypeIdentity.SzArray(Of(Consumer, Dog)), Of(Enumerable, Of(Enumerable, Animal)),
+            Of(List, Of(Enumerable, Dog)), CliTypeIdentity.SzArray(CliTypeIdentity.SzArray(Dog)),
+            CliTypeIdentity.SzArray(CliTypeIdentity.SzArray(Animal)),
         ];
         var compatible = 0;
 
@@ -69,6 +84,13 @@ public sealed class TypeRelationshipKeyResolverTests
                     candidateKeys.Arguments?.GetValueOrDefault(targetKeys.Own) is not { } admitted ||
                     admitted.Contains(argument),
                     $"{candidate} is assignable to {target}, whose argument key it does not admit.");
+                Assert.True(
+                    candidateKeys.Unbounded || targetKeys.Unbounded || targetKeys.ArgumentKey is not { } outer ||
+                    targetKeys.NestedArgumentKey is not { } nested ||
+                    candidateKeys.ElementKeys?.Contains(targetKeys.Own) != true ||
+                    candidateKeys.ElementArguments?.GetValueOrDefault(outer) is not { } admittedNested ||
+                    admittedNested.Contains(nested),
+                    $"{candidate} is assignable to {target}, whose nested argument key its element does not admit.");
             }
         }
         Assert.True(compatible > universe.Length * 2, "The universe should relate more than identical pairs.");
@@ -90,8 +112,10 @@ public sealed class TypeRelationshipKeyResolverTests
         // A reference array's element does the same for the array interfaces, even invariant IList<T>.
         Assert.Contains(Own(Object), Admitted(CliTypeIdentity.SzArray(String), List)!);
         Assert.DoesNotContain(Own(Dog), Admitted(CliTypeIdentity.SzArray(String), List)!);
-        // A value element converts to other same-sized element types, and a contravariant argument to its subtypes.
-        Assert.Null(Admitted(CliTypeIdentity.SzArray(Value), List));
+        // A value element with no reduced type converts only to itself, an integral one to the elements of its reduced
+        // type (which share no key), and a contravariant argument to its subtypes.
+        Assert.Equal([Own(Value)], Admitted(CliTypeIdentity.SzArray(Value), List));
+        Assert.Null(Admitted(CliTypeIdentity.SzArray(Int), List));
         Assert.Null(Admitted(Dog, Consumer));
         // Array targets are filed by their element: string[] converts to object[], not to Dog[].
         var arrays = keys.Resolve(CliTypeIdentity.SzArray(String)).Arguments![keys.Resolve(CliTypeIdentity.SzArray(Dog)).Own];
@@ -103,6 +127,68 @@ public sealed class TypeRelationshipKeyResolverTests
     }
 
     // Two instantiations of one definition admit what either admits; a definition without recorded variance is invariant.
+    // An array of a value type with no reduced type converts only to itself; one of an integral type or an enum to the
+    // arrays whose elements reduce alike, which are filed under one reduced key.
+    [Fact]
+    public void AValueElementArrayAdmitsOnlyTheElementsItConvertsTo()
+    {
+        var (_, keys) = Create();
+        string Own(CliTypeIdentity type) => keys.Resolve(type).Own;
+        var arrays = Own(CliTypeIdentity.SzArray(Int));
+
+        Assert.Equal([Own(Value)], keys.Resolve(CliTypeIdentity.SzArray(Value)).Arguments![arrays]!);
+        var reduced = Assert.Single(keys.Resolve(CliTypeIdentity.SzArray(Int)).Arguments![arrays]!);
+        Assert.Equal(reduced, keys.Resolve(CliTypeIdentity.SzArray(Color)).ArgumentKey);
+        Assert.Equal(reduced, keys.Resolve(CliTypeIdentity.SzArray(UInt)).ArgumentKey);
+        Assert.NotEqual(reduced, keys.Resolve(CliTypeIdentity.SzArray(Long)).ArgumentKey);
+        Assert.Equal(Own(Value), keys.Resolve(CliTypeIdentity.SzArray(Value)).ArgumentKey);
+        Assert.Equal([Own(Value)], keys.Resolve(CliTypeIdentity.SzArray(Value)).Arguments![Own(List)]!);
+    }
+
+    // An array of a generic instantiation narrows the arrays and array interfaces it reaches by what its element
+    // admits of their element's argument: IEnumerable<Dog>[] converts to IEnumerable<Animal>[], not to
+    // IEnumerable<String>[], though all of them are filed by IEnumerable`1.
+    [Fact]
+    public void AnArrayNarrowsItsTargetsByWhatItsElementAdmits()
+    {
+        var (_, keys) = Create();
+        string Own(CliTypeIdentity type) => keys.Resolve(type).Own;
+        var candidate = keys.Resolve(CliTypeIdentity.SzArray(Of(Enumerable, Dog)));
+        var target = keys.Resolve(CliTypeIdentity.SzArray(Of(Enumerable, String)));
+
+        Assert.Contains(Own(CliTypeIdentity.SzArray(Dog)), candidate.ElementKeys!);
+        Assert.Contains(Own(Of(List, Object)), candidate.ElementKeys!);
+        Assert.Equal(Own(Of(Enumerable, Object)), target.ArgumentKey);
+        Assert.Equal(Own(String), target.NestedArgumentKey);
+        var admitted = candidate.ElementArguments![target.ArgumentKey!]!;
+        Assert.Contains(Own(Animal), admitted);
+        Assert.DoesNotContain(Own(String), admitted);
+        Assert.Null(keys.Resolve(Dog).ElementKeys);
+        Assert.Equal(Own(Dog), keys.Resolve(CliTypeIdentity.SzArray(CliTypeIdentity.SzArray(Dog))).NestedArgumentKey);
+    }
+
+    // A classifier for pairs classified once gives the same relationships without remembering them: classifying a
+    // pair again computes it again, where the remembering classifier answers from memory.
+    [Fact]
+    public void AnUnrememberingClassifierGivesTheSameRelationshipsWithoutRememberingThem()
+    {
+        var bases = new CountingBases();
+        var unremembering = new UnrememberedTypeRelationshipClassifierFactory().Create(
+            new Finder(), new Definitions(), new Identities(), new Interfaces(), bases);
+        var remembering = new TypeRelationshipClassifierFactory().Create(
+            new Finder(), new Definitions(), new Identities(), new Interfaces(), new Bases());
+
+        var first = unremembering.Classify(Dog, Animal);
+        var computed = bases.Calls;
+        Assert.Equal(first, unremembering.Classify(Dog, Animal));
+        Assert.True(bases.Calls > computed);
+        Assert.Equal(remembering.Classify(Dog, Animal), first);
+        Assert.True(first.IsAssignmentCompatible);
+        // An array pair classifies its elements on the way, and remembers them.
+        Assert.True(unremembering.Classify(CliTypeIdentity.SzArray(Dog), CliTypeIdentity.SzArray(Animal))
+            .IsAssignmentCompatible);
+    }
+
     [Fact]
     public void InstantiationsOfOneDefinitionJoinAndUnrecordedVarianceIsInvariant()
     {
@@ -163,7 +249,13 @@ public sealed class TypeRelationshipKeyResolverTests
         Model(Shelter, 17),
         // A generic definition whose metadata records no variance.
         Model(Plain, 16),
+        Model(Color, 18),
+        // NetWasm names these as primitives, so their models are made from their names.
+        PrimitiveModel("Int32", 19), PrimitiveModel("UInt32", 20), PrimitiveModel("Int64", 21),
     }.ToImmutableDictionary(model => model.FullName);
+
+    private static TypeDefinitionModel PrimitiveModel(string name, int token) =>
+        new(new EntityKey(Assembly, token), "System", name, true, [], []);
 
     private static TypeDefinitionModel Model(
         CliTypeIdentity identity, int token, bool isInterface = false, CliGenericVariance? variance = null)
@@ -183,10 +275,14 @@ public sealed class TypeRelationshipKeyResolverTests
         public TypeDefinitionModel ResolveTypeIdentity(CliTypeIdentity identity)
         {
             var fullName = identity.ElementType?.FullName ?? identity.FullName;
-            if (identity.CanonicalName == "primitive:object")
+            fullName = identity.CanonicalName switch
             {
-                fullName = "Tests.Object";
-            }
+                "primitive:object" => "Tests.Object",
+                "primitive:i4" => "System.Int32",
+                "primitive:u4" => "System.UInt32",
+                "primitive:i8" => "System.Int64",
+                _ => fullName,
+            };
             return Models.TryGetValue(fullName ?? string.Empty, out var model)
                 ? model
                 : throw new KeyNotFoundException(identity.CanonicalName);
@@ -222,6 +318,17 @@ public sealed class TypeRelationshipKeyResolverTests
                 Definitions().IsInterface(type) ? null : Object;
 
         private static Definitions Definitions() => new();
+    }
+
+    private sealed class CountingBases : Bases
+    {
+        public int Calls { get; private set; }
+
+        public override CliTypeIdentity? Resolve(CliTypeIdentity type)
+        {
+            Calls++;
+            return base.Resolve(type);
+        }
     }
 
     private sealed class ThrowingBases : Bases

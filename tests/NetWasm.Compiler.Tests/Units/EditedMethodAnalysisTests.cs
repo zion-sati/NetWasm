@@ -36,8 +36,34 @@ public sealed class EditedMethodAnalysisTests
         Assert.True(definitions.Length > 50, $"only {definitions.Length} methods were compared");
         Assert.Equal(definitions.Length, alone.Length);
         Assert.Empty(edited.Unanalyzed);
+        // A method reading a field nothing writes analyzes differently alone, since the whole program folds the load;
+        // the early cutoff declines exactly those (it reads the written fields the program keeps). Every other method
+        // analyzes alone as in the whole program.
+        var written = program.WrittenStaticFields ?? throw new InvalidOperationException("the fold did not run at O0");
+        var fields = services.GetRequiredService<IFieldRepositoryFactory>().Create(lease.Snapshot);
+        var typeDefinitions = services.GetRequiredService<ITypeDefinitionResolverFactory>().Create(lease.Snapshot);
+        bool ReadsFoldedField(NetWasm.Compiler.Core.CilMethodBody body)
+        {
+            var instructions = body.Instructions;
+            for (var index = 0; index < instructions.Length; index++)
+            {
+                if (instructions[index].Operation != NetWasm.Compiler.Core.CilOperation.LoadStaticField ||
+                    index > 0 && instructions[index - 1].Operation == NetWasm.Compiler.Core.CilOperation.Volatile)
+                {
+                    continue;
+                }
+                var field = fields.GetField(NetWasm.Compiler.Core.CilOperands.FieldKey(instructions[index].Operand));
+                if (!written.Contains(field.Key) &&
+                    NetWasm.Compiler.Analysis.Constants.StaticFieldConstantLoads.HoldsFoldableDefault(field, typeDefinitions))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
         var differing = alone
-            .Where(analysis => Fingerprint(analysis.Body) != Fingerprint(program.Methods[analysis.Method.Definition.Key]))
+            .Where(analysis => Fingerprint(analysis.Body) != Fingerprint(program.Methods[analysis.Method.Definition.Key]) &&
+                !ReadsFoldedField(analysis.Body.Body))
             .Select(analysis => analysis.Method.CanonicalName)
             .ToArray();
         Assert.True(differing.Length == 0,

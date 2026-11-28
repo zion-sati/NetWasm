@@ -21,7 +21,9 @@ public sealed class ReducingReachabilityClosureBuilderTests
         var rewritten = ImmutableDictionary<string, CilMethodBody>.Empty.Add(body.Method.CanonicalName, body.Body);
         var inner = new RecordingBuilder(program);
         var reducer = new QueueReducer([rewritten, ImmutableDictionary<string, CilMethodBody>.Empty]);
-        var builder = AsBuilder(new ReducingReachabilityClosureBuilder(inner, reducer));
+        var steps = new RecordingAnalysisSteps();
+        var memory = new CountingMemoryReleaser();
+        var builder = AsBuilder(new ReducingReachabilityClosureBuilder(inner, reducer, steps, memory));
 
         Assert.Same(program, builder.Build(null, [new("entry", body.Method.Definition.Key)],
             suppliedState ? roots : null, suppliedState ? rewritten : null));
@@ -33,6 +35,10 @@ public sealed class ReducingReachabilityClosureBuilderTests
         Assert.Same(body.Body, inner.Inputs[1][body.Method.CanonicalName]);
         Assert.All(inner.Roots, value => Assert.Same(suppliedState ? roots : ReachabilityRoots.Empty, value));
         Assert.Equal(2, reducer.Calls);
+        // Each round's closure and reduction is a step of the diagnostic log's account.
+        Assert.Equal(["closure 1", "reduction 1", "closure 2", "reduction 2"], steps.Steps);
+        // The collector's committed memory goes back before each rebuilt closure.
+        Assert.Equal(1, memory.Releases);
     }
 
     [Fact]
@@ -41,9 +47,13 @@ public sealed class ReducingReachabilityClosureBuilderTests
         var program = ConstantArgumentProgramReducerTests.Program(ConstantArgumentProgramReducerTests.Managed());
         var inner = new RecordingBuilder(program);
         var reducer = new QueueReducer([]);
-        Assert.Throws<ArgumentNullException>(() => new ReducingReachabilityClosureBuilder(null!, reducer));
-        Assert.Throws<ArgumentNullException>(() => new ReducingReachabilityClosureBuilder(inner, null!));
-        var builder = AsBuilder(new ReducingReachabilityClosureBuilder(inner, reducer));
+        var steps = UnrecordedAnalysisSteps.Instance;
+        var memory = new CountingMemoryReleaser();
+        Assert.Throws<ArgumentNullException>(() =>
+            new ReducingReachabilityClosureBuilder(null!, reducer, steps, memory));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ReducingReachabilityClosureBuilder(inner, null!, steps, memory));
+        var builder = AsBuilder(new ReducingReachabilityClosureBuilder(inner, reducer, steps, memory));
 
         Assert.Throws<ArgumentNullException>(() => builder.Build(null, null!));
         Assert.Empty(inner.Inputs);
@@ -75,5 +85,12 @@ public sealed class ReducingReachabilityClosureBuilderTests
             Calls++;
             return _results.Dequeue();
         }
+    }
+
+    private sealed class CountingMemoryReleaser : NetWasm.Compiler.Diagnostics.ICompilerMemoryReleaser
+    {
+        public int Releases { get; private set; }
+
+        public void Release() => Releases++;
     }
 }

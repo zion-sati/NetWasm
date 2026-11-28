@@ -70,6 +70,21 @@ public sealed class ComponentCoreModuleOptimizerTests
         Assert.Equal(["input", "-O3", "--converge", "--remove-unused-module-elements"], stages.Arguments.Take(4));
     }
 
+    // A Debug build that is optimized keeps its name section: wasm-opt writes names with --debuginfo and drops them
+    // with --strip-debug.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void KeepingNamesKeepsTheNameSection(bool keepNames)
+    {
+        var stages = new RecordingStages();
+
+        Create(stages).Optimize("input", "output", ComponentTarget.Wasm32Wasi02, FinalWasmOptimization.Oz, keepNames: keepNames);
+
+        Assert.Equal(keepNames, stages.Arguments.Contains("--debuginfo"));
+        Assert.Equal(!keepNames, stages.Arguments.Contains("--strip-debug"));
+    }
+
     [Theory]
     [InlineData("wasm32")]
     [InlineData("wasm64")]

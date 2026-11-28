@@ -162,7 +162,11 @@ public sealed class ConsoleCompilationTests
         var reachableMethods = result.Program.Methods.Values
             .Select(method => method.Method.Definition.Name)
             .ToArray();
-        Assert.True(reachableMethods.Count(name => name == "WriteLine") >= 2);
+        // The console's writer keeps its WriteLine. Console.WriteLine itself may be inlined into the caller: once
+        // receiver flow gives the call through Console.Out its one target, nothing else needs it.
+        Assert.Contains(result.Program.Methods.Values, method =>
+            method.Method.Definition.Name == "WriteLine" &&
+            method.Method.DeclaringType.FullName == "System.Runtime.InteropServices.ConsoleServices.ConsoleTextWriter");
         Assert.Contains("CreateStandardOutputWriter", reachableMethods);
         Assert.Contains("WriteToStream", reachableMethods);
         // Standard output is a WASI 0.3 stream: write-via-stream takes its readable end and each

@@ -18,9 +18,12 @@ internal sealed class StackTraceMethodPlanBuilder(
 {
     // .NET's StackTrace.ShowInStackTrace: a method marked StackTraceHidden, or
     // whose type is, and an AggressiveInlining method record no frame, so a trace
-    // starts where a throw helper was called.
-    private static bool Shown(MethodDefinitionModel method) =>
-        !method.IsStackTraceHidden && !method.IsAggressiveInlining;
+    // starts where a throw helper was called. Nor does a runtime-async method's
+    // entry where its separate body is compiled: the body's frame stands for the
+    // method, under its name.
+    private static bool Shown(MethodDefinitionModel method, HashSet<EntityKey> compiled) =>
+        !method.IsStackTraceHidden && !method.IsAggressiveInlining &&
+        !(method.RuntimeAsyncBody is { } body && compiled.Contains(body));
 
     public StackTraceMethodPlan Build(
         bool enabled,
@@ -34,13 +37,14 @@ internal sealed class StackTraceMethodPlanBuilder(
             return StackTraceMethodPlan.Disabled;
         }
 
+        var compiled = directMethods.Concat(constructedMethods.Select(method => method.DefinitionKey)).ToHashSet();
         var shownMethods = directMethods
             .Select(methods.GetMethod)
-            .Where(Shown)
+            .Where(method => Shown(method, compiled))
             .Select(method => (method.Key, symbols.Format(method)))
             .ToImmutableArray();
         var shownConstructed = constructedMethods
-            .Where(method => Shown(methods.GetMethod(method.DefinitionKey)))
+            .Where(method => Shown(methods.GetMethod(method.DefinitionKey), compiled))
             .ToImmutableArray();
         var table = StackTraceSymbolTable.Build(shownMethods, shownConstructed, sourceLocations);
         var traceOffset = exceptionFields.Resolve("_stackTrace") ??

@@ -41,21 +41,39 @@ internal sealed class ManagedMethodOptimizationPipeline(
     IIntegerCheckEliminator integerChecks,
     IBeforeFieldInitEntryInitializer entryInitialization,
     IEmptyFinallyRemover emptyFinallies,
+    IFinallyCloner finallyClones,
     IStructLocalScalarReplacer structLocals,
     Allocations.INonEscapingAllocationReplacer objects,
     IWalkLoopUnroller walks,
     IConstantTripLoopUnroller constantTrips,
     ILoopInvariantExpressionHoister invariantExpressions,
+    IByRefLoopVersioner loopVersions,
     IAddressInductionRewriter addressInduction,
     IWholeLocalBlockCopyFolder blockCopies,
     IConstructedObjectNullCheckEliminator constructedObjects,
+    IByRefNullCheckEliminator byRefNullChecks,
     IRangeBranchRewriter rangeBranches,
-    ILoopArgumentLocalizer loopArguments) : IManagedMethodOptimizer
+    ILoopArgumentLocalizer loopArguments,
+    IBlockLocalSlotSharer localSlots) : IManagedMethodOptimizer
 {
     private readonly IManagedMethodOptimizer _staticDataViews = staticDataViews ??
         throw new ArgumentNullException(nameof(staticDataViews));
     private readonly IMethodSpecializer _constantCalls = constantCalls ??
         throw new ArgumentNullException(nameof(constantCalls));
+    // Whether a newobj's value is stored whole by the next instruction.
+    private static bool HasConstructedStore(CilMethodBody body)
+    {
+        for (var index = 1; index < body.Instructions.Length; index++)
+        {
+            if (body.Instructions[index].Operation == CilOperation.StoreObject &&
+                body.Instructions[index - 1].Operation == CilOperation.NewObject)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private readonly IManagedMethodInliner _inliner = inliner ??
         throw new ArgumentNullException(nameof(inliner));
     private readonly IControlFlowGraphBuilder _graphBuilder = graphBuilder ??
@@ -90,11 +108,14 @@ internal sealed class ManagedMethodOptimizationPipeline(
     private readonly ILoopStoreForwarder _loopStores = loopStores ?? throw new ArgumentNullException(nameof(loopStores));
     private readonly ILoopInvariantExpressionHoister _invariantExpressions = invariantExpressions ??
         throw new ArgumentNullException(nameof(invariantExpressions));
+    private readonly IByRefLoopVersioner _loopVersions = loopVersions ?? throw new ArgumentNullException(nameof(loopVersions));
     private readonly IAddressInductionRewriter _addressInduction = addressInduction ??
         throw new ArgumentNullException(nameof(addressInduction));
     private readonly IWholeLocalBlockCopyFolder _blockCopies = blockCopies ?? throw new ArgumentNullException(nameof(blockCopies));
     private readonly IConstructedObjectNullCheckEliminator _constructedObjects = constructedObjects ??
         throw new ArgumentNullException(nameof(constructedObjects));
+    private readonly IByRefNullCheckEliminator _byRefNullChecks = byRefNullChecks ??
+        throw new ArgumentNullException(nameof(byRefNullChecks));
     private readonly IRangeBranchRewriter _rangeBranches = rangeBranches ?? throw new ArgumentNullException(nameof(rangeBranches));
     private readonly IConditionalStoreMerger _storeMerging = storeMerging ?? throw new ArgumentNullException(nameof(storeMerging));
     private readonly IFieldLoadReuser _fieldLoads = fieldLoads ?? throw new ArgumentNullException(nameof(fieldLoads));
@@ -104,10 +125,12 @@ internal sealed class ManagedMethodOptimizationPipeline(
         throw new ArgumentNullException(nameof(entryInitialization));
     private readonly IEmptyFinallyRemover _emptyFinallies = emptyFinallies ??
         throw new ArgumentNullException(nameof(emptyFinallies));
+    private readonly IFinallyCloner _finallyClones = finallyClones ?? throw new ArgumentNullException(nameof(finallyClones));
     private readonly IStructLocalScalarReplacer _structLocals = structLocals ??
         throw new ArgumentNullException(nameof(structLocals));
     private readonly ILoopArgumentLocalizer _loopArguments = loopArguments ??
         throw new ArgumentNullException(nameof(loopArguments));
+    private readonly IBlockLocalSlotSharer _localSlots = localSlots ?? throw new ArgumentNullException(nameof(localSlots));
     private readonly Allocations.INonEscapingAllocationReplacer _objects = objects ??
         throw new ArgumentNullException(nameof(objects));
 
@@ -156,6 +179,24 @@ internal sealed class ManagedMethodOptimizationPipeline(
             }
             // A direct call keeps the stack shape of the virtual call it replaces.
             optimized = _devirtualizer.Rewrite(optimized, entryStacks);
+            // A struct constructed and stored through a local's address is stored to the local, before
+            // inlining puts the constructor's branches between the address and the store.
+            if (HasConstructedStore(optimized))
+            {
+                var stacks = entryStacks.IsEmpty
+                    ? _stackValidator.Validate(_graphBuilder.Build(optimized)).InstructionEntryStacks
+                    : entryStacks;
+                var stored = AddressTakenValues.ConstructedLocalStoreFolder.Rewrite(optimized, stacks);
+                if (!ReferenceEquals(stored, optimized))
+                {
+                    optimized = stored;
+                    entryStacks = ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty;
+                }
+                else
+                {
+                    entryStacks = stacks;
+                }
+            }
             var inlined = _inliner.Inline(
                 method.Method,
                 optimized,
@@ -190,15 +231,17 @@ internal sealed class ManagedMethodOptimizationPipeline(
         // loops whose iterations run as vectors first, walks over n elements that
         // run four at a time first, for loops over a few constant values that
         // run once per value in a row, branching computations of values a loop
-        // does not change, which the unrolled values leave, reads of a reference plus
+        // does not change, which the unrolled values leave, loops copied without null checks where a test finds none of
+        // their reads of a reference plus their counter at address 0, those reads of a reference plus
         // a loop's counter, loop reloads of an element the loop itself stores, stores to one field on both arms of an if,
         // field reads of values an earlier read found, remainders of values a
         // division divided, and span reads that RVA data answers. The entry
         // checks go in before the array passes, whose proofs then describe the
         // final instructions, as the integer check proof does, and so does the
-        // proof that objects newobj produced are not null.
-        return _integerChecks.Rewrite(_constructedObjects.Rewrite(_repeatedAccesses.Rewrite(_unroller.Rewrite(_arrayBounds.Rewrite(_entryInitialization.Rewrite(
-            _rvaSpans.Rewrite(_quotients.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_addressInduction.Rewrite(_invariantExpressions.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_blockCopies.Rewrite(_idempotentLoops.Rewrite(_rangeBranches.Rewrite(_addressDereferences.Rewrite(_loopArguments.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
-                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized)))))))))))))))))))))))))));
+        // proof that objects newobj produced, and the managed addresses dereferenced, are not null. Locals that never
+        // hold a value from one block into another share slots by type before the proofs, which name locals by index.
+        return _integerChecks.Rewrite(_byRefNullChecks.Rewrite(_constructedObjects.Rewrite(_repeatedAccesses.Rewrite(_unroller.Rewrite(_arrayBounds.Rewrite(_localSlots.Rewrite(_entryInitialization.Rewrite(
+            _rvaSpans.Rewrite(_quotients.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_addressInduction.Rewrite(_loopVersions.Rewrite(_invariantExpressions.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_blockCopies.Rewrite(_idempotentLoops.Rewrite(_rangeBranches.Rewrite(_addressDereferences.Rewrite(_loopArguments.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
+                _finallyClones.Rewrite(_emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized)))))))))))))))))))))))))))))));
     }
 }

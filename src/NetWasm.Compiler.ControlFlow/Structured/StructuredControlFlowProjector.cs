@@ -72,6 +72,11 @@ internal sealed class StructuredControlFlowProjector : IStructuredControlFlowPro
                 new(loop.HeaderBlock),
                 ProjectSequence(loop.Body, method, definitions, groupIds, activeGroup)),
             Draft.StructuredLabelBranchDraft branch => new StructuredLabelBranch(new(branch.TargetBlock)),
+            Draft.StructuredSwitchDraft table => new StructuredSwitch(
+                Occurrence(table.Head, table.IsOriginal, method, definitions, activeGroup),
+                [.. table.Chain.Select(block => Occurrence(block, table.IsOriginal, method, definitions, activeGroup))],
+                [.. table.Cases.Select(target => new StructuredBlockId(target))],
+                new(table.Default)),
             Draft.StructuredExceptionRegionDraft exception => new StructuredExceptionRegion(
                 groupIds[exception.Group],
                 exception.FallthroughContinuationIndex is int continuation ? new(continuation) : null)

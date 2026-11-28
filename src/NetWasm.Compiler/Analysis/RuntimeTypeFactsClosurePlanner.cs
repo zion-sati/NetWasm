@@ -12,24 +12,29 @@ namespace NetWasm.Compiler.Analysis;
 // Strategy: compute descriptor roots required by the requested runtime type facts: base types,
 // generic arguments a query can return, the declaring type of every nested type, whose open
 // definition is what DeclaringType returns for a nested type of a constructed generic, the open
-// definition of every constructed generic type, which GetGenericTypeDefinition returns, and the
-// element of every array, pointer and by-reference type, which GetElementType returns.
+// definition of every constructed generic type, which GetGenericTypeDefinition returns, the
+// element of every array, pointer and by-reference type, which GetElementType returns, and the
+// interfaces every class, struct and interface declares, which GetInterfaces returns.
 internal sealed class RuntimeTypeFactsClosurePlanner(
     IBaseTypeResolver bases,
     ITypeDefinitionResolver definitions,
-    ITypeIdentityResolver identities) : IRuntimeTypeFactsClosurePlanner
+    ITypeIdentityResolver identities,
+    IImplementedInterfaceResolver interfaces) : IRuntimeTypeFactsClosurePlanner
 {
+    private readonly IImplementedInterfaceResolver _interfaces = interfaces ??
+        throw new ArgumentNullException(nameof(interfaces));
     private readonly IBaseTypeResolver _bases = bases ?? throw new ArgumentNullException(nameof(bases));
     private readonly ITypeDefinitionResolver _definitions = definitions ?? throw new ArgumentNullException(nameof(definitions));
     private readonly ITypeIdentityResolver _identities = identities ?? throw new ArgumentNullException(nameof(identities));
 
     public ImmutableArray<CliTypeIdentity> Plan(
         ImmutableArray<CliTypeIdentity> seeds,
-        bool includeGenericArguments,
-        bool includeDeclaringTypes,
-        bool includeGenericDefinitions,
-        bool includeElementTypes)
+        RuntimeTypeFactReads reads)
     {
+        var includeGenericArguments = reads.GenericArguments;
+        var includeDeclaringTypes = reads.DeclaringTypes;
+        var includeGenericDefinitions = reads.GenericDefinitions;
+        var includeElementTypes = reads.ElementTypes;
         if (seeds.IsDefault) throw new ArgumentException("Type-fact seeds must be initialized.", nameof(seeds));
         var pending = new Queue<CliTypeIdentity>();
         var visited = new HashSet<CliTypeIdentity>();
@@ -51,6 +56,15 @@ internal sealed class RuntimeTypeFactsClosurePlanner(
             {
                 required.Add(type.ElementType!);
             }
+            if (reads.Interfaces && DeclaresInterfaces(type))
+            {
+                foreach (var declared in _interfaces.GetInterfaces(type))
+                {
+                    if (declared.ContainsGenericParameters) continue;
+                    required.Add(declared);
+                    Enqueue(declared);
+                }
+            }
             if (!CanExpand(type)) continue;
             var baseType = _bases.Resolve(type);
             if (baseType is null || !CanExpand(baseType)) continue;
@@ -70,6 +84,9 @@ internal sealed class RuntimeTypeFactsClosurePlanner(
                 Enqueue(type.ElementType);
             foreach (var argument in type.TypeArguments) Enqueue(argument);
         }
+
+        bool DeclaresInterfaces(CliTypeIdentity type) => CanExpand(type) &&
+            type.Shape is CliTypeShape.Named or CliTypeShape.Primitive or CliTypeShape.GenericInstantiation;
 
         bool CanExpand(CliTypeIdentity type) => !type.ContainsGenericParameters &&
             (type.Shape != CliTypeShape.Named || _definitions.ResolveTypeIdentity(type).GenericArity == 0);

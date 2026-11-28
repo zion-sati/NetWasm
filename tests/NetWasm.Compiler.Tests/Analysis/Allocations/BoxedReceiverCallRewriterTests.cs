@@ -61,14 +61,43 @@ public sealed class BoxedReceiverCallRewriterTests
         Assert.Equal([(Value, Shape)], fixture.Relationships.Calls);
     }
 
+    // A box of an enum, whose methods System.Enum implements, and of a value type
+    // whose method is inherited or a default interface method, takes the
+    // constrained call too: ConstrainedCallRewriter binds it to that one method,
+    // where callvirt on the box dispatched over every implementing type.
     [Theory]
-    // An inherited or default implementation takes the object, a cast that can
-    // fail, a box read twice or stored, a branch before the call, a call that is
-    // a branch target, a non-virtual call, a reference, open or nullable box, an
-    // instruction the rule does not follow, an enum, whose methods System.Enum
-    // implements on the box, a callvirt of a non-virtual method and a method
-    // that ends with the box live.
-    [InlineData(0)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AnInheritedOrEnumMethodTakesTheConstrainedCallToo(bool isEnum)
+    {
+        var body = Body(
+            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(1, CilOperation.Box, new CilOperand.TypeIdentity(Value)),
+            I(2, CilOperation.CastClass, new CilOperand.TypeIdentity(Shape)),
+            I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(3)),
+            I(4, CilOperation.CallVirtual, Area),
+            I(5, CilOperation.Return));
+        var fixture = new Fixture(
+            implementation: isEnum ? Implementation : Implementation with { DeclaringType = ShapeKey },
+            isEnum: isEnum);
+
+        var result = fixture.Rule().Rewrite(body);
+
+        Assert.Equal(
+            [
+                CilOperation.LoadArgument, CilOperation.StoreLocal, CilOperation.LoadLocalAddress, CilOperation.Nop,
+                CilOperation.LoadInt32, CilOperation.Constrained, CilOperation.CallVirtual, CilOperation.Return,
+            ],
+            result.Instructions.Select(static instruction => instruction.Operation));
+        Assert.Equal(new CilOperand.TypeIdentity(Value), result.Instructions[5].Operand);
+        Assert.Equal(Area, result.Instructions[6].Operand);
+    }
+
+    [Theory]
+    // A cast that can fail, a box read twice or stored, a branch before the call,
+    // a call that is a branch target, a non-virtual call, a reference, open or
+    // nullable box, an instruction the rule does not follow, a callvirt of a
+    // non-virtual method and a method that ends with the box live.
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
@@ -79,7 +108,6 @@ public sealed class BoxedReceiverCallRewriterTests
     [InlineData(8)]
     [InlineData(9)]
     [InlineData(10)]
-    [InlineData(11)]
     [InlineData(12)]
     [InlineData(13)]
     public void LeavesOtherShapesAlone(int shape)
@@ -151,13 +179,10 @@ public sealed class BoxedReceiverCallRewriterTests
         var fixture = new Fixture();
         var nullableTypes = new NullableTypeResolver();
         var effects = new StackEffectResolver(fixture);
-        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(null!, fixture, fixture, nullableTypes, fixture.Relationships, fixture, effects));
-        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(fixture, null!, fixture, nullableTypes, fixture.Relationships, fixture, effects));
-        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(fixture, fixture, null!, nullableTypes, fixture.Relationships, fixture, effects));
-        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(fixture, fixture, fixture, null!, fixture.Relationships, fixture, effects));
-        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(fixture, fixture, fixture, nullableTypes, null!, fixture, effects));
-        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(fixture, fixture, fixture, nullableTypes, fixture.Relationships, null!, effects));
-        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(fixture, fixture, fixture, nullableTypes, fixture.Relationships, fixture, null!));
+        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(null!, nullableTypes, fixture.Relationships, effects));
+        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(fixture, null!, fixture.Relationships, effects));
+        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(fixture, nullableTypes, null!, effects));
+        Assert.Throws<ArgumentNullException>(() => new BoxedReceiverCallRewriter(fixture, nullableTypes, fixture.Relationships, null!));
         Assert.Throws<ArgumentNullException>(() => fixture.Rule().Rewrite(null!));
     }
 
@@ -173,7 +198,7 @@ public sealed class BoxedReceiverCallRewriterTests
         internal TestTypeRelationshipClassifier Relationships { get; } = new(assignable);
 
         internal BoxedReceiverCallRewriter Rule() =>
-            new(this, this, this, new NullableTypeResolver(), Relationships, this, new StackEffectResolver(this));
+            new(this, new NullableTypeResolver(), Relationships, new StackEffectResolver(this));
 
         public TypeDefinitionModel ResolveTypeIdentity(CliTypeIdentity identity) =>
             new(ValueKey, "Fixture", "Value", true, [], [Implementation.Key]) { IsEnum = isEnum };
@@ -189,7 +214,6 @@ public sealed class BoxedReceiverCallRewriterTests
 
         public MethodDefinitionModel Resolve(ConstrainedCallTargetRequest request)
         {
-            Assert.False(isEnum);
             Assert.Equal(Value, request.ConstrainedType);
             Assert.Same(Declaration, request.Declaration);
             Assert.Equal(AreaSignature, request.CallSignature);

@@ -12,6 +12,7 @@ export const runtimeFeatureIds = Object.freeze([
   "object-generation",
   "random-seed",
   "reference-write-barrier",
+  "shared-arrays",
   "structured-command-diagnostics",
   "uninitialized-arrays",
   "weak-handles",

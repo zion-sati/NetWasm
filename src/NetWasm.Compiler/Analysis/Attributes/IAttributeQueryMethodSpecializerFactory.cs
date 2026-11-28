@@ -10,10 +10,13 @@ namespace NetWasm.Compiler.Analysis.Attributes;
 // reducer that answers queries on a Type known only at run time.
 internal sealed class AttributeQueryServices(
     IMethodSpecializer specializer,
-    NetWasm.Compiler.Analysis.Constants.IReachableProgramReducer runtimeTypeQueries)
+    NetWasm.Compiler.Analysis.Constants.IReachableProgramReducer runtimeTypeQueries,
+    IUnplannedAttributeQueryFinder unplannedQueries)
 {
     public IMethodSpecializer Specializer { get; } = specializer;
     public NetWasm.Compiler.Analysis.Constants.IReachableProgramReducer RuntimeTypeQueries { get; } = runtimeTypeQueries;
+    // Finds the queries the settled program leaves to their run-time paths (NW1019).
+    public IUnplannedAttributeQueryFinder UnplannedQueries { get; } = unplannedQueries;
 }
 
 internal interface IAttributeQueryMethodSpecializerFactory

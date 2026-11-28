@@ -14,7 +14,15 @@ public interface ICustomAttributeDescriptorReader
 // The attributes of one type an assembly declares on itself ([assembly: ...]), found by the attribute type's full
 // name; attributes of other types are not resolved, so one whose assembly the compile does not have (a package
 // built against System.Runtime) is passed over.
+public interface IModuleAttributeDescriptorReader
+{
+    // Every attribute the assembly's module declares on itself ([module: ...]).
+    ImmutableArray<CustomAttributeDescriptor> Read(AssemblyIdentity assembly);
+}
+
 public interface IAssemblyAttributeDescriptorReader
 {
-    ImmutableArray<CustomAttributeDescriptor> Read(AssemblyIdentity assembly, string attributeFullName);
+    // The attributes the assembly declares on itself of the named type (with generic ones, whose type has no name), or
+    // every one where no name is given.
+    ImmutableArray<CustomAttributeDescriptor> Read(AssemblyIdentity assembly, string? attributeFullName);
 }

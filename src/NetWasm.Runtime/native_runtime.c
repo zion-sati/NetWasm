@@ -93,6 +93,8 @@ typedef struct {
 
 static FrameMarks frame_marks_capture(void);
 static void frame_marks_restore(const FrameMarks *marks);
+static void root_frame_rewind(uintptr_t mark);
+static void value_frame_rewind_to_cursor(uintptr_t cursor);
 
 typedef struct {
     netwasm_address_t metadata_address;
@@ -194,6 +196,10 @@ static ExceptionFrame *exception_frames;
 static u32 exception_frame_capacity;
 static u32 exception_frame_top;
 static u32 filter_search_floor;
+/* The registered frames with filter clauses. A catch without filters registers its frame only while one is (the
+   compiler's FilterGuardedCatchFrame): with none, the first pass runs no filter, so a catch it cannot see changes
+   nothing it does, and the catch's landing pad selects its own clause (exception_catch_select). */
+static u32 exception_filter_frames;
 #ifndef NETWASM_RUNTIME_PACK
 static uintptr_t *tracked_allocations;
 static u32 tracked_capacity;
@@ -862,22 +868,134 @@ u32 is_assignable(netwasm_reference_t object, u32 target_type_id)
         : is_type_assignable(*(u32 *)(uintptr_t)object, target_type_id);
 }
 
-NETWASM_EXPORT("exception_frame_enter")
-u32 exception_frame_enter(netwasm_address_t metadata_address, u32 clause_count)
+/* Shared arrays (CoreLib's SharedArrays): Array.CreateInstance's arrays of a reference element the program has no
+   array type of, which keep that element in their header as any array of references does. Their casting lists hold
+   what every array of their shape converts to. A program that allocates them registers their type ids by shape (the
+   vector, then ranks one to three), then for each array or vector interface type one may convert to, sorted by type
+   id, the type, the shared type it needs and the element the header must hold: (type, shared type, element). Its
+   casts, copies and stores call the _shared forms below; a program without shared arrays links none of them. */
+#ifndef NETWASM_NO_SHARED_ARRAYS
+#define SHARED_ARRAY_SHAPES 4u
+static const u32 *shared_array_table;
+static u32 shared_array_target_count;
+
+NETWASM_EXPORT("register_shared_arrays")
+void register_shared_arrays(netwasm_address_t table, u32 count)
 {
-    ExceptionFrame *frame;
+    shared_array_table = (const u32 *)(uintptr_t)table;
+    shared_array_target_count = count;
+}
+
+static u32 is_shared_array_type(u32 type_id)
+{
+    if (shared_array_table == NULL || type_id == 0) {
+        return 0;
+    }
+    for (u32 shape = 0; shape < SHARED_ARRAY_SHAPES; shape++) {
+        if (shared_array_table[shape] == type_id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Whether a shared array converts to the target by the element in its header. */
+static u32 is_shared_array_assignable(
+    netwasm_reference_t array, u32 shared_type_id, u32 target_type_id)
+{
+    const u32 *targets = shared_array_table + SHARED_ARRAY_SHAPES;
+    u32 low = 0;
+    u32 high = shared_array_target_count;
+    while (low < high) {
+        u32 middle = low + (high - low) / 2;
+        u32 type_id = targets[middle * 3];
+        if (type_id == target_type_id) {
+            return targets[middle * 3 + 1] == shared_type_id &&
+                is_type_assignable(
+                    *(const u32 *)(uintptr_t)(array + NETWASM_ARRAY_ELEMENT_TYPE_ID_OFFSET),
+                    targets[middle * 3 + 2]);
+        }
+        if (type_id < target_type_id) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return 0;
+}
+
+NETWASM_EXPORT("is_assignable_shared")
+u32 is_assignable_shared(netwasm_reference_t object, u32 target_type_id)
+{
+    u32 type_id;
+    if (object == 0) {
+        return 0;
+    }
+    type_id = *(u32 *)(uintptr_t)object;
+    return is_type_assignable(type_id, target_type_id) ||
+        (is_shared_array_type(type_id) &&
+            is_shared_array_assignable(object, type_id, target_type_id));
+}
+#else
+static inline u32 is_shared_array_type(u32 type_id)
+{
+    (void)type_id;
+    return 0;
+}
+
+static inline u32 is_assignable_shared(netwasm_reference_t object, u32 target_type_id)
+{
+    return is_assignable(object, target_type_id);
+}
+#endif
+
+/* The root arena's mark: its cursor, which is 0 before its first chunk (the empty arena is all zeros), so a mark is one
+   load, which Binaryen inlines at every level. */
+static inline uintptr_t root_frame_mark(void)
+{
+    return root_frame_arena.cursor;
+}
+
+/* The frame arenas' marks, stored in place (frame_marks_capture returns them
+   through the stack). */
+static inline void frame_marks_store(FrameMarks *marks)
+{
+    marks->root = root_frame_mark();
+    marks->value = value_frame;
+    marks->value_chunk = value_frame_arena.current;
+    marks->value_cursor = value_frame_arena.cursor;
+    marks->stack_trace = stack_trace_frame_top;
+}
+
+/* exception_frame_enter's cold half: grows the frame stack, or traps on a
+   full one it cannot grow or on clauses without metadata. Out of line, so the
+   entry keeps no stack frame of its own. */
+__attribute__((noinline, cold))
+static void exception_frame_reserve(netwasm_address_t metadata_address, u32 clause_count)
+{
     if ((clause_count != 0 && metadata_address == 0) ||
         (exception_frame_top == exception_frame_capacity &&
          !grow_exception_frames())) {
         __builtin_trap();
     }
+}
+
+NETWASM_EXPORT("exception_frame_enter")
+u32 exception_frame_enter(netwasm_address_t metadata_address, u32 clause_count)
+{
+    ExceptionFrame *frame;
+    if (__builtin_expect(exception_frame_top == exception_frame_capacity ||
+                         (clause_count != 0 && metadata_address == 0), 0)) {
+        exception_frame_reserve(metadata_address, clause_count);
+    }
     frame = &exception_frames[exception_frame_top++];
     frame->metadata_address = metadata_address;
     frame->has_filters = clause_count >> 31;
+    exception_filter_frames += clause_count >> 31;
     frame->clause_count = clause_count & 0x7fffffffu;
     frame->environment = 0;
     frame->target_clause = 0;
-    frame->marks = frame_marks_capture();
+    frame_marks_store(&frame->marks);
     return exception_frame_top;
 }
 
@@ -891,18 +1009,24 @@ void exception_frame_set_environment(u32 token, netwasm_address_t environment)
     exception_frames[token - 1].environment = environment;
 }
 
+/* A popped frame is not read again, but for the target clause the landing pad
+   reads after its unwind; exception_frame_enter writes every field. */
 NETWASM_EXPORT("exception_frame_leave")
 void exception_frame_leave(u32 token)
 {
-    ExceptionFrame *frame;
     if (token == 0 || token != exception_frame_top) {
         __builtin_trap();
     }
-    frame = &exception_frames[--exception_frame_top];
-    frame->metadata_address = 0;
-    frame->clause_count = 0;
-    frame->environment = 0;
-    frame->has_filters = 0;
+    exception_filter_frames -= exception_frames[token - 1].has_filters;
+    exception_frame_top--;
+}
+
+/* Whether a registered frame with filter clauses is on the frame stack: a catch without filters registers its frame
+   only then. One load, which Binaryen inlines. */
+NETWASM_EXPORT("exception_filter_frames_live")
+u32 exception_filter_frames_live(void)
+{
+    return exception_filter_frames;
 }
 
 /* A handler's landing pad: the exception has left every frame entered since
@@ -915,6 +1039,60 @@ void exception_frame_unwind(u32 token)
     }
     frame_marks_restore(&exception_frames[token - 1].marks);
     exception_frame_leave(token);
+}
+
+/* Where an arena stands, read by a method whose landing pad returns that arena to it (frame_marks_rewind) because the
+   method holds no frame of its own there: after its prologue, or as a protected block begins. One load each, which
+   Binaryen inlines: each reads exactly what a frame's entry or leave stores, so a read right after one is forwarded
+   from the store (a wider load over both cursors is not, and stalls). The value arena's cursor alone says where that
+   arena and its list stood. */
+NETWASM_EXPORT("frame_mark_root")
+netwasm_address_t frame_mark_root(void)
+{
+    return (netwasm_address_t)root_frame_mark();
+}
+
+NETWASM_EXPORT("frame_mark_value_cursor")
+netwasm_address_t frame_mark_value_cursor(void)
+{
+    return (netwasm_address_t)value_frame_arena.cursor;
+}
+
+NETWASM_EXPORT("frame_mark_stack_trace")
+u32 frame_mark_stack_trace(void)
+{
+    return stack_trace_frame_top;
+}
+
+/* A landing pad whose method holds no value frame of its own there: the arenas return to the cursors read after the
+   prologue or as the block began (value_frame_rewind_to_cursor finds the value list's head from the cursor), the root
+   arena's to root, and the stack-trace frames to stack_trace of them unless it is UINT32_MAX (a program that records
+   none). */
+NETWASM_EXPORT("frame_marks_rewind")
+void frame_marks_rewind(netwasm_address_t root, netwasm_address_t value_cursor, u32 stack_trace)
+{
+    if (stack_trace != UINT32_MAX && stack_trace > stack_trace_frame_top) {
+        __builtin_trap();
+    }
+    root_frame_rewind((uintptr_t)root);
+    value_frame_rewind_to_cursor((uintptr_t)value_cursor);
+    if (stack_trace != UINT32_MAX) {
+        stack_trace_frame_top = stack_trace;
+    }
+}
+
+/* The landing pad of a catch without filters that registered no frame: the first of its clauses (the catch types at
+   metadata_address) the exception is assignable to, from 1, or 0 when the exception passes it by. */
+NETWASM_EXPORT("exception_catch_select")
+u32 exception_catch_select(netwasm_reference_t exception, netwasm_address_t metadata_address, u32 clause_count)
+{
+    const u32 *catch_types = (const u32 *)(uintptr_t)metadata_address;
+    for (u32 clause = 0; clause < clause_count; clause++) {
+        if (is_assignable(exception, catch_types[clause])) {
+            return clause + 1;
+        }
+    }
+    return 0;
 }
 
 NETWASM_EXPORT("exception_frame_target_clause")
@@ -1461,14 +1639,14 @@ NETWASM_EXPORT("handle_release") void handle_release(u32 handle)
 }
 
 
-NETWASM_EXPORT("root_frame_enter")
-netwasm_address_t root_frame_enter(u32 slot_count)
+/* root_frame_enter's cold half: a frame of no slots, the arena's first chunk (sized for a deep call chain), or the next
+   chunk. A frame of no slots takes the cursor and stays in the current chunk, even a full one. Binaryen inlines it into
+   its one caller, and so into every framed method, where it costs code but no executed instructions. */
+static netwasm_address_t root_frame_enter_slow(size_t slot_bytes)
 {
-    if ((size_t)slot_count > SIZE_MAX / sizeof(netwasm_reference_t)) {
-        return 0;
+    if (slot_bytes == 0 && root_frame_arena.current != NULL) {
+        return (netwasm_address_t)root_frame_arena.cursor;
     }
-    size_t slot_bytes = (size_t)slot_count * sizeof(netwasm_reference_t);
-    /* Every managed root slot is published before a collecting safepoint. */
     if (root_frame_arena.current == NULL) {
         size_t capacity = slot_bytes > ROOT_ARENA_INITIAL_CAPACITY
             ? slot_bytes : ROOT_ARENA_INITIAL_CAPACITY;
@@ -1477,21 +1655,34 @@ netwasm_address_t root_frame_enter(u32 slot_count)
         root_frame_arena.cursor = (uintptr_t)initial + slot_bytes;
         return (netwasm_address_t)(uintptr_t)initial;
     }
-    void *slots = frame_arena_allocate(&root_frame_arena, slot_bytes);
-    return (netwasm_address_t)(uintptr_t)slots;
+    return (netwasm_address_t)(uintptr_t)frame_arena_allocate_slow(&root_frame_arena, slot_bytes);
 }
 
-NETWASM_EXPORT("root_frame_leave")
-void root_frame_leave(netwasm_address_t frame)
+/* Inlined into every method with roots, so the common path is one bound test and a bump: an empty arena (all of its
+   fields 0) and a frame of no slots both fail the test and take the cold half. */
+NETWASM_EXPORT("root_frame_enter")
+netwasm_address_t root_frame_enter(u32 slot_count)
 {
-    netwasm_reference_t *slots = (netwasm_reference_t *)(uintptr_t)frame;
-    uintptr_t address = (uintptr_t)slots;
-    if (root_frame_arena.current == NULL || address < root_frame_arena.begin ||
-        address > root_frame_arena.cursor || address % sizeof(netwasm_reference_t) != 0) {
+    if ((size_t)slot_count > SIZE_MAX / sizeof(netwasm_reference_t)) {
+        return 0;
+    }
+    size_t slot_bytes = (size_t)slot_count * sizeof(netwasm_reference_t);
+    /* Every managed root slot is published before a collecting safepoint. */
+    uintptr_t cursor = root_frame_arena.cursor;
+    if (__builtin_expect(slot_bytes - 1u < root_frame_arena.limit - cursor, 1)) {
+        root_frame_arena.cursor = cursor + slot_bytes;
+        return (netwasm_address_t)cursor;
+    }
+    return root_frame_enter_slow(slot_bytes);
+}
+
+/* root_frame_leave's cold half: a frame at the start of its chunk returns to the chunk before it, if any. */
+static void root_frame_leave_chunk(uintptr_t address)
+{
+    if (root_frame_arena.current == NULL) {
         __builtin_trap();
     }
-    if (address == root_frame_arena.begin &&
-        root_frame_arena.current->previous != NULL) {
+    if (root_frame_arena.current->previous != NULL) {
         FrameArenaChunk *previous = root_frame_arena.current->previous;
         root_frame_arena.current = previous;
         root_frame_arena.begin = (uintptr_t)frame_arena_bytes(previous);
@@ -1500,6 +1691,44 @@ void root_frame_leave(netwasm_address_t frame)
     } else {
         root_frame_arena.cursor = address;
     }
+}
+
+/* Traps unless the frame lies in the current chunk, at or below the cursor, on a slot boundary: one unsigned compare
+   covers both ends (an empty arena's begin and cursor are 0, so any frame but 0 traps and 0 reaches the cold half,
+   which traps). Inlined into every method with roots. */
+NETWASM_EXPORT("root_frame_leave")
+void root_frame_leave(netwasm_address_t frame)
+{
+    uintptr_t address = (uintptr_t)frame;
+    uintptr_t begin = root_frame_arena.begin;
+    if (__builtin_expect(((address - begin) > (root_frame_arena.cursor - begin)) |
+                         ((address % sizeof(netwasm_reference_t)) != 0), 0)) {
+        __builtin_trap();
+    }
+    if (__builtin_expect(address == begin, 0)) {
+        root_frame_leave_chunk(address);
+        return;
+    }
+    root_frame_arena.cursor = address;
+}
+
+/* A landing pad's cell for the exception in flight: a one-slot root frame of its own, entered after the pad rewound the
+   arenas. Out of line, so a method's landing pads stay a call each rather than an inlined frame entry. */
+NETWASM_EXPORT("exception_cell_enter")
+netwasm_address_t exception_cell_enter(netwasm_reference_t exception)
+{
+    netwasm_address_t cell = root_frame_enter(1);
+    if (cell != 0) {
+        *(netwasm_reference_t *)(uintptr_t)cell = exception;
+    }
+    return cell;
+}
+
+/* A catch handler that ends normally leaves its exception cell, the newest root frame. */
+NETWASM_EXPORT("exception_cell_leave")
+void exception_cell_leave(netwasm_address_t cell)
+{
+    root_frame_leave(cell);
 }
 
 /* Pushes a value frame whose bytes, rounded up to sixteen, are followed by
@@ -1735,15 +1964,95 @@ static void value_frame_rewind(const FrameMarks *marks)
     frame_arena_rewind(&value_frame_arena, chunk, (void *)cursor);
 }
 
+/* Returns the value arena to a cursor read earlier, and the value list to how it stood then, which a landing pad pays
+   for instead of a load of the list's head and the arena's chunk on the normal path. The cursor lies in one chunk the
+   arena still passes through (chunks' bytes are disjoint, and the arena returns to a chunk only through its successors'
+   previous links); a zero cursor was read before the arena had a chunk. A listed frame is newer than the cursor when it
+   lies in a later chunk, or in the cursor's chunk at or above it, and the frames newer than it lead the list, since
+   frames enter the list in arena order. */
+static void value_frame_rewind_to_cursor(uintptr_t cursor)
+{
+    FrameArenaChunk *current = value_frame_arena.current;
+    if (cursor == 0) {
+        value_frame = NULL;
+        if (current == NULL) {
+            return;
+        }
+        while (current->previous != NULL) {
+            current = current->previous;
+        }
+        frame_arena_rewind(&value_frame_arena, current, frame_arena_bytes(current));
+        return;
+    }
+    FrameArenaChunk *chunk = current;
+    while (chunk != NULL && !(cursor >= (uintptr_t)frame_arena_bytes(chunk) &&
+                                cursor <= (uintptr_t)frame_arena_bytes(chunk) + chunk->capacity)) {
+        chunk = chunk->previous;
+    }
+    if (chunk == NULL) {
+        __builtin_trap();
+    }
+    /* later walks back from the current chunk toward the cursor's, so each chunk between them is passed once. */
+    FrameArenaChunk *later = current;
+    ValueFrame *frame = value_frame;
+    while (frame != NULL) {
+        FrameArenaChunk *own = (FrameArenaChunk *)((uintptr_t)frame->chunk &
+            ~(uintptr_t)(VALUE_FRAME_MAPPED | VALUE_FRAME_MAP_FOLLOWS));
+        if (own == chunk) {
+            if ((uintptr_t)frame < cursor) {
+                break;
+            }
+        } else {
+            while (later != own && later != chunk) {
+                later = later->previous;
+            }
+            if (later != own) {
+                break;
+            }
+        }
+        frame = frame->previous;
+    }
+    value_frame = frame;
+    frame_arena_rewind(&value_frame_arena, chunk, (void *)cursor);
+}
+
+/* A landing pad whose method holds its value frame from its prologue: the exception has left every frame entered since
+   the block began, and none of the method's own, so the arenas return to where the method stood then, read from its
+   frames rather than from marks. The root arena's cursor returns to root_mark (the end of the method's newest root
+   frame, or a mark); the value arena to the end of the method's frame (value_frame_bytes, entered for
+   value_frame_size bytes; its header gives its chunk and the map that follows a long one), and the value list to the
+   frame when it is mapped, otherwise to the list it was entered over; the stack-trace frames to stack_trace of them
+   unless it is UINT32_MAX (a program that records none). */
+NETWASM_EXPORT("frames_unwind")
+void frames_unwind(netwasm_address_t root_mark, netwasm_address_t value_frame_bytes, netwasm_address_t value_frame_size,
+    u32 stack_trace)
+{
+    root_frame_rewind((uintptr_t)root_mark);
+    ValueFrame *frame = (ValueFrame *)((uintptr_t)value_frame_bytes - offsetof(ValueFrame, bytes));
+    uintptr_t tags = (uintptr_t)frame->chunk & (uintptr_t)(VALUE_FRAME_MAPPED | VALUE_FRAME_MAP_FOLLOWS);
+    FrameArenaChunk *chunk = (FrameArenaChunk *)((uintptr_t)frame->chunk & ~tags);
+    size_t map = (tags & VALUE_FRAME_MAP_FOLLOWS) != 0
+        ? (((size_t)(frame->references >> 32) * sizeof(u64)) + 15u) & ~(size_t)15u
+        : 0;
+    uintptr_t end = (uintptr_t)frame->bytes + (((size_t)value_frame_size + 15u) & ~(size_t)15u) + map;
+    if (chunk == NULL || end > (uintptr_t)frame_arena_bytes(chunk) + chunk->capacity) {
+        __builtin_trap();
+    }
+    value_frame = (tags & VALUE_FRAME_MAPPED) != 0 ? frame : frame->previous;
+    frame_arena_rewind(&value_frame_arena, chunk, (void *)end);
+    if (stack_trace != UINT32_MAX) {
+        if (stack_trace > stack_trace_frame_top) {
+            __builtin_trap();
+        }
+        stack_trace_frame_top = stack_trace;
+    }
+}
+
 static FrameMarks frame_marks_capture(void)
 {
-    return (FrameMarks){
-        root_frame_arena.current == NULL ? 0 : root_frame_arena.cursor,
-        value_frame,
-        value_frame_arena.current,
-        value_frame_arena.cursor,
-        stack_trace_frame_top,
-    };
+    FrameMarks marks;
+    frame_marks_store(&marks);
+    return marks;
 }
 
 static void frame_marks_restore(const FrameMarks *marks)
@@ -2773,13 +3082,13 @@ netwasm_reference_t array_get_value(netwasm_reference_t array, u32 index,
    layout arguments are supplied by the compiler, never inferred from slot size.
    Return 0 for success, 1 for an incompatible value. */
 #ifndef NETWASM_NO_ARRAY_SET_VALUE
-NETWASM_EXPORT("array_set_value")
-u32 array_set_value(
+static inline __attribute__((always_inline)) u32 set_array_value(
     netwasm_reference_t array,
     u32 index,
     netwasm_reference_t value,
     u32 nullable_underlying_type_id,
-    netwasm_address_t nullable_value_offset)
+    netwasm_address_t nullable_value_offset,
+    bool shared)
 {
     if (array == 0) {
         __builtin_trap();
@@ -2798,7 +3107,7 @@ u32 array_set_value(
     netwasm_reference_t data = *(const netwasm_reference_t *)(uintptr_t)(
         array + NETWASM_ARRAY_DATA_POINTER_OFFSET);
     if (!element->value_registered) {
-        if (value != 0 && !is_assignable(value, element_id)) {
+        if (value != 0 && !(shared ? is_assignable_shared(value, element_id) : is_assignable(value, element_id))) {
             return 1;
         }
         collector_store_reference(array, (netwasm_reference_t *)(uintptr_t)data + index, value);
@@ -2834,15 +3143,39 @@ u32 array_set_value(
         1, underlying->value_size);
     return 0;
 }
+
+NETWASM_EXPORT("array_set_value")
+u32 array_set_value(
+    netwasm_reference_t array,
+    u32 index,
+    netwasm_reference_t value,
+    u32 nullable_underlying_type_id,
+    netwasm_address_t nullable_value_offset)
+{
+    return set_array_value(array, index, value, nullable_underlying_type_id, nullable_value_offset, false);
+}
+
+#ifndef NETWASM_NO_SHARED_ARRAYS
+NETWASM_EXPORT("array_set_value_shared")
+u32 array_set_value_shared(
+    netwasm_reference_t array,
+    u32 index,
+    netwasm_reference_t value,
+    u32 nullable_underlying_type_id,
+    netwasm_address_t nullable_value_offset)
+{
+    return set_array_value(array, index, value, nullable_underlying_type_id, nullable_value_offset, true);
+}
+#endif
 #endif
 
-NETWASM_EXPORT("array_copy")
-u32 array_copy(
+static inline __attribute__((always_inline)) u32 copy_array(
     netwasm_reference_t source,
     u32 source_index,
     netwasm_reference_t destination,
     u32 destination_index,
-    u32 length)
+    u32 length,
+    bool shared)
 {
     u32 source_type_id;
     u32 destination_type_id;
@@ -2884,9 +3217,15 @@ u32 array_copy(
         return ARRAY_COPY_TYPE_MISMATCH;
     }
     if (source_element->value_registered == destination_element->value_registered) {
-        if (!is_type_assignable(source_type_id, destination_type_id) &&
-            !is_type_assignable(destination_type_id, source_type_id) &&
-            !source_element->is_interface && !destination_element->is_interface) {
+        /* A shared array's type says nothing of its element, so arrays of references compare by element when one
+           is shared, as their array types would. */
+        if (shared && (is_shared_array_type(source_type_id) || is_shared_array_type(destination_type_id))
+                ? !is_type_assignable(source_element_type_id, destination_element_type_id) &&
+                    !is_type_assignable(destination_element_type_id, source_element_type_id) &&
+                    !source_element->is_interface && !destination_element->is_interface
+                : !is_type_assignable(source_type_id, destination_type_id) &&
+                    !is_type_assignable(destination_type_id, source_type_id) &&
+                    !source_element->is_interface && !destination_element->is_interface) {
             return ARRAY_COPY_TYPE_MISMATCH;
         }
     } else if (source_element->value_registered) {
@@ -2989,7 +3328,7 @@ u32 array_copy(
             for (u32 offset = length; offset != 0; offset--) {
                 netwasm_reference_t value = source_values[offset - 1];
                 if (check_elements && value != 0 &&
-                    !is_assignable(value, destination_element_type_id)) {
+                    !(shared ? is_assignable_shared(value, destination_element_type_id) : is_assignable(value, destination_element_type_id))) {
                     return ARRAY_COPY_ELEMENT_CAST_FAILURE;
                 }
                 collector_store_reference(
@@ -3001,7 +3340,7 @@ u32 array_copy(
             for (u32 offset = 0; offset < length; offset++) {
                 netwasm_reference_t value = source_values[offset];
                 if (check_elements && value != 0 &&
-                    !is_assignable(value, destination_element_type_id)) {
+                    !(shared ? is_assignable_shared(value, destination_element_type_id) : is_assignable(value, destination_element_type_id))) {
                     return ARRAY_COPY_ELEMENT_CAST_FAILURE;
                 }
                 collector_store_reference(
@@ -3023,6 +3362,30 @@ u32 array_copy(
         source_element->value_size);
     return ARRAY_COPY_SUCCESS;
 }
+
+NETWASM_EXPORT("array_copy")
+u32 array_copy(
+    netwasm_reference_t source,
+    u32 source_index,
+    netwasm_reference_t destination,
+    u32 destination_index,
+    u32 length)
+{
+    return copy_array(source, source_index, destination, destination_index, length, false);
+}
+
+#ifndef NETWASM_NO_SHARED_ARRAYS
+NETWASM_EXPORT("array_copy_shared")
+u32 array_copy_shared(
+    netwasm_reference_t source,
+    u32 source_index,
+    netwasm_reference_t destination,
+    u32 destination_index,
+    u32 length)
+{
+    return copy_array(source, source_index, destination, destination_index, length, true);
+}
+#endif
 
 NETWASM_EXPORT("array_clone")
 netwasm_reference_t array_clone(
@@ -3315,6 +3678,13 @@ void suppress_finalize(netwasm_reference_t object)
         __builtin_trap();
     }
 #ifndef NETWASM_NO_FINALIZATION
+    /* Only an object of a type with a finalizer is ever registered (allocate_finalizable, reregister_for_finalize), so
+       one of a registered type without a finalizer has nothing to unregister and skips the collector's lookup of it,
+       which Dispose's SuppressFinalize otherwise paid on every disposable object. */
+    u32 type_id = *(u32 *)(uintptr_t)object;
+    if (type_id < type_capacity && type_descriptors[type_id].registered && !type_descriptors[type_id].has_finalizer) {
+        return;
+    }
     allocation_root = object;
     collector_register_finalizer(
         (void *)(uintptr_t)object,

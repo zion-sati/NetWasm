@@ -26,6 +26,18 @@ try {
   await Promise.resolve();
   check(notifications.page.join() === "7" && notifications.worker.join() === "7",
     "Notifications differ between hosts.");
+  // An awaited import's continuation runs inside the promise's reaction, so one IndexedDB transaction stays open
+  // across awaited requests in each host (separate databases, one origin).
+  const transactions = [await page.transactions("netwasm-hosts-page"),
+    await worker.transactions("netwasm-hosts-worker")];
+  const transactionsPassed =
+    "one transaction across awaits; a batch's Task.Yield and Task.Delay ended one; continuation before a later reaction";
+  check(transactions.every(value => value === transactionsPassed),
+    `IndexedDB transactions differ: ${transactions.join(" | ")}`);
+  // Queued work runs in batches of up to 30 ms, so a Task.Yield loop and a Task.Run chain each let a timer run.
+  const timerLoops = [await page.yieldLoop(), await worker.yieldLoop(), await page.taskRunChain(),
+    await worker.taskRunChain()];
+  check(timerLoops.every(value => value > 0), `Timer loops: ${timerLoops.join(" | ")}`);
   // Issue #216: each page call collected, twice with the event loop's turn after it, once the
   // module had finalization. Calls that allocate nothing must leave collection to allocation.
   check(page.finalizes() === 1, "The module's finalizer did not run.");

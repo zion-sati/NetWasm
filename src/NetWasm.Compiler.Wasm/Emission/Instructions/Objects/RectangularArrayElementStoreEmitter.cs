@@ -120,7 +120,7 @@ internal sealed class RectangularArrayElementStoreEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
-                RuntimeImportSymbol.IsAssignable))));
+                request.Target.RuntimeImportSelection.IsAssignable, request.Target.RuntimeImportSelection))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.If,

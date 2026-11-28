@@ -36,7 +36,11 @@ public sealed class MetadataTypeFinderTests
         var unrelated = original with { Key = original.Key with { Assembly = new("Unrelated") } };
         var ambiguous = new MetadataTypeFinder([original, target, unrelated],
             MetadataActorTestData.CreateAvailabilityValidator(), assemblies);
-        Assert.Throws<CompilerException>(() => ambiguous.FindType(original.FullName));
+        // An ambiguous name says which assemblies define it; a missing one has none to name.
+        var duplicate = Assert.Throws<CompilerException>(() => ambiguous.FindType(original.FullName));
+        Assert.Contains("defined in Platform, Unrelated", duplicate.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("defined in", Assert.Throws<CompilerException>(() =>
+            missing.FindType(original.FullName)).Message, StringComparison.Ordinal);
     }
 
     [Fact]

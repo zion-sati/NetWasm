@@ -34,7 +34,7 @@ public sealed class FilterFuncletEmitterTests
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var emitter = ThroughContract(new FilterFuncletEmitter(
             layouts, valueFrames, new ExceptionPayloadBlockEmitter(layouts),
-            new GeneratedFunctionWriterFactory()));
+            new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultScratchPlanner(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier())));
         var environment = new FilterEnvironmentLayout(64, 48, 0, []);
         MethodEmissionContext? emittedContext = null;
         var sequence = new FilterSequenceEmitterAdapter((_, _, _, context) =>
@@ -103,7 +103,7 @@ public sealed class FilterFuncletEmitterTests
 layouts,
             CreateValueFrameLayoutPlanner(program, layouts),
             new ExceptionPayloadBlockEmitter(layouts),
-            new GeneratedFunctionWriterFactory());
+            new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultScratchPlanner(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier()));
         var emission = ((IFilterFuncletEmitter)emitter).Emit(
                     new FilterFunclet(1,
             new ManagedMethodIdentity("test-filter"), method, clause),
@@ -176,7 +176,7 @@ layouts,
             layouts,
             CreateValueFrameLayoutPlanner(program, layouts),
             new ExceptionPayloadBlockEmitter(layouts),
-            writers);
+            writers, new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultScratchPlanner(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier()));
 
         emitter.Emit(
             new FilterFunclet(
@@ -188,6 +188,8 @@ layouts,
             EmptyRootMap(),
             CreateSequence());
 
+        // At offset zero the parent frame pointer is the root frame base itself: the filter loads it straight from its
+        // parameter, with no address arithmetic in front.
         var instructions = writers.Instructions.ToInstructions();
         Assert.Equal(WasmOpcodes.LocalGet, instructions[0].Opcode);
         Assert.Equal(1u, instructions[0].Operand.UnsignedValue);
@@ -249,7 +251,7 @@ layouts,
             layouts,
             CreateValueFrameLayoutPlanner(program, layouts),
             new ExceptionPayloadBlockEmitter(layouts),
-            writers);
+            writers, new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultScratchPlanner(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier()));
 
         ((IFilterFuncletEmitter)emitter).Emit(
             new FilterFunclet(
@@ -331,7 +333,7 @@ layouts,
 layouts,
                 CreateValueFrameLayoutPlanner(program, layouts),
                 new ExceptionPayloadBlockEmitter(layouts),
-                new GeneratedFunctionWriterFactory()),
+                new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StructResultScratchPlanner(new NetWasm.Compiler.Wasm.Emission.StructResults.NullStructResultClassifier())),
         }.Cast<IFilterFuncletEmitter>().Single();
     }
 
@@ -350,7 +352,9 @@ layouts,
             NetWasm.Compiler.Wasm.Emission.AddressTakenValues.AddressTakenAggregatePromotionPlan?
                 addressTakenAggregatePromotions = null,
             NetWasm.Compiler.Wasm.Emission.CallLifetimes.ScalarCallLifetimePlan?
-                scalarCallLifetimes = null)
+                scalarCallLifetimes = null,
+            ReturnBufferLocal? returnBufferLocal = null,
+            StructConventionStorage? structConventions = null)
         {
             Method = method;
             MemberExecution = memberExecution;

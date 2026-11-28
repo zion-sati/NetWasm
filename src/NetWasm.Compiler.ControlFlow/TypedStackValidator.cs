@@ -18,6 +18,11 @@ public sealed record ValidatedControlFlowGraph(
     // The deepest evaluation stack any instruction leaves.
     public int MaximumStackDepth { get; init; }
 
+    // Each block's stack after its last instruction, before it meets its successors' other predecessors: a native int
+    // that a join takes as a managed pointer (Merge) is still a native int here.
+    public ImmutableDictionary<int, ImmutableArray<CliValueKind>> ExitStacks { get; init; } =
+        ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty;
+
     // Where a value met a slot of the other of int32 and native int, which ECMA-335 III.1.6 lets
     // an argument, a store to a local, argument or field, or a return coerce implicitly.
     public ImmutableArray<ImplicitCoercion> ImplicitCoercions { get; init; } = [];
@@ -52,6 +57,7 @@ public sealed class TypedStackValidator(
         };
         var pending = new Queue<int>();
         var instructionEntryStacks = new Dictionary<int, ImmutableArray<CliValueKind>>();
+        var exitStacks = new Dictionary<int, ImmutableArray<CliValueKind>>();
         var coercions = new List<ImplicitCoercion>();
         var maximumDepth = 0;
         pending.Enqueue(graph.Entry.Index);
@@ -78,6 +84,7 @@ public sealed class TypedStackValidator(
                 }
             }
 
+            exitStacks[blockIndex] = [.. stack];
             foreach (var successor in graph.Successors[blockIndex])
             {
                 var outgoing = stack.ToImmutableArray();
@@ -107,6 +114,7 @@ public sealed class TypedStackValidator(
             instructionEntryStacks.ToImmutableDictionary())
         {
             MaximumStackDepth = maximumDepth,
+            ExitStacks = exitStacks.ToImmutableDictionary(),
             ImplicitCoercions = [.. coercions.Distinct()],
         };
 
@@ -229,7 +237,12 @@ public sealed class TypedStackValidator(
                 return;
             case CilOperation.ConvertInt64:
             case CilOperation.ConvertInt64Unsigned:
-                PopNumeric(body, instruction, stack);
+                // ECMA-335 Table III.8: an address converts to a native or 64-bit integer, which stops its tracking.
+                if (Pop(body, instruction, stack) is not (CliValueKind.I4 or CliValueKind.I8 or CliValueKind.NativeInt or
+                    CliValueKind.F4 or CliValueKind.F8 or CliValueKind.ManagedAddress))
+                {
+                    throw Invalid(body, instruction, "conversion to int64 requires a numeric or managed-address operand");
+                }
                 stack.Add(CliValueKind.I8);
                 return;
             case CilOperation.ConvertNativeInt:
@@ -363,23 +376,32 @@ public sealed class TypedStackValidator(
                 stack.Add(GetSignatureType(instruction).StackKind);
                 return;
             case CilOperation.Add:
-                stack.Add(PopAddPair(body, instruction, stack));
+                stack.Add(PopAddPair(body, instruction, stack, coercions));
                 return;
             case CilOperation.Subtract:
-                stack.Add(PopSubtractPair(body, instruction, stack));
+                stack.Add(PopSubtractPair(body, instruction, stack, coercions));
                 return;
             case CilOperation.Multiply:
-            case CilOperation.AddChecked:
+            case CilOperation.Divide:
+            case CilOperation.Remainder:
+                stack.Add(PopNumericPair(body, instruction, stack, coercions));
+                return;
+            case CilOperation.DivideUnsigned:
+            case CilOperation.RemainderUnsigned:
+                stack.Add(PopIntegerPair(body, instruction, stack, coercions));
+                return;
             case CilOperation.AddCheckedUnsigned:
-            case CilOperation.SubtractChecked:
+                stack.Add(PopOverflowPair(body, instruction, stack, addressOffset: true, addressDifference: false));
+                return;
             case CilOperation.SubtractCheckedUnsigned:
+                stack.Add(PopOverflowPair(body, instruction, stack, addressOffset: false, addressDifference: true));
+                return;
+            case CilOperation.AddChecked:
+            case CilOperation.SubtractChecked:
             case CilOperation.MultiplyChecked:
             case CilOperation.MultiplyCheckedUnsigned:
-            case CilOperation.Divide:
-            case CilOperation.DivideUnsigned:
-            case CilOperation.Remainder:
-            case CilOperation.RemainderUnsigned:
-                stack.Add(PopNumericPair(body, instruction, stack));
+                // The checked arithmetic's emitter widens an int32 by the check's signedness (see PopOverflowPair).
+                stack.Add(PopIntegerPair(body, instruction, stack, coercions: null));
                 return;
             case CilOperation.Negate:
                 stack.Add(PopNumeric(body, instruction, stack));
@@ -393,22 +415,22 @@ public sealed class TypedStackValidator(
             case CilOperation.BitwiseAnd:
             case CilOperation.BitwiseOr:
             case CilOperation.BitwiseXor:
-                stack.Add(PopIntegerPair(body, instruction, stack));
+                stack.Add(PopIntegerPair(body, instruction, stack, coercions));
                 return;
             case CilOperation.ShiftLeft:
             case CilOperation.ShiftRightSigned:
             case CilOperation.ShiftRightUnsigned:
-                stack.Add(PopShiftPair(body, instruction, stack));
+                stack.Add(PopShiftPair(body, instruction, stack, coercions));
                 return;
             case CilOperation.CompareGreaterThanSigned:
             case CilOperation.CompareLessThanSigned:
-                PopNumericPair(body, instruction, stack);
+            case CilOperation.CompareLessThanUnsigned:
+                PopComparablePair(body, instruction, stack, coercions, objects: false);
                 stack.Add(CliValueKind.I4);
                 return;
             case CilOperation.CompareEqual:
             case CilOperation.CompareGreaterThanUnsigned:
-            case CilOperation.CompareLessThanUnsigned:
-                PopComparablePair(body, instruction, stack);
+                PopComparablePair(body, instruction, stack, coercions, objects: true);
                 stack.Add(CliValueKind.I4);
                 return;
             case CilOperation.BranchIfTrue:
@@ -417,7 +439,7 @@ public sealed class TypedStackValidator(
                 return;
             case CilOperation.BranchIfEqual:
             case CilOperation.BranchIfNotEqual:
-                PopComparablePair(body, instruction, stack);
+                PopComparablePair(body, instruction, stack, coercions, objects: true);
                 return;
             case CilOperation.BranchIfGreaterThanSigned:
             case CilOperation.BranchIfGreaterThanUnsigned:
@@ -427,7 +449,7 @@ public sealed class TypedStackValidator(
             case CilOperation.BranchIfLessThanUnsigned:
             case CilOperation.BranchIfLessThanOrEqualSigned:
             case CilOperation.BranchIfLessThanOrEqualUnsigned:
-                PopNumericPair(body, instruction, stack);
+                PopComparablePair(body, instruction, stack, coercions, objects: false);
                 return;
             case CilOperation.LoadFunction:
                 stack.Add(CliValueKind.NativeInt);
@@ -828,12 +850,13 @@ public sealed class TypedStackValidator(
         CilMethodBody body,
         CilInstruction instruction)
     {
-        // ECMA-335 III.2.1 as augmented for static virtual methods: call, callvirt or ldftn.
-        var index = body.Instructions.IndexOf(instruction);
+        // ECMA-335 III.2.1 as augmented for static virtual methods: call, callvirt or ldftn. A GetObjectType the
+        // compiler made of a constrained GetType carries the constrained type itself, without the prefix, which the
+        // call after it would otherwise take.
+        var index = IndexOf(body, instruction);
         if (index + 1 >= body.Instructions.Length ||
             body.Instructions[index + 1].Operation is not (
-                CilOperation.Call or CilOperation.CallVirtual or CilOperation.LoadFunction or
-                CilOperation.GetObjectType))
+                CilOperation.Call or CilOperation.CallVirtual or CilOperation.LoadFunction))
         {
             throw Invalid(
                 body,
@@ -846,7 +869,7 @@ public sealed class TypedStackValidator(
         CilMethodBody body,
         CilInstruction instruction)
     {
-        var index = body.Instructions.IndexOf(instruction);
+        var index = IndexOf(body, instruction);
         if (index + 1 >= body.Instructions.Length ||
             body.Instructions[index + 1].Operation is not (
                 CilOperation.LoadField or CilOperation.StoreField or
@@ -865,7 +888,7 @@ public sealed class TypedStackValidator(
         CilMethodBody body,
         CilInstruction instruction)
     {
-        var index = body.Instructions.IndexOf(instruction);
+        var index = IndexOf(body, instruction);
         var next = body.Instructions[index + 1];
         // ECMA-335 III.2.3 also permits the runtime-provided array Address
         // call before it is lowered to our rectangular-address operation.
@@ -893,7 +916,7 @@ public sealed class TypedStackValidator(
         {
             throw Invalid(body, instruction, "unaligned. alignment must be 1, 2, or 4");
         }
-        var index = body.Instructions.IndexOf(instruction);
+        var index = IndexOf(body, instruction);
         if (index + 1 >= body.Instructions.Length ||
             body.Instructions[index + 1].Operation is not (
                 CilOperation.LoadField or CilOperation.LoadFieldAddress or
@@ -909,11 +932,30 @@ public sealed class TypedStackValidator(
         }
     }
 
+    // An instruction's index, or -1, by a binary search: a body's instructions are in increasing offset order and an
+    // offset is part of an instruction's identity. A scan for each prefix and call made a method of N calls cost N
+    // squared.
+    private static int IndexOf(CilMethodBody body, CilInstruction instruction)
+    {
+        var instructions = body.Instructions;
+        var low = 0;
+        var high = instructions.Length - 1;
+        while (low <= high)
+        {
+            var middle = low + ((high - low) >> 1);
+            var at = instructions[middle].Offset;
+            if (at == instruction.Offset) return instructions[middle] == instruction ? middle : -1;
+            if (at < instruction.Offset) low = middle + 1;
+            else high = middle - 1;
+        }
+        return -1;
+    }
+
     private static bool IsConstrainedCall(
         CilMethodBody body,
         CilInstruction instruction)
     {
-        var index = body.Instructions.IndexOf(instruction);
+        var index = IndexOf(body, instruction);
         // A non-static call has a receiver on the evaluation stack, so a
         // validated call instruction cannot be the method's first instruction.
         return body.Instructions[index - 1].Operation == CilOperation.Constrained;
@@ -946,23 +988,28 @@ public sealed class TypedStackValidator(
         }
     }
 
-    private void PopComparablePair(
+    // ECMA-335 Table III.4: numbers that combine in arithmetic (an int32 with a native int, a float with a float),
+    // an address with an address or a native int, and for equality and cgt.un (a reference against null) two object
+    // references.
+    private static void PopComparablePair(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion> coercions,
+        bool objects)
     {
+        var rightIndex = stack.Count - 1;
         var right = Pop(body, instruction, stack);
         var left = Pop(body, instruction, stack);
-        var compatible = _stackTypeCompatibility.Accepts(left, right) ||
-            _stackTypeCompatibility.Accepts(right, left);
-        if (!compatible || left is not (
-                CliValueKind.I4 or
-                CliValueKind.I8 or
-                CliValueKind.NativeInt or
-                CliValueKind.F4 or
-                CliValueKind.F8 or
-                CliValueKind.ManagedReference or
-                CliValueKind.ManagedAddress))
+        var compatible = (left, right) switch
+        {
+            (CliValueKind.ManagedAddress, CliValueKind.ManagedAddress or CliValueKind.NativeInt) or
+                (CliValueKind.NativeInt, CliValueKind.ManagedAddress) => true,
+            (CliValueKind.ManagedReference, CliValueKind.ManagedReference) => objects,
+            _ => IsNumeric(left) && IsNumeric(right) && CombinedNumeric(left, right) is { } combined &&
+                Coerced(instruction, rightIndex, left, right, combined, coercions),
+        };
+        if (!compatible)
         {
             throw Invalid(
                 body,
@@ -971,26 +1018,83 @@ public sealed class TypedStackValidator(
         }
     }
 
+    // Records the operand of a pair that is not of the kind the pair combines to (an int32 beside a native int in a
+    // comparison, a float32 beside a float64), so the rewrite converts it and later passes see operands of one kind.
+    // True.
+    private static bool Coerced(
+        CilInstruction instruction,
+        int rightIndex,
+        CliValueKind left,
+        CliValueKind right,
+        CliValueKind combined,
+        List<ImplicitCoercion>? coercions)
+    {
+        if (left != combined) coercions?.Add(new(instruction.Offset, rightIndex - 1, left, combined));
+        if (right != combined) coercions?.Add(new(instruction.Offset, rightIndex, right, combined));
+        return true;
+    }
+
+    private static bool IsNumeric(CliValueKind value) =>
+        value is CliValueKind.I4 or CliValueKind.I8 or CliValueKind.NativeInt or CliValueKind.F4 or CliValueKind.F8;
+
+    // ECMA-335 Table III.2's numbers: equal kinds, an int32 with a native int (native int), and a float with a float,
+    // float32 and float64 both F (float64 where they differ).
+    private static CliValueKind? CombinedNumeric(CliValueKind left, CliValueKind right) => (left, right) switch
+    {
+        _ when left == right => left,
+        (CliValueKind.NativeInt, CliValueKind.I4) or (CliValueKind.I4, CliValueKind.NativeInt) => CliValueKind.NativeInt,
+        (CliValueKind.F4, CliValueKind.F8) or (CliValueKind.F8, CliValueKind.F4) => CliValueKind.F8,
+        _ => null,
+    };
+
+    // ECMA-335 Table III.7: integers as Table III.5 combines them; add.ovf.un also offsets an address by an int32 or a
+    // native int (either order), sub.ovf.un subtracts one from an address or an address from an address.
+    private static CliValueKind PopOverflowPair(
+        CilMethodBody body,
+        CilInstruction instruction,
+        List<CliValueKind> stack,
+        bool addressOffset,
+        bool addressDifference)
+    {
+        var right = Pop(body, instruction, stack);
+        var left = Pop(body, instruction, stack);
+        if (addressOffset && (left == CliValueKind.ManagedAddress && IsAddressOffset(right) ||
+            right == CliValueKind.ManagedAddress && IsAddressOffset(left)) ||
+            addressDifference && left == CliValueKind.ManagedAddress && IsAddressOffset(right))
+        {
+            return CliValueKind.ManagedAddress;
+        }
+        if (addressDifference && left == CliValueKind.ManagedAddress && right == CliValueKind.ManagedAddress)
+        {
+            return CliValueKind.NativeInt;
+        }
+        stack.Add(left);
+        stack.Add(right);
+        // An int32 beside a native int widens as the check's signedness does, zero-extended for the unsigned forms as
+        // desktop's JIT widens it, which the checked arithmetic's emitter does; no conversion is recorded.
+        return PopIntegerPair(body, instruction, stack, coercions: null);
+    }
+
     private static CliValueKind PopNumericPair(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion>? coercions)
     {
+        var rightIndex = stack.Count - 1;
         var right = PopNumeric(body, instruction, stack);
         var left = PopNumeric(body, instruction, stack);
-        if (left == right)
+        var combined = CombinedNumeric(left, right) ?? throw Invalid(
+            body,
+            instruction,
+            $"numeric operands are incompatible: {left} and {right}");
+        // Arithmetic widens an int32 beside a native int itself (Roslyn's `nint + 1` is ldc.i4.1; add); only a float32
+        // beside a float64 is converted.
+        if (combined == CliValueKind.F8)
         {
-            return left;
+            Coerced(instruction, rightIndex, left, right, combined, coercions);
         }
-        return (left, right) switch
-        {
-            (CliValueKind.NativeInt, CliValueKind.I4) or
-                (CliValueKind.I4, CliValueKind.NativeInt) => CliValueKind.NativeInt,
-            _ => throw Invalid(
-                body,
-                instruction,
-                $"numeric operands are incompatible: {left} and {right}"),
-        };
+        return combined;
     }
 
     // An int32 condition beneath it, two numbers of one kind: the result has that kind.
@@ -1013,7 +1117,8 @@ public sealed class TypedStackValidator(
     private static CliValueKind PopAddPair(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion> coercions)
     {
         var right = Pop(body, instruction, stack);
         var left = Pop(body, instruction, stack);
@@ -1024,13 +1129,14 @@ public sealed class TypedStackValidator(
         }
         stack.Add(left);
         stack.Add(right);
-        return PopNumericPair(body, instruction, stack);
+        return PopNumericPair(body, instruction, stack, coercions);
     }
 
     private static CliValueKind PopSubtractPair(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion> coercions)
     {
         var right = Pop(body, instruction, stack);
         var left = Pop(body, instruction, stack);
@@ -1044,7 +1150,7 @@ public sealed class TypedStackValidator(
         }
         stack.Add(left);
         stack.Add(right);
-        return PopNumericPair(body, instruction, stack);
+        return PopNumericPair(body, instruction, stack, coercions);
     }
 
     private static bool IsAddressOffset(CliValueKind value) =>
@@ -1053,9 +1159,10 @@ public sealed class TypedStackValidator(
     private static CliValueKind PopIntegerPair(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion>? coercions)
     {
-        var type = PopNumericPair(body, instruction, stack);
+        var type = PopNumericPair(body, instruction, stack, coercions);
         if (type is not (CliValueKind.I4 or CliValueKind.I8 or CliValueKind.NativeInt))
         {
             throw Invalid(body, instruction, "bitwise operation requires an integer operand");
@@ -1079,12 +1186,19 @@ public sealed class TypedStackValidator(
     private static CliValueKind PopShiftPair(
         CilMethodBody body,
         CilInstruction instruction,
-        List<CliValueKind> stack)
+        List<CliValueKind> stack,
+        List<ImplicitCoercion> coercions)
     {
+        var shiftIndex = stack.Count - 1;
         var shift = PopInteger(body, instruction, stack);
         if (shift is not (CliValueKind.I4 or CliValueKind.NativeInt))
         {
             throw Invalid(body, instruction, "shift count requires an int32 or native integer");
+        }
+        // A native int count narrows to the int32 every shift takes; a count past the value's width is unspecified.
+        if (shift == CliValueKind.NativeInt)
+        {
+            coercions.Add(new(instruction.Offset, shiftIndex, shift, CliValueKind.I4));
         }
         return PopInteger(body, instruction, stack);
     }

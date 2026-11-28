@@ -58,15 +58,15 @@ internal sealed class TypeTestInstructionEmitter(
                 request.Instruction,
                 request.Header.MethodInstance,
                 valueLocal,
-                returnNullOnFailure, request.Context.ManagedThrowFunction);
+                returnNullOnFailure, request.Context.ManagedThrowFunction, request.Target.RuntimeImportSelection);
             return;
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
         EmitReferenceEqualZero(code);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        var runs = Runs(site);
-        if (runs.Count == 0)
+        var runs = Runs(site, out var shared);
+        if (runs.Count == 0 && shared.Count == 0)
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
         }
@@ -76,7 +76,31 @@ internal sealed class TypeTestInstructionEmitter(
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(0))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)typeId)));
-            EmitMembership(code, typeId, runs, 0, runs.Count);
+            if (runs.Count == 0)
+            {
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
+            }
+            else
+            {
+                EmitMembership(code, typeId, runs, 0, runs.Count);
+            }
+            // A shared array matches where the element in its header does, which the runtime checks.
+            foreach (var sharedTypeId in shared)
+            {
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)typeId)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(sharedTypeId)));
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(0x7f)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)valueLocal)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(
+                    typeLayouts.GetObjectLayout(nullableTypes.Resolve(site.TargetType) ?? site.TargetType).TypeId)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(
+                    runtimeImports.Resolve(RuntimeImportSymbol.IsAssignableShared, request.Target.RuntimeImportSelection)))));
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Or));
+            }
         }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -91,16 +115,28 @@ internal sealed class TypeTestInstructionEmitter(
     // in it that the program never allocates is never an object's type, and
     // would match if it were. Matches outside it, by array covariance or
     // variance, keep their own runs.
-    private List<(int First, int Last)> Runs(TypeTestSiteModel site)
+    //
+    // A shared array (SharedArrayShapes) may match only by the element in its header, so its id joins no run unless
+    // the target's subtype interval holds it; the rest are returned in shared for the runtime to check.
+    private List<(int First, int Last)> Runs(TypeTestSiteModel site, out List<int> shared)
     {
-        var ids = site.MatchingTypes.Select(type => typeLayouts.GetObjectLayout(type).TypeId).ToHashSet();
+        var ids = site.MatchingTypes
+            .Where(type => !SharedArrayShapes.IsShared(type))
+            .Select(type => typeLayouts.GetObjectLayout(type).TypeId)
+            .ToHashSet();
         var target = nullableTypes.Resolve(site.TargetType) ?? site.TargetType;
         var matches = ids.Select(id => (First: id, Last: id)).ToList();
+        var interval = (First: 1, Last: 0);
         if (typeLayouts.GetObjectLayout(target, out var layout) && layout.LastSubtypeId >= layout.TypeId &&
             ids.Any(id => id >= layout.TypeId && id <= layout.LastSubtypeId))
         {
-            matches.Add((layout.TypeId, layout.LastSubtypeId));
+            interval = (layout.TypeId, layout.LastSubtypeId);
+            matches.Add(interval);
         }
+        shared = [.. site.MatchingTypes
+            .Where(SharedArrayShapes.IsShared)
+            .Select(type => typeLayouts.GetObjectLayout(type).TypeId)
+            .Where(id => id < interval.First || id > interval.Last)];
         var runs = new List<(int First, int Last)>();
         foreach (var (first, last) in matches.OrderBy(match => match.First))
         {
@@ -166,7 +202,8 @@ internal sealed class TypeTestInstructionEmitter(
         MethodInstanceModel? method,
         int valueLocal,
         bool returnNullOnFailure,
-        OptionalFunctionIndex throwFunction)
+        OptionalFunctionIndex throwFunction,
+        RuntimeImportSelection selection)
     {
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
         EmitReferenceEqualZero(code);
@@ -177,7 +214,7 @@ internal sealed class TypeTestInstructionEmitter(
         var membershipTarget = nullableTypes.Resolve(target) ?? target;
         var targetTypeId = typeLayouts.GetObjectLayout(membershipTarget).TypeId;
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(targetTypeId)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.IsAssignable)))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(selection.IsAssignable, selection)))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         EmitFailedTest(code, valueLocal, returnNullOnFailure, throwFunction);

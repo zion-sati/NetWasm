@@ -165,9 +165,10 @@ public sealed class LambdaCompilationTests
             "AsyncLambdaFixture.EntryPoint",
             "Run"));
 
+        // The lambda is a runtime-async method, lowered onto CoreLib's RuntimeAsync: it takes its call mode and
+        // completes through it, with no state machine (whose builder's Start and AwaitUnsafeOnCompleted it once used).
         Assert.NotEmpty(result.ApplicationModule);
-        Assert.Contains(result.Program.MethodInstances.Values,
-            method => method.Definition.Name == "AwaitUnsafeOnCompleted" ||
-                      method.Definition.Name == "Start");
+        Assert.Contains(result.Program.MethodInstances.Values, method => method.Definition.Name == "TakeCallMode");
+        Assert.Contains(result.Program.MethodInstances.Values, method => method.Definition.Name == "Complete");
     }
 }

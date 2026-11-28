@@ -18,6 +18,17 @@ namespace NetWasm.Compiler.Tests;
 
 internal static class CompilerTestSupport
 {
+    // What every program with a JavaScript import also imports: the host holds what a failed import threw or rejected
+    // with, and the import's JSException takes it (error_pending_message, error_take), gives back a managed exception
+    // that crossed to JavaScript (error_pending_managed), compares and reads its error, releases it, and gives an async
+    // or synchronous export's JavaScript error back (value_copy, error_offer_export).
+    internal static readonly string[] FailedImportErrorImports =
+        ["error_offer_export", "error_pending_managed", "error_pending_message", "error_same", "error_stack", "error_take",
+         "value_copy", "value_release"];
+
+    internal static IEnumerable<HostInteropImport> ProgramImports(IEnumerable<HostInteropImport> imports) =>
+        imports.Where(import => import.Module != "netwasm.host.v1" || !FailedImportErrorImports.Contains(import.Name));
+
     internal static CompilerOptions CreateReactorOptions(
         TestAssets assets,
         string assembly,
@@ -353,14 +364,22 @@ internal static class CompilerTestSupport
             "out.setInt32(result+20,shape,true);return result;};" +
             "const isTypeAssignable=(type,target)=>{" +
             "while(type){if(type===target||typeAssignable.get(type)?.has(target))return 1;type=typeBases.get(type)||0;}return 0;};" +
-            "const isAssignable=(object,target)=>{if(!object)return 0;" +
-            "return isTypeAssignable(new DataView(memory.buffer).getInt32(object,true),target);};" +
+            "let sharedArrays=null;const registerSharedArrays=(table,count)=>{const v=new DataView(memory.buffer)," +
+            "shapes=[0,1,2,3].map(s=>v.getInt32(table+s*4,true)),targets=new Map();for(let i=0;i<count;i++){" +
+            "const at=table+16+i*12;targets.set(v.getInt32(at,true),{shared:v.getInt32(at+4,true),element:v.getInt32(at+8,true)});}" +
+            "sharedArrays={shapes,targets};};" +
+            "const isSharedArrayType=type=>type!==0&&sharedArrays!==null&&sharedArrays.shapes.includes(type);" +
+            "const isAssignable=(object,target)=>{if(!object)return 0;const v=new DataView(memory.buffer),type=v.getInt32(object,true);" +
+            "if(isTypeAssignable(type,target))return 1;const entry=isSharedArrayType(type)?sharedArrays.targets.get(target):undefined;" +
+            "return entry!==undefined&&entry.shared===type?isTypeAssignable(v.getInt32(object+12,true),entry.element):0;};" +
             "const arrayCopy=(source,sourceIndex,destination,destinationIndex,length)=>{" +
             "const v=new DataView(memory.buffer),sourceElement=v.getInt32(source+12,true)," +
             "destinationElement=v.getInt32(destination+12,true)," +
             "sourceSize=valueTypeSizes.get(sourceElement),destinationSize=valueTypeSizes.get(destinationElement);" +
             "const sourceType=v.getInt32(source,true),destinationType=v.getInt32(destination,true);" +
-            "if(!isTypeAssignable(sourceType,destinationType)&&!isTypeAssignable(destinationType,sourceType)&&!typeInterfaces.has(sourceElement)&&!typeInterfaces.has(destinationElement))return 1;" +
+            "const shared=isSharedArrayType(sourceType)||isSharedArrayType(destinationType)," +
+            "left=shared?sourceElement:sourceType,right=shared?destinationElement:destinationType;" +
+            "if(!isTypeAssignable(left,right)&&!isTypeAssignable(right,left)&&!typeInterfaces.has(sourceElement)&&!typeInterfaces.has(destinationElement))return 1;" +
             "if((sourceSize!==undefined)!==(destinationSize!==undefined))return 1;" +
             "const sourceData=v.getInt32(source+8,true),destinationData=v.getInt32(destination+8,true);" +
             "if(sourceSize!==undefined){if(sourceSize!==destinationSize)return 1;" +
@@ -453,8 +472,8 @@ internal static class CompilerTestSupport
             "array_get_lower_bound:(array,dimension)=>{const v=new DataView(memory.buffer);" +
             "if(typeSizes.get(v.getInt32(array,true))!==24)return 0;const flags=v.getInt32(array+16,true);" +
             "return flags>=0?0:v.getInt32(v.getInt32(array+20,true)+(flags&0x7fffffff)*8+dimension*4,true);}," +
-            "array_get_value:arrayGetValue,array_set_value:arraySetValue," +
-            "array_copy:arrayCopy,array_clear:arrayClear,array_clone:arrayClone," +
+            "array_get_value:arrayGetValue,array_set_value:arraySetValue,array_set_value_shared:arraySetValue," +
+            "array_copy:arrayCopy,array_copy_shared:arrayCopy,array_clear:arrayClear,array_clone:arrayClone," +
             "allocate_string:allocateString,get_type_object:getTypeObject," +
             "register_type_objects:(first,count,stride)=>{const v=new DataView(memory.buffer);" +
             "for(let i=0;i<count;i++){const p=first+i*stride;typeObjects.set(v.getInt32(p+4,true),p);}}," +
@@ -468,7 +487,8 @@ internal static class CompilerTestSupport
             "runtime_helpers_equals:runtimeHelpersEquals," +
             "random_seed:()=>runtimeRandomState=BigInt.asUintN(64,runtimeRandomState+0x9e3779b97f4a7c15n)," +
             "report_unobserved_task_exception:z,report_unhandled_exception:()=>process.stderr.write('unhandled exception hint\\n')," +
-            "is_assignable:isAssignable,end_catch:()=>{lastException=0;}," +
+            "is_assignable:isAssignable,is_assignable_shared:isAssignable,register_shared_arrays:registerSharedArrays," +
+            "end_catch:()=>{lastException=0;}," +
             "exception_frame_enter:(metadata,count)=>{" +
             "exceptionFrames.push({metadata,count,environment:0,targetClause:0});return exceptionFrames.length;}," +
             "exception_frame_set_environment:(token,environment)=>{" +
@@ -478,6 +498,13 @@ internal static class CompilerTestSupport
             "exception_frame_unwind:token=>{if(token!==exceptionFrames.length)throw Error('EH frame');" +
             "departedExceptionFrame=exceptionFrames.pop();}," +
             "exception_frame_target_clause:token=>{if(token!==exceptionFrames.length+1)throw Error('EH query');return departedExceptionFrame.targetClause;}," +
+            "exception_filter_frames_live:()=>exceptionFrames.some(f=>((f.count>>>0)>>>31)!==0)?1:0," +
+            "exception_catch_select:(e,m,count)=>{const v=new DataView(memory.buffer);" +
+            "for(let c=0;c<count;c++)if(isAssignable(e,v.getInt32(Number(m)+c*4,true)))return c+1;return 0;}," +
+            $"frame_mark_root:()=>{zeroAddressText},frame_mark_value_cursor:()=>{zeroAddressText}," +
+            "frame_mark_stack_trace:z,frame_marks_rewind:()=>{},frames_unwind:()=>{}," +
+            "exception_cell_enter:e=>{const c=rootEnter(1);new DataView(memory.buffer).setUint32(c,e,true);return c;}," +
+            "exception_cell_leave:z," +
             "finalizer_safepoint:z,collect:()=>{collectionCount++;}};" +
             "const wasiSystemClock={now:result=>{const view=new DataView(memory.buffer);" +
             "view.setBigUint64(result,0n,true);view.setUint32(result+8,123000000,true);}};" +
@@ -654,7 +681,8 @@ internal static class CompilerTestSupport
         string directory,
         int input,
         WasmTarget target,
-        int staticDataEnd) =>
+        int staticDataEnd,
+        byte[]? typeSymbols = null) =>
         ExecuteWithStandardWasiNodeCore(
             module,
             directory,
@@ -662,7 +690,8 @@ internal static class CompilerTestSupport
             target,
             staticDataEnd,
             ImmutableDictionary<string, string>.Empty,
-            null).GetProperty("stdout").GetString()!;
+            null,
+            typeSymbols: typeSymbols).GetProperty("stdout").GetString()!;
 
     private static System.Text.Json.JsonElement ExecuteWithStandardWasiNodeCore(
         byte[] module,

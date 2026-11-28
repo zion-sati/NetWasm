@@ -35,25 +35,36 @@ internal static class FrameRangeZeroing
         for (var written = 0; written < size;)
         {
             var width = Width(size - written);
-            start(code);
-            if (width == 16)
-            {
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.SimdPrefixed,
-                    WasmInstructionOperand.FromBytes([(byte)WasmSimdOpcodes.V128Constant, .. new byte[16]])));
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.SimdPrefixed,
-                    WasmInstructionOperand.PrefixedTriple(WasmSimdOpcodes.V128Store, 0, (uint)written)));
-            }
-            else
-            {
-                code.Write(width == 8
-                    ? WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(0))
-                    : WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
-                ManagedMemoryEmitter.EmitStoreBySize(code, target, written, width);
-            }
+            EmitStore(code, target, start, written, width);
             written += width;
         }
+    }
+
+    // One store of zero, 1, 2, 4, 8 or 16 bytes wide, at this offset from the range start.
+    public static void EmitStore(
+        IWasmInstructionWriter code,
+        WasmTargetLayout target,
+        Action<IWasmInstructionWriter> start,
+        int offset,
+        int width)
+    {
+        ArgumentNullException.ThrowIfNull(code);
+        ArgumentNullException.ThrowIfNull(start);
+        start(code);
+        if (width == 16)
+        {
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.SimdPrefixed,
+                WasmInstructionOperand.FromBytes([(byte)WasmSimdOpcodes.V128Constant, .. new byte[16]])));
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.SimdPrefixed,
+                WasmInstructionOperand.PrefixedTriple(WasmSimdOpcodes.V128Store, 0, (uint)offset)));
+            return;
+        }
+        code.Write(width == 8
+            ? WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(0))
+            : WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
+        ManagedMemoryEmitter.EmitStoreBySize(code, target, offset, width);
     }
 
     // The instructions that store or fill a range of this size: one per stored chunk, or the fill.

@@ -9,12 +9,14 @@ namespace NetWasm.Compiler.Analysis.Attributes;
 
 // Strategy: require one closed target and one closed attribute filter per call, or an open generic attribute type
 // (typeof(TagAttribute<>)), which matches its constructed instances. Only the inheritance Boolean can remain a runtime
-// choice.
+// choice. A query naming no filter takes its family's (object or Attribute); a target's own query also takes object and
+// an interface attributes implement, which Attribute's statics and the extensions reject with ArgumentException, as
+// their bodies do.
 internal sealed class AttributeQueryResolver(
     ITypeDefinitionResolver definitions,
     ITypeRelationshipClassifier relationships,
     CliTypeIdentity attributeType,
-    ImmutableHashSet<CliTypeIdentity> synthesizedAttributes) : IAttributeQueryResolver
+    CliTypeIdentity objectType) : IAttributeQueryResolver
 {
     public ResolvedAttributeQuery? Resolve(AttributeQueryCall call, ImmutableArray<AttributeValueProof> stack)
     {
@@ -25,18 +27,26 @@ internal sealed class AttributeQueryResolver(
         }
         var start = stack.Length - call.ArgumentCount;
         var assembly = stack[start] is { Kind: AttributeValueKind.Assembly, Assembly: { } owner } ? owner : (AssemblyIdentity?)null;
-        var target = assembly is null ? ExactType(stack[start]) : null;
-        var filter = call.GenericFilter ?? ExactType(stack[start + call.FilterArgument!.Value]);
-        if (assembly is null && target is null || filter is null || target is not null && !IsClosedDeclaration(target))
+        var module = stack[start] is { Kind: AttributeValueKind.Module, Assembly: { } moduleOwner } ? moduleOwner : (AssemblyIdentity?)null;
+        var target = assembly is null && module is null ? ExactType(stack[start]) : null;
+        var filter = call.GenericFilter ??
+            (call.FilterArgument is { } filterArgument ? ExactType(stack[start + filterArgument]) : call.ImplicitFilter);
+        if (assembly is null && module is null && target is null || filter is null ||
+            target is not null && !IsClosedDeclaration(target))
         {
             return null;
         }
         var open = AttributeTypeFilter.IsOpenGenericDefinition(filter, definitions);
-        if (!open && !IsClosedDeclaration(filter) || synthesizedAttributes.Contains(filter) || filter.Equals(attributeType) ||
-            !relationships.Classify(filter, attributeType).IsAssignmentCompatible)
+        if (!open && !IsClosedDeclaration(filter) ||
+            !open && !relationships.Classify(filter, attributeType).IsAssignmentCompatible &&
+            !(call.Api == AttributeQueryApiKind.Instance &&
+                (filter.Equals(objectType) || definitions.ResolveTypeIdentity(filter).IsInterface)))
         {
             return null;
         }
+        // A filter other than a sealed type may match attribute types the program never names; one of those that cannot
+        // be constructed at compile time leaves the query to its fallback rather than failing the build.
+        var broad = open || !definitions.ResolveTypeIdentity(filter).IsSealed;
         // An open filter's matches are of different constructed types, so they come back as Attribute[].
         var element = open ? attributeType : filter;
         var inherit = call.InheritArgument is { } argument
@@ -44,16 +54,26 @@ internal sealed class AttributeQueryResolver(
                 ? proof.Integer != 0
                 : (bool?)null
             : true;
+        if (module is { } targetModule)
+        {
+            // A module's attributes are read all at once and filtered, as an assembly's are for a broad filter.
+            return new(call, null, filter, inherit) { TargetModule = targetModule, ResultElementType = element, Broad = broad };
+        }
         if (assembly is { } targetAssembly)
         {
-            // An assembly's attributes are found by the attribute type's name (IAssemblyAttributeDescriptorReader), which
-            // finds every one of a sealed, top-level attribute type; any other filter keeps the runtime query.
+            // An assembly's attributes of a sealed, top-level attribute type are found by its name; any other filter reads
+            // them all (IAssemblyAttributeDescriptorReader) and keeps those it takes.
             var declaration = definitions.ResolveTypeIdentity(filter);
-            return filter.Shape == CliTypeShape.Named && declaration.IsSealed && declaration.DeclaringType is null
-                ? new(call, null, filter, inherit) { TargetAssembly = targetAssembly, ResultElementType = element }
-                : null;
+            return new(call, null, filter, inherit)
+            {
+                TargetAssembly = targetAssembly,
+                ResultElementType = element,
+                Broad = broad,
+                AttributeName = !open && filter.Shape == CliTypeShape.Named && declaration.IsSealed &&
+                    declaration.DeclaringType is null ? filter.FullName : null,
+            };
         }
-        return new(call, target, filter, inherit) { ResultElementType = element };
+        return new(call, target, filter, inherit) { ResultElementType = element, Broad = broad };
     }
 
     private static CliTypeIdentity? ExactType(AttributeValueProof proof) =>

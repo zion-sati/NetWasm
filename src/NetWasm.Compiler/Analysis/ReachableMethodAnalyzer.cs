@@ -36,8 +36,15 @@ internal sealed class ReachableMethodAnalyzer(
         var validated = stackValidators.Create(types, fields, methods).Validate(graph);
         var managed = new ManagedMethodBody(request.Method, validated);
         // A body a whole-program reduction rewrote plans its proofs again, for the instructions it now has.
-        var optimized = request.RewrittenBody is null ? optimizer.Optimize(managed) : proofs.Prove(body);
+        // A body whose virtual await a reduction turned back into reads of the task through its address
+        // (VirtualDirectCallProgramReducer) is optimized again, so those reads inline and the task splits.
+        // So is one whose GetType() a reduction named exactly (SoleAllocatedTypeProgramReducer): the branch it
+        // decides goes, and struct locals and arguments that only that branch kept whole split.
+        var optimized = request.RewrittenBody is null || ReadsAwaitedTaskAtAddress(body) || NamesObjectTypeExactly(body)
+            ? optimizer.Optimize(managed)
+            : proofs.Prove(body);
         var original = body;
+        var originalGraph = graph;
         if (!ReferenceEquals(optimized, body))
         {
             body = optimized;
@@ -45,12 +52,28 @@ internal sealed class ReachableMethodAnalyzer(
             validated = stackValidators.Create(types, fields, methods).Validate(graph);
             managed = new(request.Method, validated);
         }
+        // What only unreachable code names is not reached (UnreachableCodeEraser).
+        var unoptimized = ReferenceEquals(original, body);
+        var reachable = UnreachableCodeEraser.Erase(body, graph);
+        if (!ReferenceEquals(reachable, body))
+        {
+            body = reachable;
+            graph = graphBuilder.Build(body);
+            validated = stackValidators.Create(types, fields, methods).Validate(graph);
+            managed = new(request.Method, validated);
+        }
+        // Erasure keeps the terminators that shape unreachable blocks; they never run, so they throw nothing.
         var exceptions = ImmutableArray.CreateBuilder<ReachabilityExceptionRequirement>();
         foreach (var instruction in body.Instructions)
         {
+            if (!validated.InstructionEntryStacks.ContainsKey(instruction.Offset)) continue;
             exceptions.AddRange(exceptionDiscovery.Discover(instruction));
         }
-        var catchTypes = body.ExceptionRegions
+        // A handler runs only when its try holds reachable code: the structurer lays out no other region.
+        var regions = body.ExceptionRegions
+            .Where(region => graph.ReachableBlocks.Contains(graph.GetBlockAtOffset(region.HandlerOffset).Index))
+            .ToImmutableArray();
+        var catchTypes = regions
             .Where(region => region.CatchType is not null)
             .Select(region => region.CatchType!.Value)
             .ToImmutableArray();
@@ -62,14 +85,20 @@ internal sealed class ReachableMethodAnalyzer(
             exceptions.ToImmutable(),
             instructions)
         {
-            RequiredTypes = RemovedConstructions(request.Method, original, body, instructions),
+            ReachableRegions = regions,
+            RequiredTypes = RemovedConstructions(
+                request.Method,
+                unoptimized ? body : UnreachableCodeEraser.Erase(original, originalGraph),
+                body,
+                instructions),
         };
         // Fingerprinted here, on the worker, rather than as the closure applies it.
         return analysis with { Contribution = MethodContributionFingerprint.Of(analysis) };
     }
 
-    // Managed optimization may remove an allocation (an unused newobj); the types the original body constructed and
-    // the optimized one does not stay required. The original body is analyzed again only when a newobj went.
+    // Managed optimization may remove an allocation (an unused newobj); the types the original body's reachable code
+    // constructed and the optimized one does not stay required. The original body is analyzed again only when a newobj
+    // went.
     private ImmutableArray<CliTypeIdentity> RemovedConstructions(
         MethodInstanceModel method,
         CilMethodBody original,
@@ -88,4 +117,11 @@ internal sealed class ReachableMethodAnalyzer(
         static int Count(CilMethodBody body) =>
             body.Instructions.Count(instruction => instruction.Operation == CilOperation.NewObject);
     }
+
+    private static bool NamesObjectTypeExactly(CilMethodBody body) =>
+        body.Instructions.Any(instruction => CilTypeMaterialization.IsExactObjectType(instruction));
+
+    private static bool ReadsAwaitedTaskAtAddress(CilMethodBody body) => body.Instructions.Any(instruction =>
+        instruction is { Operation: CilOperation.Call, Operand: CilOperand.MethodInstance { Value: var method } } &&
+        method.Definition.Name is "IsCompletedAt" or "GetResultAt");
 }

@@ -3,7 +3,8 @@
 
 namespace System.Runtime.InteropServices.Streams;
 
-internal interface IWasiByteStreamReadInvoker
+// TStream names the stream (Streams.WasiStreamKinds): an implementation serves one stream only.
+internal interface IWasiByteStreamReadInvoker<TStream>
 {
     // An async-lowered stream.read: BLOCKED (-1), or the copied count shifted left by 4 with
     // the copy result in the low 4 bits.

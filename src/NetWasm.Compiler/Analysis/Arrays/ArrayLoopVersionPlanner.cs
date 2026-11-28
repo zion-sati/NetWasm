@@ -32,6 +32,9 @@ internal sealed record ArrayLoopVersion(
     ImmutableArray<int> Entries)
 {
     public ImmutableArray<ArrayLoopOffsetRange> OffsetRanges { get; init; } = [];
+
+    // The runs the test also proves free of address 0, and the reads in them the copy marks (ArrayLoopNonZeroReadFinder).
+    public ArrayLoopNonZeroReads NonZeroReads { get; init; } = ArrayLoopNonZeroReads.None;
 }
 
 // The checks at start + index + k (± Term) for k from Low to High, against Length. Start is NoStart where the checks
@@ -46,7 +49,9 @@ internal interface IArrayLoopVersionPlanner
     ImmutableArray<ArrayLoopVersion> Plan(ValidatedControlFlowGraph controlFlow);
 }
 
-internal sealed class ArrayLoopVersionPlanner(IArrayLoopInductionAnalyzer induction) : IArrayLoopVersionPlanner
+// A planner with a non-zero read finder also plans the runs whose test lets the copy's reads skip their null checks.
+internal sealed class ArrayLoopVersionPlanner(IArrayLoopInductionAnalyzer induction, IArrayLoopNonZeroReadFinder? nonZeroReads = null)
+    : IArrayLoopVersionPlanner
 {
     private readonly IArrayLoopInductionAnalyzer _induction = induction ??
         throw new ArgumentNullException(nameof(induction));
@@ -76,6 +81,9 @@ internal sealed class ArrayLoopVersionPlanner(IArrayLoopInductionAnalyzer induct
             var ranges = new HashSet<(int Start, int Length)>();
             var offsetRanges = new Dictionary<(int Start, int Length, int? Term, bool TermNegated), (int Low, int High)>();
             var checks = ImmutableHashSet.CreateBuilder<int>();
+            // Each check's block and the local holding the length it tests: the proven ones, and those the copy makes
+            // against a length the loop leaves alone.
+            var tested = new Dictionary<int, (int Block, int Length)>();
             // Every block of the body: the guard's taken branch enters it, so each runs only once the guard holds.
             foreach (var blockIndex in loop.LoopBlocks.Where(block => block != loop.GuardBlock))
             {
@@ -118,6 +126,7 @@ internal sealed class ArrayLoopVersionPlanner(IArrayLoopInductionAnalyzer induct
                         {
                             ranges.Add((start, length));
                             checks.Add(instruction.Offset);
+                            tested[instruction.Offset] = (blockIndex, length);
                         }
                         else if (checkedIndex.Term is not { } term ||
                                  term != loop.IndexLocal && term != start && term != length && Invariant(term))
@@ -127,6 +136,7 @@ internal sealed class ArrayLoopVersionPlanner(IArrayLoopInductionAnalyzer induct
                                 ? (Math.Min(known.Low, added), Math.Max(known.High, added))
                                 : (added, added);
                             checks.Add(instruction.Offset);
+                            tested[instruction.Offset] = (blockIndex, length);
                         }
                     }
                     // `if ((uint)(index + k) >= (uint)length) throw` against a length that is not the loop's bound:
@@ -145,6 +155,16 @@ internal sealed class ArrayLoopVersionPlanner(IArrayLoopInductionAnalyzer induct
                             ? (Math.Min(known.Low, ahead), Math.Max(known.High, ahead))
                             : (ahead, ahead);
                         checks.Add(instruction.Offset);
+                        tested[instruction.Offset] = (blockIndex, measured);
+                    }
+                    // Any other check against a length the loop leaves alone, as `table[values[index] & 255]` checks an
+                    // index read from memory: the copy still makes it, so its read lies in the length's run too.
+                    else if (instruction.Operation is CilOperation.BranchIfLessThanUnsigned or CilOperation.BranchIfGreaterThanOrEqualUnsigned &&
+                             stack[^1] == CliValueKind.I4 && stack[^2] == CliValueKind.I4 &&
+                             origins[^1] is { Local: { } bounding, Offset: 0, Constant: false, Length: false, Base: null, Term: null } &&
+                             Invariant(bounding))
+                    {
+                        tested[instruction.Offset] = (blockIndex, bounding);
                     }
                     ValueOrigins.Track(instruction, origins, copies);
                 }
@@ -166,6 +186,7 @@ internal sealed class ArrayLoopVersionPlanner(IArrayLoopInductionAnalyzer induct
                         .OrderBy(range => range.Start).ThenBy(range => range.Length)
                         .ThenBy(range => range.Term ?? -1).ThenBy(range => range.TermNegated),
                 ],
+                NonZeroReads = nonZeroReads?.Find(controlFlow, loop, tested, Invariant) ?? ArrayLoopNonZeroReads.None,
             });
         }
         return versions.ToImmutable();

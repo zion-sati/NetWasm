@@ -91,8 +91,14 @@ public sealed class LoopStoreForwarderTests
 
     private static CilBuilder Index(CilBuilder code) => code.Local(CilOperation.LoadLocal, 2);
 
-    private static LoopStoreForwarder Forwarder() => new(new ControlFlowGraphBuilderFactory().Create(), Validator(),
-        new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer()), new Program(), enabled: true);
+    private static LoopStoreForwarder Forwarder()
+    {
+        var graphs = new ControlFlowGraphBuilderFactory().Create();
+        var validator = Validator();
+        return new(graphs, validator,
+            new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder())), new Program(),
+            new NetWasm.Compiler.Analysis.StackDepthFitter(graphs, validator), enabled: true);
+    }
 
     private static ITypedStackValidator Validator()
     {

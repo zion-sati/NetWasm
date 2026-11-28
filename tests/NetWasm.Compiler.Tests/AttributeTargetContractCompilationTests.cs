@@ -36,7 +36,9 @@ public sealed class AttributeTargetContractCompilationTests
                 Assembly assembly = new CustomAssembly();
                 Module module = new CustomModule();
                 ParameterInfo parameter = new CustomParameter();
-                MemberInfo member = typeof(EntryPoint);
+                // A Type known only at run time: an unfiltered query on it would take every attribute of every type the
+                // program has, so it keeps the fallback (a known type's answers as desktop's does).
+                MemberInfo member = input > 0 ? typeof(EntryPoint) : typeof(string);
                 try { Attribute.GetCustomAttribute(assembly, typeof(Marker)); } catch (PlatformNotSupportedException e) { if (e.Message.Length > 0) caught++; }
                 try { Attribute.GetCustomAttribute((Assembly)null, typeof(Marker)); } catch (ArgumentNullException e) { if (e.ParamName == "element") caught++; }
                 try { Attribute.GetCustomAttribute(assembly, null); } catch (ArgumentNullException e) { if (e.ParamName == "attributeType") caught++; }

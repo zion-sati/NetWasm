@@ -31,7 +31,7 @@ public sealed class MetadataCallSiteSignatureResolverTests
             Assert.Throws<CompilerException>(() =>
                 resolver.Resolve(source, 0, CliGenericContext.Empty, "M", 3));
 
-        contract(new MetadataCallSiteSignatureResolver());
+        contract(new MetadataCallSiteSignatureResolver(new IdentityStackTypes()));
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class MetadataCallSiteSignatureResolverTests
             assembly.Methods,
             assembly.Metadata.BaseTypes,
             assembly.Metadata.ImplementedInterfaces);
-        var resolver = new MetadataCallSiteSignatureResolver();
+        var resolver = new MetadataCallSiteSignatureResolver(new IdentityStackTypes());
         MethodSignatureModel? signature = null;
         for (var row = 1; row <= rowCount && signature is null; row++)
         {
@@ -130,7 +130,7 @@ public sealed class MetadataCallSiteSignatureResolverTests
             new Dictionary<int, EntityHandle>(),
             new Dictionary<int, ImmutableArray<EntityHandle>>());
 
-        CilOperand.CallSite Resolve() => new MetadataCallSiteSignatureResolver().Resolve(
+        CilOperand.CallSite Resolve() => new MetadataCallSiteSignatureResolver(new IdentityStackTypes()).Resolve(
             source,
             MetadataTokens.GetToken(handle),
             CliGenericContext.Empty,
@@ -185,7 +185,7 @@ public sealed class MetadataCallSiteSignatureResolverTests
             assembly.Methods,
             assembly.Metadata.BaseTypes,
             assembly.Metadata.ImplementedInterfaces);
-        var resolver = new MetadataCallSiteSignatureResolver();
+        var resolver = new MetadataCallSiteSignatureResolver(new IdentityStackTypes());
         var resolved = new List<CilOperand.CallSite>();
         var failures = new List<CompilerDiagnostic>();
         for (var row = 1; row <= assembly.Reader.GetTableRowCount(TableIndex.StandAloneSig); row++)
@@ -221,5 +221,74 @@ public sealed class MetadataCallSiteSignatureResolverTests
         Assert.Contains(failures, diagnostic => diagnostic.Message.Contains("calling convention 'FastCall' is not supported", StringComparison.Ordinal));
         Assert.Contains(failures, diagnostic => diagnostic.Message.Contains("CallConvSwift' is not supported", StringComparison.Ordinal));
         Assert.Contains(failures, diagnostic => diagnostic.Message.Contains("are both named", StringComparison.Ordinal));
+    }
+
+    // A call site's signature goes through the stack types, as a method's does: they turn an enum another assembly
+    // declares into its underlying integer, which decoding alone cannot.
+    [Fact]
+    public void ManagedAndUnmanagedCallSitesTakeTheirSignaturesThroughTheStackTypes()
+    {
+        Assert.Throws<ArgumentNullException>(() => new MetadataCallSiteSignatureResolver(null!));
+        using var assets = TestAssets.Create();
+        var path = assets.CompileUnsafeSource(
+            "CallSiteStackTypes",
+            """
+            public static class EntryPoint
+            {
+                public static unsafe int Managed(delegate* managed<int, int> target, int value) => target(value);
+
+                public static unsafe int Unmanaged(delegate* unmanaged<int, int> target, int value) => target(value);
+            }
+            """);
+        using var assembly = ManagedAssemblyTestFactory.Load(path);
+        var source = new MetadataAssemblySnapshot(
+            assembly.Identity,
+            assembly.Reader,
+            assembly.Types,
+            assembly.Fields,
+            assembly.Methods,
+            assembly.Metadata.BaseTypes,
+            assembly.Metadata.ImplementedInterfaces);
+        var stacked = new MethodSignatureModel(
+            CliTypeIdentity.FromStackKind(CliValueKind.I8), [CliTypeIdentity.FromStackKind(CliValueKind.I8)]);
+        var resolver = new MetadataCallSiteSignatureResolver(new ReplacingStackTypes(stacked));
+        var sites = new List<CilOperand.CallSite>();
+        for (var row = 1; row <= assembly.Reader.GetTableRowCount(TableIndex.StandAloneSig); row++)
+        {
+            var handle = MetadataTokens.StandaloneSignatureHandle(row);
+            if (assembly.Reader.GetBlobReader(assembly.Reader.GetStandaloneSignature(handle).Signature)
+                .ReadSignatureHeader().Kind == SignatureKind.Method)
+            {
+                sites.Add(resolver.Resolve(source, MetadataTokens.GetToken(handle), CliGenericContext.Empty, "M", 0));
+            }
+        }
+
+        Assert.Single(sites, site => !site.Unmanaged);
+        Assert.Single(sites, site => site.Unmanaged);
+        Assert.All(sites, site => Assert.Same(stacked, site.Signature));
+    }
+
+    private sealed class IdentityStackTypes : IMetadataStackTypeResolver
+    {
+        public CliTypeIdentity Resolve(CliTypeIdentity type) => type;
+
+        public CliTypeIdentity Resolve(CliTypeIdentity type, CliGenericContext genericContext) => type;
+
+        public MethodSignatureModel Resolve(MethodSignatureModel signature) => signature;
+
+        public MethodSignatureModel Resolve(MethodSignatureModel signature, CliGenericContext genericContext) =>
+            signature;
+    }
+
+    private sealed class ReplacingStackTypes(MethodSignatureModel replacement) : IMetadataStackTypeResolver
+    {
+        public CliTypeIdentity Resolve(CliTypeIdentity type) => type;
+
+        public CliTypeIdentity Resolve(CliTypeIdentity type, CliGenericContext genericContext) => type;
+
+        public MethodSignatureModel Resolve(MethodSignatureModel signature) => replacement;
+
+        public MethodSignatureModel Resolve(MethodSignatureModel signature, CliGenericContext genericContext) =>
+            replacement;
     }
 }

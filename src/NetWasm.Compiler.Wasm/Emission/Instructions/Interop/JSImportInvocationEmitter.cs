@@ -68,7 +68,6 @@ internal sealed class JSImportInvocationEmitter(
                     code,
                     signature.ParameterSignatureTypes[index],
                     local,
-                    context,
                     invocation.Target.InteropImports);
             }
         }
@@ -81,7 +80,7 @@ internal sealed class JSImportInvocationEmitter(
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropDescriptor))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameLeave)))));
-        exceptions.Emit(code, ManagedExceptionKind.JSException, invocation.Context.ManagedThrowFunction);
+        exceptions.Emit(code, ManagedExceptionKind.JSImportFailure, invocation.Context.ManagedThrowFunction);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         results.Emit(new(
             signature,
@@ -130,14 +129,13 @@ internal sealed class JSImportInvocationEmitter(
                     invocation.ArgumentBase + index,
                     invocation.Stack[invocation.ArgumentBase + index],
                     layouts.Target),
-                context,
                 invocation.Target.InteropImports);
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(functionIndices.Resolve(new InteropImportKey(invocation.Method.Definition.Key))))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Branch, WasmInstructionOperand.Unsigned(1)));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        exceptions.Emit(code, ManagedExceptionKind.JSException, context.ManagedThrowFunction);
+        exceptions.Emit(code, ManagedExceptionKind.JSImportFailure, context.ManagedThrowFunction);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         invocation.Stack.RemoveRange(invocation.ArgumentBase, invocation.Consumed);

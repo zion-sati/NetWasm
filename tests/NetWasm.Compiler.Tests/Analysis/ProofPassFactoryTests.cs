@@ -33,7 +33,7 @@ public sealed class ProofPassFactoryTests
     {
         var graphs = new ControlFlowGraphBuilderFactory().Create();
         var stacks = Stacks();
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
         var calls = new MethodFacts();
 
         Assert.IsType<ArrayBoundsCheckEliminator>(new ArrayBoundsCheckEliminatorFactory().Create(graphs, stacks, dominance, Enabled));
@@ -54,7 +54,7 @@ public sealed class ProofPassFactoryTests
     {
         var body = Body(Instruction(0, CilOperation.Return)) with { ArrayBoundsProof = new([], [], [], []) };
         var bounds = new ArrayBoundsCheckEliminatorFactory().Create(
-            new ControlFlowGraphBuilderFactory().Create(), Stacks(), new ControlFlowDominanceAnalyzer(), Disabled);
+            new ControlFlowGraphBuilderFactory().Create(), Stacks(), new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()), Disabled);
 
         Assert.Null(bounds.Rewrite(body).ArrayBoundsProof);
     }
@@ -67,16 +67,18 @@ public sealed class ProofPassFactoryTests
         var bounds = new ArrayBoundsCheckEliminatorFactory();
         var repeated = new RepeatedArrayAccessEliminatorFactory();
         var objects = new ConstructedObjectNullCheckEliminatorFactory();
+        var byRefs = new ByRefNullCheckEliminatorFactory();
         var integers = new IntegerCheckEliminatorFactory();
         var logger = NullLogger<DiagnosticReachableMethodAnalyzer>.Instance;
 
-        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(null!, graphs, bounds, repeated, objects, integers, logger));
-        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, null!, bounds, repeated, objects, integers, logger));
-        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, null!, repeated, objects, integers, logger));
-        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, bounds, null!, objects, integers, logger));
-        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, bounds, repeated, null!, integers, logger));
-        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, bounds, repeated, objects, null!, logger));
-        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, bounds, repeated, objects, integers, null!));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(null!, graphs, bounds, repeated, objects, byRefs, integers, logger));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, null!, bounds, repeated, objects, byRefs, integers, logger));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, null!, repeated, objects, byRefs, integers, logger));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, bounds, null!, objects, byRefs, integers, logger));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, bounds, repeated, null!, byRefs, integers, logger));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, bounds, repeated, objects, null!, integers, logger));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, bounds, repeated, objects, byRefs, null!, logger));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalyzerFactory(stacks, graphs, bounds, repeated, objects, byRefs, integers, null!));
     }
 
     private static ITypedStackValidator Stacks() =>

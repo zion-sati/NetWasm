@@ -31,6 +31,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<ArraySetValueIntrinsicEmitter>();
         services.AddSingleton<ArrayCreateInstanceIntrinsicEmitter>();
         services.AddSingleton<ArrayCreateRectangularInstanceIntrinsicEmitter>();
+        services.AddSingleton<ArrayCreateSharedInstanceIntrinsicEmitter>();
         services.AddSingleton<RunClassConstructorIntrinsicEmitter>();
         services.AddSingleton<AllocateUninitializedObjectIntrinsicEmitter>();
         services.AddSingleton<StructMarshallingDataIntrinsicEmitter>();
@@ -93,6 +94,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<GetArrayDataReferenceIntrinsicEmitter>();
         services.AddSingleton<NativeIntegerSizeIntrinsicEmitter>();
         services.AddSingleton<JavaScriptHostIntrinsicEmitter>();
+        services.AddSingleton<IsKnownConstantIntrinsicEmitter>();
         services.AddSingleton<ComponentReallocateIntrinsicEmitter>();
         services.AddSingleton<ComponentFreeIntrinsicEmitter>();
         services.AddSingleton<ComponentResourceHandleCreateIntrinsicEmitter>();
@@ -102,6 +104,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<UnsafeAsIntrinsicEmitter>();
         services.AddSingleton<UnsafeAsRefIntrinsicEmitter>();
         services.AddSingleton<UnsafeAsRefManagedIntrinsicEmitter>();
+        services.AddSingleton<NonZeroAddressIntrinsicEmitter>();
         services.AddSingleton<UnsafeNullRefIntrinsicEmitter>();
         services.AddSingleton<UnsafeIsAddressGreaterThanIntrinsicEmitter>();
         services.AddSingleton<UnsafeSizeOfIntrinsicEmitter>();
@@ -218,8 +221,9 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<AllocateUninitializedArrayIntrinsicEmitter>(services, RuntimeIntrinsic.AllocateUninitializedArray);
         AddRegistration<ArraySetValueIntrinsicEmitter>(services, RuntimeIntrinsic.ArraySetValue);
         AddRegistration<ArrayCreateInstanceIntrinsicEmitter>(services, RuntimeIntrinsic.ArrayCreateInstance);
-        AddRegistration<ArrayCreateRectangularInstanceIntrinsicEmitter>(
-            services, RuntimeIntrinsic.ArrayCreateRectangularInstance);
+        AddRegistration<ArrayCreateSharedInstanceIntrinsicEmitter>(services, RuntimeIntrinsic.ArrayCreateSharedInstance);
+        AddRegistrations<ArrayCreateRectangularInstanceIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ArrayCreateRectangularInstance, RuntimeIntrinsic.ArrayCreateBoundedInstance);
         AddRegistration<RunClassConstructorIntrinsicEmitter>(services, RuntimeIntrinsic.RunClassConstructor);
         AddRegistration<AllocateUninitializedObjectIntrinsicEmitter>(
             services, RuntimeIntrinsic.AllocateUninitializedObject);
@@ -332,6 +336,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.NativeIntegerSize);
         AddRegistration<JavaScriptHostIntrinsicEmitter>(
             services, RuntimeIntrinsic.JavaScriptHost);
+        AddRegistration<IsKnownConstantIntrinsicEmitter>(
+            services, RuntimeIntrinsic.IsKnownConstant);
         AddRegistration<ComponentReallocateIntrinsicEmitter>(
             services, RuntimeIntrinsic.ComponentReallocate);
         AddRegistration<ComponentFreeIntrinsicEmitter>(
@@ -347,6 +353,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<UnsafeAsRefIntrinsicEmitter>(services, RuntimeIntrinsic.UnsafeAsRef);
         AddRegistration<UnsafeAsRefManagedIntrinsicEmitter>(
             services, RuntimeIntrinsic.UnsafeAsRefManaged);
+        AddRegistration<NonZeroAddressIntrinsicEmitter>(
+            services, RuntimeIntrinsic.NonZeroAddress);
         AddRegistration<UnsafeNullRefIntrinsicEmitter>(
             services, RuntimeIntrinsic.UnsafeNullRef);
         AddRegistration<UnsafeIsAddressGreaterThanIntrinsicEmitter>(

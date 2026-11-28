@@ -25,10 +25,14 @@ internal interface IPureCallReuser
 // calls may change what they read: no jump lands between them, no local or
 // argument they read is stored or has its address taken, and the instructions
 // between only compute values, read the same static fields or branch away. This
-// runs before inlining, while the calls are still calls.
-internal sealed class PureCallReuser(ICalledMethodResolver calledMethods, bool enabled) : IPureCallReuser
+// runs before inlining, while the calls are still calls. The first call's dup can
+// take the stack one past the method's maximum, as where optimized Roslyn keeps a
+// value on the stack across the call, so the maximum is raised where it does.
+internal sealed class PureCallReuser(ICalledMethodResolver calledMethods, IStackDepthFitter depths, bool enabled)
+    : IPureCallReuser
 {
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
+    private readonly IStackDepthFitter _depths = depths ?? throw new ArgumentNullException(nameof(depths));
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
@@ -108,11 +112,11 @@ internal sealed class PureCallReuser(ICalledMethodResolver calledMethods, bool e
         }
         return replacements is null
             ? body
-            : RenumberedInstructions.Splice(body, replacements) with
+            : _depths.Fit(RenumberedInstructions.Splice(body, replacements) with
             {
                 Locals = locals.ToImmutable(),
                 LocalSignatureTypes = localTypes.ToImmutable(),
-            };
+            });
     }
 
     private sealed record Reads(HashSet<(bool Argument, int Index)> Variables, HashSet<object> Fields);

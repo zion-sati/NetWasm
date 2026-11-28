@@ -20,14 +20,22 @@ internal interface IStaticReferenceTypeAnalyzer
 
 // Strategy: a forward analysis of the declared type of every stack value, from the local, argument,
 // field, method result, constructor, new array or cast that produced it, closed over the body's generic
-// context. Where paths meet with different types the slot is unknown, so a sealed declared type is
-// the value's exact type when it is not null. Every handler and filter of a reachable protected region
+// context, an array's element type for its element, a string for a string literal. Where paths meet with different types the slot is unknown, so a sealed
+// declared type is the value's exact type when it is not null; a null literal takes the type of the values it meets,
+// which describes them when they are not null. Every handler and filter of a reachable protected region
 // starts with nothing known, as the graph reaches it: a filter's handler, a finally that runs on leave
 // and the code that follows only them are analyzed like any other code.
 internal sealed class StaticReferenceTypeAnalyzer(
     ICalledMethodResolver calls,
     IFieldRepository fields) : IStaticReferenceTypeAnalyzer
 {
+    private static readonly CliTypeIdentity String =
+        CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false);
+
+    // A null literal's slot until it meets a typed value.
+    private static readonly CliTypeIdentity NullLiteral =
+        CliTypeIdentity.Primitive("<null literal>", CliValueKind.ManagedReference, isValueType: false);
+
     public ImmutableDictionary<int, ImmutableArray<CliTypeIdentity?>> Analyze(ValidatedControlFlowGraph controlFlow)
     {
         ArgumentNullException.ThrowIfNull(controlFlow);
@@ -49,7 +57,7 @@ internal sealed class StaticReferenceTypeAnalyzer(
             for (var index = 0; index < block.Instructions.Length; index++)
             {
                 var instruction = block.Instructions[index];
-                results[instruction.Offset] = [.. stack];
+                results[instruction.Offset] = [.. stack.Select(static type => ReferenceEquals(type, NullLiteral) ? null : type)];
                 var outgoing = index + 1 < block.Instructions.Length
                     ? controlFlow.InstructionEntryStacks[block.Instructions[index + 1].Offset].Length
                     : graph.Successors[blockIndex].IsEmpty
@@ -84,9 +92,10 @@ internal sealed class StaticReferenceTypeAnalyzer(
             var changed = false;
             for (var slot = 0; slot < existing.Length && slot < incoming.Length; slot++)
             {
-                if (existing[slot] is not null && !Equals(existing[slot], incoming[slot]))
+                var joined = Join(existing[slot], incoming[slot]);
+                if (!Equals(joined, existing[slot]))
                 {
-                    existing[slot] = null;
+                    existing[slot] = joined;
                     changed = true;
                 }
             }
@@ -104,6 +113,11 @@ internal sealed class StaticReferenceTypeAnalyzer(
             stack.Add(stack[^1]);
             return;
         }
+        // An element read from an array has the array's static element type.
+        var element = instruction.Operation == CilOperation.LoadArrayElementReference && stack.Count >= 2 &&
+            stack[^2] is { Shape: CliTypeShape.SzArray, ElementType: { } elementType }
+                ? elementType
+                : null;
         var produced = Produced(instruction);
         var preserved = Math.Max(0, outgoing - produced);
         stack.RemoveRange(preserved, stack.Count - preserved);
@@ -111,7 +125,7 @@ internal sealed class StaticReferenceTypeAnalyzer(
         {
             stack.Add(null);
         }
-        if (produced == 1 && outgoing > 0 && Declared(body, instruction) is { } type)
+        if (produced == 1 && outgoing > 0 && (element ?? Declared(body, instruction)) is { } type)
         {
             var closed = type.Substitute(
                 body.MethodInstance?.DeclaringType.TypeArguments ?? ImmutableArray<CliTypeIdentity>.Empty,
@@ -120,30 +134,14 @@ internal sealed class StaticReferenceTypeAnalyzer(
         }
     }
 
+    private static CliTypeIdentity? Join(CliTypeIdentity? existing, CliTypeIdentity? incoming) =>
+        existing is null || incoming is null ? null
+        : ReferenceEquals(existing, NullLiteral) ? incoming
+        : ReferenceEquals(incoming, NullLiteral) || Equals(existing, incoming) ? existing
+        : null;
+
     // Whether the instruction leaves one value on top: the stack heights decide what it consumed.
-    private int Produced(CilInstruction instruction) => instruction.Operation switch
-    {
-        CilOperation.Call or CilOperation.CallVirtual =>
-            calls.Resolve(instruction)?.Signature.ReturnType == CliValueKind.Void ? 0 : 1,
-        CilOperation.CallIndirect =>
-            ((CilOperand.CallSite)instruction.Operand).Signature.ReturnType == CliValueKind.Void ? 0 : 1,
-        _ => instruction.Operation is CilOperation.Nop or CilOperation.Pop or CilOperation.StoreLocal or
-            CilOperation.StoreArgument or CilOperation.StoreField or CilOperation.StoreStaticField or
-            CilOperation.StoreObject or CilOperation.StoreArrayElement or CilOperation.StoreArrayElementReference or
-            CilOperation.StoreRectangularArrayElement or CilOperation.CopyObject or CilOperation.InitializeObject or
-            CilOperation.CopyBlock or CilOperation.InitializeBlock or CilOperation.InitializeArrayData or
-            CilOperation.Branch or CilOperation.BranchIfTrue or CilOperation.BranchIfFalse or
-            CilOperation.BranchIfEqual or CilOperation.BranchIfNotEqual or
-            CilOperation.BranchIfGreaterThanSigned or CilOperation.BranchIfGreaterThanUnsigned or
-            CilOperation.BranchIfGreaterThanOrEqualSigned or CilOperation.BranchIfGreaterThanOrEqualUnsigned or
-            CilOperation.BranchIfLessThanSigned or CilOperation.BranchIfLessThanUnsigned or
-            CilOperation.BranchIfLessThanOrEqualSigned or CilOperation.BranchIfLessThanOrEqualUnsigned or
-            CilOperation.Constrained or CilOperation.Volatile or CilOperation.Readonly or CilOperation.Unaligned or
-            CilOperation.Break or CilOperation.Throw or CilOperation.Rethrow or CilOperation.Leave or
-            CilOperation.EndFinally or CilOperation.EndFilter or CilOperation.Return
-                ? 0
-                : 1,
-    };
+    private int Produced(CilInstruction instruction) => StackPushes.Of(instruction, calls);
 
     private CliTypeIdentity? Declared(CilMethodBody body, CilInstruction instruction) => instruction switch
     {
@@ -162,6 +160,9 @@ internal sealed class StaticReferenceTypeAnalyzer(
             CliTypeIdentity.SzArray(element.Value),
         { Operation: CilOperation.CastClass or CilOperation.IsInstance, Operand: CilOperand.TypeIdentity cast } =>
             cast.Value,
+        { Operation: CilOperation.LoadArrayElement, Operand: CilOperand.TypeIdentity element } => element.Value,
+        { Operation: CilOperation.LoadString } => String,
+        { Operation: CilOperation.LoadNull } => NullLiteral,
         _ => null,
     };
 

@@ -72,7 +72,7 @@ internal sealed class WasiPendingCopy
             return;
         }
 
-        _tracking!.Dispose();
+        _tracking!.Cancel();
         _completion.TrySetResult(cancelCopy());
     }
 }

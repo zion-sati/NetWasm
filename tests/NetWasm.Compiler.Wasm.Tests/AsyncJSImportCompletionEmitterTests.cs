@@ -77,13 +77,14 @@ public sealed class AsyncJSImportCompletionEmitterTests
             new RecordingLayoutProvider(),
             new RecordingLayoutProvider(),
             imports,
+            TaskHandles(new RecordingLayoutProvider(), imports, new RecordingExceptions()),
             new GeneratedFunctionWriterFactory(),
             strings,
             arrays,
             objects,
             new JavaScriptNullableEmitter(
                 new RecordingLayoutProvider(), new RecordingLayoutProvider(),
-                new NetWasm.Compiler.Wasm.Emission.Support.AddressInstructionEmitter(new RecordingLayoutProvider())));
+                new NetWasm.Compiler.Wasm.Emission.Support.AddressInstructionEmitter(new RecordingLayoutProvider())), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory());
 
         var body = ((IAsyncJSImportResolveEmitter)emitter).Emit(
             binding,
@@ -124,9 +125,11 @@ public sealed class AsyncJSImportCompletionEmitterTests
     public void RejectEmitterFaultsTheTaskAndReleasesTheHandle(bool wasm64)
     {
         var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider(wasm64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32);
         var emitter = new AsyncJSImportRejectEmitter(
-            new RecordingLayoutProvider(wasm64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32),
+            layouts,
             imports,
+            TaskHandles(layouts, imports, new RecordingExceptions()),
             new GeneratedFunctionWriterFactory());
 
         var body = ((IAsyncJSImportRejectEmitter)emitter).Emit(
@@ -137,7 +140,11 @@ public sealed class AsyncJSImportCompletionEmitterTests
             Convert.ToHexString([
                 WasmOpcodes.LocalGet, 0,
                 WasmOpcodes.Call, (byte)imports.Resolve(RuntimeImportSymbol.HandleGet),
-                WasmOpcodes.LocalSet, 1,
+                WasmOpcodes.LocalTee, 1,
+                wasm64 ? WasmOpcodes.I64EqualZero : WasmOpcodes.I32EqualZero,
+                WasmOpcodes.If, WasmOpcodes.EmptyBlockType,
+                WasmOpcodes.Unreachable,
+                WasmOpcodes.End,
                 WasmOpcodes.LocalGet, 1,
                 WasmOpcodes.Call, 30,
                 WasmOpcodes.LocalGet, 0,
@@ -159,6 +166,7 @@ public sealed class AsyncJSImportCompletionEmitterTests
         var emitter = new AsyncJSImportCancelEmitter(
             layouts,
             imports,
+            TaskHandles(layouts, imports, new RecordingExceptions()),
             new GeneratedFunctionWriterFactory());
 
         var body = ((IAsyncJSImportCancelEmitter)emitter).Emit(
@@ -235,6 +243,59 @@ public sealed class AsyncJSImportCompletionEmitterTests
         Assert.Equal(CliValueKind.I4, Assert.Single(type.Parameters));
     }
 
+    // The host settles each call once, so a completion's handle names the call's live task. One that names nothing (the
+    // number came from elsewhere, as an object's host handle once did) throws InvalidOperationException rather than
+    // completing a null task and returning as if it had.
+    [Theory]
+    [InlineData("resolve")]
+    [InlineData("reject")]
+    [InlineData("cancel")]
+    public void ACompletionWhoseHandleNamesNoTaskThrowsInvalidOperation(string completion)
+    {
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider();
+        var exceptions = new RecordingExceptions();
+        var handles = TaskHandles(layouts, imports, exceptions);
+        var binding = CreateBinding(CliValueKind.I4);
+
+        var body = completion switch
+        {
+            "resolve" => ((IAsyncJSImportResolveEmitter)CreateResolveEmitter(layouts, imports, exceptions)).Emit(
+                binding, CreateFunctionIndices(), EmptyInteropImports()),
+            "reject" => ((IAsyncJSImportRejectEmitter)new AsyncJSImportRejectEmitter(
+                layouts, imports, handles, new GeneratedFunctionWriterFactory())).Emit(binding, CreateFunctionIndices()),
+            _ => ((IAsyncJSImportCancelEmitter)new AsyncJSImportCancelEmitter(
+                layouts, imports, handles, new GeneratedFunctionWriterFactory())).Emit(binding, CreateFunctionIndices()),
+        };
+
+        Assert.Equal([ManagedExceptionKind.InvalidOperation], exceptions.Kinds);
+        var handleGet = Convert.ToHexString([WasmOpcodes.Call, (byte)imports.Resolve(RuntimeImportSymbol.HandleGet)]);
+        var check = Convert.ToHexString([WasmOpcodes.I32EqualZero, WasmOpcodes.If, WasmOpcodes.EmptyBlockType,
+            WasmOpcodes.Unreachable, WasmOpcodes.End]);
+        var text = Convert.ToHexString(body);
+        Assert.Contains(handleGet, text, StringComparison.Ordinal);
+        Assert.True(text.IndexOf(check, StringComparison.Ordinal) > text.IndexOf(handleGet, StringComparison.Ordinal),
+            "the null check does not follow the handle's lookup");
+    }
+
+    private static AsyncImportTaskHandleEmitter TaskHandles(
+        RecordingLayoutProvider layouts,
+        RuntimeImportCatalog imports,
+        RecordingExceptions exceptions) =>
+        new(imports, new NetWasm.Compiler.Wasm.Emission.Support.AddressInstructionEmitter(layouts), exceptions);
+
+    // Records each exception kind and writes an unreachable in its place.
+    private sealed class RecordingExceptions : IImplicitExceptionEmitter
+    {
+        public List<ManagedExceptionKind> Kinds { get; } = [];
+
+        public void Emit(IWasmInstructionWriter code, ManagedExceptionKind kind, OptionalFunctionIndex throwFunctionIndex)
+        {
+            Kinds.Add(kind);
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
+        }
+    }
+
     private static JavaScriptAsyncMethodBinding CreateBinding(CliValueKind result)
     {
         var methods = new FakeProgram();
@@ -259,15 +320,17 @@ public sealed class AsyncJSImportCompletionEmitterTests
 
     private static AsyncJSImportResolveEmitter CreateResolveEmitter(
         RecordingLayoutProvider layouts,
-        RuntimeImportCatalog imports) => new(
+        RuntimeImportCatalog imports,
+        RecordingExceptions? exceptions = null) => new(
         layouts,
         layouts,
         imports,
+        TaskHandles(layouts, imports, exceptions ?? new RecordingExceptions()),
         new GeneratedFunctionWriterFactory(),
         new RecordingStringResults(),
         new RecordingArrayResults(),
         new RecordingObjectResults(),
-        new JavaScriptNullableEmitter(layouts, layouts, new NetWasm.Compiler.Wasm.Emission.Support.AddressInstructionEmitter(layouts)));
+        new JavaScriptNullableEmitter(layouts, layouts, new NetWasm.Compiler.Wasm.Emission.Support.AddressInstructionEmitter(layouts)), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory());
 
     private static InteropImportPlan EmptyInteropImports() =>
         new InteropImportPlan([], default, default, default, default);

@@ -10,4 +10,4 @@ internal sealed record LoopRegionEligibilityRequest(
     ImmutableHashSet<int> NaturalLoop,
     LoopRegion Region,
     ControlFlowDomain Domain,
-    ImmutableArray<ControlFlowDomain> Domains);
+    ControlFlowDomains Domains);

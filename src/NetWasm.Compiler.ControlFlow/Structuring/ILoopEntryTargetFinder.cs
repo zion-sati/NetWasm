@@ -10,5 +10,5 @@ internal interface ILoopEntryTargetFinder
     ImmutableHashSet<int> Find(ControlFlowGraph graph,
         ImmutableHashSet<int> component,
         ControlFlowDomain domain,
-        ImmutableArray<ControlFlowDomain> domains);
+        ControlFlowDomains domains);
 }

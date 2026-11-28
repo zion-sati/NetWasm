@@ -27,10 +27,10 @@ internal sealed class DispatcherLoopIslandSelector : IDispatcherLoopIslandSelect
             return [];
         }
 
+        // Each loop's blocks are looked up in the sets: IsSubsetOf would copy and walk the method-sized ones for every
+        // loop of the method.
         var candidates = state.LoopsByHeader.Values
-            .Where(loop => loop.Component.IsSubsetOf(component))
-            .Where(loop => loop.Component.IsSubsetOf(allowed))
-            .Where(loop => loop.Component.IsSubsetOf(dispatcherOwnedBlocks))
+            .Where(loop => Within(loop, component) && Within(loop, allowed) && Within(loop, dispatcherOwnedBlocks))
             .Where(loop => !loop.Component.Contains(entryBlock))
             .Where(loop => !loop.Component.Any(
                 state.DispatchersByNode.ContainsKey))
@@ -50,4 +50,7 @@ internal sealed class DispatcherLoopIslandSelector : IDispatcherLoopIslandSelect
             .SelectMany(loop => loop.Component)
             .ToImmutableHashSet();
     }
+
+    private static bool Within(LoopRegion loop, ImmutableHashSet<int> blocks) =>
+        loop.BodyComponent.All(blocks.Contains) && loop.ConditionExitComponent.All(blocks.Contains);
 }

@@ -40,15 +40,21 @@ internal sealed class DispatcherSequenceStepExecutor(
             // Keep the loop body inside the caller's allowed block set so a
             // `leave` records its continuation and cleanup runs before the
             // outside continuation is emitted.
-            var retainedActiveBlocks = loop.BodyComponent.IsSubsetOf(allowed)
+            var withinAllowed = loop.BodyComponent.All(allowed.Contains);
+            var retainedActiveBlocks = withinAllowed
                 ? _activeBlockRetention.Select(state, loop)
                 : ImmutableHashSet<int>.Empty;
-            var loopAllowed = loop.BodyComponent.Intersect(allowed);
+            // The body may also enter the loop's exit extension (the condition exit's code before the loop's exit): a
+            // break that shares the condition exit's block, as a `leave` the loop's natural exit and a break both
+            // branch to does, builds that code where it leaves, as a copy ending at the loop's exit. The extension is
+            // the region's own (LoopRegionEligibilityClassifier admits such incoming edges); without it the break's
+            // arm would build nothing and fall into the loop's continue.
+            var loopAllowed = loop.Component.Within(allowed);
             // Natural-loop analysis reports a continue target in the
             // structured domain; retain it in the clipped body set.
             var effectiveContinue = loop.Continue;
             loopAllowed = loopAllowed.Add(effectiveContinue);
-            var clipsLoopBoundary = !loop.BodyComponent.IsSubsetOf(allowed);
+            var clipsLoopBoundary = !withinAllowed;
             if (loop.Condition is not int condition)
             {
                 regions.Add(BuildUnconditionalLoop(
@@ -71,9 +77,16 @@ internal sealed class DispatcherSequenceStepExecutor(
                 state.BoundaryOwnedBlocks.UnionWith(loop.ConditionExitComponent);
                 state.BoundaryClaimedBlockBodies.Add(conditionBlock.Index);
             }
-            var activeBlocks = clipsLoopBoundary
+            // A loop structured a second time (a replica, where enclosing branches reach it twice) clips by the active
+            // path, keeping its own blocks as a loop inside the caller's blocks does: the boundary-claimed bodies hold
+            // every block the first emitted, which would leave it without a body.
+            var activeBlocks = clipsLoopBoundary && conditionIsOriginal
                 ? state.BoundaryClaimedBlockBodies
                 : path;
+            if (clipsLoopBoundary && !conditionIsOriginal)
+            {
+                retainedActiveBlocks = _activeBlockRetention.Select(state, loop);
+            }
             var target = state.Graph.Successors[condition][0];
             var branchSelectsBody = loop.CoreComponent.Contains(target);
             // CreateLoop establishes that the condition has a conditional branch
@@ -130,7 +143,7 @@ internal sealed class DispatcherSequenceStepExecutor(
                         loop.ConditionExit,
                         loop.Exit,
                 _allowedBlocks.Clip(
-                    loop.ConditionExitComponent.Intersect(allowed),
+                    loop.ConditionExitComponent.Within(allowed),
                     activeBlocks,
                         retainedActiveBlocks),
                 []))
@@ -163,7 +176,7 @@ internal sealed class DispatcherSequenceStepExecutor(
                             .Single(loop.CoreComponent.Contains),
                         loop.Header,
                         _allowedBlocks.Clip(
-                            loopAllowed.Union(loop.ConditionExitComponent.Intersect(allowed)),
+                            loopAllowed.Union(loop.ConditionExitComponent.Within(allowed)),
                             activeBlocks,
                             retainedActiveBlocks),
                         []);
@@ -183,7 +196,7 @@ internal sealed class DispatcherSequenceStepExecutor(
                         loop.ConditionExit,
                         loop.Exit,
                 _allowedBlocks.Clip(
-                    loop.ConditionExitComponent.Intersect(allowed),
+                    loop.ConditionExitComponent.Within(allowed),
                     activeBlocks,
                         retainedActiveBlocks),
                 []))
@@ -212,7 +225,14 @@ internal sealed class DispatcherSequenceStepExecutor(
         ImmutableHashSet<int> retainedActiveBlocks)
     {
         // The body runs from the header until a break, continue, return or an
-        // exception region's continuation leaves it; reaching its end repeats it.
+        // exception region's continuation leaves it; reaching its end repeats it. A loop structured a second time (a
+        // replica, its header already emitted) clips by the active path, as a conditional loop's replica does: the
+        // boundary-claimed bodies hold every block the first emitted, which would leave it an empty, endless loop.
+        var isOriginal = !state.ClaimedBlockBodies.Contains(loop.Header);
+        var active = clipsLoopBoundary && isOriginal ? state.BoundaryClaimedBlockBodies : (IReadOnlySet<int>)path;
+        var retained = clipsLoopBoundary && !isOriginal
+            ? _activeBlockRetention.Select(state, loop)
+            : retainedActiveBlocks;
         if (clipsLoopBoundary)
         {
             state.BoundaryOwnedBlocks.UnionWith(loop.BodyComponent);
@@ -228,10 +248,7 @@ internal sealed class DispatcherSequenceStepExecutor(
                 structuredControlFlowBuilder.Build(state,
                     loop.Header,
                     stop: null,
-                    _allowedBlocks.Clip(
-                        loopAllowed,
-                        clipsLoopBoundary ? state.BoundaryClaimedBlockBodies : path,
-                        retainedActiveBlocks),
+                    _allowedBlocks.Clip(loopAllowed, active, retained),
                     []),
                 StructuredSequenceDraft.Empty,
                 StructuredSequenceDraft.Empty);

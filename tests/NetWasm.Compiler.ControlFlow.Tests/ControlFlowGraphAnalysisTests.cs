@@ -12,7 +12,7 @@ using static ControlFlowTestSupport;
 public sealed class ControlFlowGraphAnalysisTests
 {
     [Fact]
-    public void ReportsDominatorsPostDominatorsCyclesAndNaturalLoops()
+    public void ReportsDominatorsCyclesAndNaturalLoops()
     {
         var graph = ControlFlowGraphBuilder.Build(Body(
             CliValueKind.Void,
@@ -31,7 +31,6 @@ public sealed class ControlFlowGraphAnalysisTests
             graph.ReachableBlocks);
 
         Assert.Contains(1, analysis.Dominators[2]);
-        Assert.Contains(3, analysis.PostDominators[0]);
         Assert.Contains(
             analysis.StronglyConnectedComponents,
             component => component.SetEquals([1, 2]));
@@ -65,22 +64,14 @@ public sealed class ControlFlowGraphAnalysisTests
             () => new ControlFlowNaturalLoopAnalyzer(null!));
         Assert.Throws<ArgumentNullException>(() => new ControlFlowGraphAnalyzer(
             null!,
-            CreatePostDominanceAnalyzer(),
             CreateComponentAnalyzer(),
             CreateNaturalLoopAnalyzer()));
         Assert.Throws<ArgumentNullException>(() => new ControlFlowGraphAnalyzer(
             CreateDominanceAnalyzer(),
             null!,
-            CreateComponentAnalyzer(),
             CreateNaturalLoopAnalyzer()));
         Assert.Throws<ArgumentNullException>(() => new ControlFlowGraphAnalyzer(
             CreateDominanceAnalyzer(),
-            CreatePostDominanceAnalyzer(),
-            null!,
-            CreateNaturalLoopAnalyzer()));
-        Assert.Throws<ArgumentNullException>(() => new ControlFlowGraphAnalyzer(
-            CreateDominanceAnalyzer(),
-            CreatePostDominanceAnalyzer(),
             CreateComponentAnalyzer(),
             null!));
     }
@@ -90,22 +81,14 @@ public sealed class ControlFlowGraphAnalysisTests
     {
         Assert.Throws<ArgumentNullException>(() => new ControlFlowGraphAnalyzerFactory(
             null!,
-            CreatePostDominanceAnalyzer(),
             CreateComponentAnalyzer(),
             CreateNaturalLoopAnalyzer()));
         Assert.Throws<ArgumentNullException>(() => new ControlFlowGraphAnalyzerFactory(
             CreateDominanceAnalyzer(),
             null!,
-            CreateComponentAnalyzer(),
             CreateNaturalLoopAnalyzer()));
         Assert.Throws<ArgumentNullException>(() => new ControlFlowGraphAnalyzerFactory(
             CreateDominanceAnalyzer(),
-            CreatePostDominanceAnalyzer(),
-            null!,
-            CreateNaturalLoopAnalyzer()));
-        Assert.Throws<ArgumentNullException>(() => new ControlFlowGraphAnalyzerFactory(
-            CreateDominanceAnalyzer(),
-            CreatePostDominanceAnalyzer(),
             CreateComponentAnalyzer(),
             null!));
     }

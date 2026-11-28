@@ -335,7 +335,8 @@ internal static class EmitterTestSupport
         CreateValueFrameAddresses(layouts),
         CreateValueFrameEntry(program, layouts, runtimeImports),
         CreateFilterEnvironmentRoots(layouts),
-        new ManagedByRefAggregateInitializationEmitter(layouts));
+        new ManagedByRefAggregateInitializationEmitter(layouts),
+        new LandingPadRestoreEmitter(layouts, runtimeImports));
 
     public static IValueFrameEntryEmitter CreateValueFrameEntry(
         FakeProgram program, RecordingLayoutProvider layouts, IRuntimeImportResolver imports) =>
@@ -354,7 +355,8 @@ internal static class EmitterTestSupport
         IRuntimeImportResolver runtimeImports) =>
             new MethodFrameExitEmitter(
                 runtimeImports,
-                new StackTraceFrameExitEmitter(runtimeImports));
+                new StackTraceFrameExitEmitter(runtimeImports),
+                new LazyRootFrameEmitter(new RecordingLayoutProvider(), runtimeImports));
 
     public static IAddressInstructionEmitter CreateAddressInstructions(
         RecordingLayoutProvider layouts) => new AddressInstructionEmitter(layouts);

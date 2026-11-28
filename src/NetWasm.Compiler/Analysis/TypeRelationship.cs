@@ -12,6 +12,11 @@ internal readonly record struct TypeRelationship(TypeRelationshipCharacteristics
 
     public bool IsSzArrayGenericInterface =>
         (Characteristics & TypeRelationshipCharacteristics.SzArrayGenericInterface) is not 0;
+
+    // The candidate is a shared array (SharedArrayShapes), assignable to the target only where the element in its
+    // header is: a type test checks that element at run time, and the runtime's casting lists leave the target out.
+    public bool RequiresElementCheck =>
+        (Characteristics & TypeRelationshipCharacteristics.ElementChecked) is not 0;
 }
 
 [System.Flags]
@@ -21,4 +26,5 @@ internal enum TypeRelationshipCharacteristics
     Hierarchy = 1 << 0,
     GenericVariance = 1 << 1,
     SzArrayGenericInterface = 1 << 2,
+    ElementChecked = 1 << 3,
 }

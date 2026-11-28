@@ -23,17 +23,23 @@ internal sealed class NestedFlowClassifier : INestedFlowClassifier
             .Select(child => child.TryOffset)
             .Prepend(source.TryOffset)
             .ToArray();
-        var sourceBlocks = state.Graph.Blocks
-            .SkipWhile(block => block.StartOffset < source.TryOffset)
-            .TakeWhile(block => block.StartOffset < source.TryEnd)
-            .Select(block => block.Index)
-            .ToImmutableHashSet();
+        var sorted = true;
+        for (var index = 1; index < partStarts.Length; index++) sorted &= partStarts[index - 1] <= partStarts[index];
+        var sourceBlocks = BlocksStarting.Between(state.Graph, source.TryOffset, source.TryEnd);
+        var visited = new HashSet<int>();
         foreach (var blockIndex in sourceBlocks)
         {
             var sourcePart = FindPart(state.Graph.GetBlock(blockIndex).StartOffset);
-            foreach (var successor in state.Graph.Successors[blockIndex].Intersect(sourceBlocks))
+            visited.Clear();
+            foreach (var successor in state.Graph.Successors[blockIndex])
             {
+                // A successor in the protected block starts within it, as sourceBlocks' blocks do: a range test, not a
+                // set of the block's blocks made for each block.
                 var successorOffset = state.Graph.GetBlock(successor).StartOffset;
+                if (successorOffset < source.TryOffset || successorOffset >= source.TryEnd || !visited.Add(successor))
+                {
+                    continue;
+                }
                 var targetPart = FindPart(successorOffset);
                 if (sourcePart == targetPart)
                 {
@@ -54,8 +60,21 @@ internal sealed class NestedFlowClassifier : INestedFlowClassifier
         }
         return false;
 
+        // The last part that starts at or before the offset, by binary search over the parts' starts in offset order.
         int FindPart(int offset)
         {
+            if (sorted)
+            {
+                var low = 1;
+                var high = partStarts.Length;
+                while (low < high)
+                {
+                    var middle = low + ((high - low) >> 1);
+                    if (partStarts[middle] <= offset) low = middle + 1;
+                    else high = middle;
+                }
+                return low - 1;
+            }
             var part = 0;
             for (var index = 1; index < partStarts.Length; index++)
             {

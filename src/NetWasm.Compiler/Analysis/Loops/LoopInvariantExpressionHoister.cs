@@ -53,7 +53,7 @@ internal sealed class LoopInvariantExpressionHoister(
 
         var instructions = body.Instructions;
         var indices = Enumerable.Range(0, instructions.Length).ToDictionary(index => instructions[index].Offset);
-        var sources = BranchSources(instructions, indices);
+        var sources = LoopEntries.BranchSources(instructions, indices);
         var targets = instructions
             .Select(instruction => instruction.Operand is CilOperand.BranchTarget { Offset: var offset } &&
                 indices.TryGetValue(offset, out var target) ? target : -1)
@@ -100,7 +100,7 @@ internal sealed class LoopInvariantExpressionHoister(
                     break;
                 }
             }
-            if (end < 0 || EnteredElsewhere(sources, jump, end)) continue;
+            if (end < 0 || LoopEntries.EnteredElsewhere(sources, jump, end)) continue;
             var written = Written(instructions, jump + 1, end);
             written.UnionWith(exposed);
             var rare = Conditional(instructions, targets, handlers, jump, end);
@@ -188,13 +188,14 @@ internal sealed class LoopInvariantExpressionHoister(
                 state = reachable ? state.Meet(arriving) : arriving;
                 reachable = true;
             }
-            // Code no path reaches, a jump back into the run, or a protected
-            // region's edge ends the expression. No jump from before the run lands
-            // in it: one from earlier in the loop puts the run's start inside its
-            // arm, which Rewrite skips, and one from outside the loop keeps the
-            // loop out of Rewrite altogether.
+            // Code no path reaches, a landing for any branch from outside the run,
+            // or a protected region's edge ends the expression. A branch from
+            // before the run can land in it: the loop's own entry jump lands on the
+            // test, where a run that began in the body may end. The copy moves the
+            // run's instructions ahead of that jump, so a landing past the run's
+            // first instruction would arrive where a value it pushed is missing.
             if (!reachable ||
-                index > first && sources.TryGetValue(index, out var from) && from.Any(source => source >= index) ||
+                index > first && sources.TryGetValue(index, out var from) && from.Any(source => source < first || source >= index) ||
                 index > first && boundaries.Contains(instructions[index].Offset))
             {
                 break;
@@ -455,16 +456,6 @@ internal sealed class LoopInvariantExpressionHoister(
         return rare;
     }
 
-    // A branch from outside the loop lands in its body or test.
-    private static bool EnteredElsewhere(Dictionary<int, List<int>> sources, int jump, int end)
-    {
-        for (var index = jump + 1; index <= end; index++)
-        {
-            if (sources.TryGetValue(index, out var from) && from.Any(source => source < jump || source > end)) return true;
-        }
-        return false;
-    }
-
     // The locals and arguments the loop writes or takes the address of.
     private static HashSet<(bool Argument, int Index)> Written(ImmutableArray<CilInstruction> instructions, int start, int end)
     {
@@ -482,22 +473,6 @@ internal sealed class LoopInvariantExpressionHoister(
             }
         }
         return written;
-    }
-
-    // Each instruction's index, by the indices of the branches that land on it.
-    private static Dictionary<int, List<int>> BranchSources(ImmutableArray<CilInstruction> instructions, Dictionary<int, int> indices)
-    {
-        var sources = new Dictionary<int, List<int>>();
-        for (var index = 0; index < instructions.Length; index++)
-        {
-            if (instructions[index].Operand is CilOperand.BranchTarget { Offset: var offset })
-            {
-                if (!indices.TryGetValue(offset, out var target)) continue;
-                if (!sources.TryGetValue(target, out var list)) sources[target] = list = [];
-                list.Add(index);
-            }
-        }
-        return sources;
     }
 
     private static bool Pop(List<CliValueKind> stack, int count)

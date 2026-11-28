@@ -28,6 +28,9 @@ internal static class Program
             "ping-pong" => PingPong,
             "async-iterator" => Iterate,
             "when-all" => WhenAlls,
+            "yield-chain" => YieldChains,
+            "exception-chain" => count => ExceptionChains(count, suspend: false),
+            "exception-chain-yield" => count => ExceptionChains(count, suspend: true),
             _ => null,
         };
         if (scenario is null) return 3;
@@ -120,6 +123,60 @@ internal static class Program
         }
 
         return sum;
+    }
+
+    // Two nested methods suspend once per iteration: a chain that suspends, not only its innermost method.
+    private static async Task<long> YieldChains(int count)
+    {
+        long sum = 0;
+        for (var index = 0; index < count; index++)
+        {
+            sum += await YieldOuter(index);
+        }
+
+        return sum;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<int> YieldOuter(int value) => await YieldInner(value) + 1;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<int> YieldInner(int value)
+    {
+        await Task.Yield();
+        return value & 3;
+    }
+
+    // An exception thrown ten methods down and caught at the top, thrown at once or after the innermost method
+    // suspends: each method between rethrows it at its await.
+    private static async Task<long> ExceptionChains(int count, bool suspend)
+    {
+        long sum = 0;
+        for (var index = 0; index < count; index++)
+        {
+            try
+            {
+                sum += await Throwing(10, index, suspend);
+            }
+            catch (InvalidOperationException)
+            {
+                sum += index & 7;
+            }
+        }
+
+        return sum;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<int> Throwing(int depth, int value, bool suspend)
+    {
+        if (depth == 0)
+        {
+            if (suspend) await Task.Yield();
+            throw new InvalidOperationException();
+        }
+
+        return await Throwing(depth - 1, value, suspend) + 1;
     }
 
     // A reusable IValueTaskSource, completed by a queued work item: the suspending ValueTask path without a Task.

@@ -298,12 +298,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         var layout = Path.Combine(assets.Directory, "runtime-layout.json");
         var component = Path.Combine(assets.Directory, "streams.component.wasm");
         File.WriteAllBytes(application, compilation.ApplicationModule);
-        File.WriteAllText(layout, JsonSerializer.Serialize(new
-        {
-            schemaVersion = 2,
-            target = "wasm32",
-            applicationStaticDataEnd = compilation.StaticDataEnd,
-        }));
+        RuntimeLayoutFiles.Write(layout, compilation);
         await RunComponentTool("bash", assets.Root,
             Path.Combine(assets.Root, "eng", "build-netwasm-runtime.sh"),
             "--runtime-layout", layout, "--output", runtime,
@@ -440,12 +435,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         var layout = Path.Combine(assets.Directory, "runtime-layout.json");
         var component = Path.Combine(assets.Directory, "input.component.wasm");
         File.WriteAllBytes(application, compilation.ApplicationModule);
-        File.WriteAllText(layout, JsonSerializer.Serialize(new
-        {
-            schemaVersion = 2,
-            target = "wasm32",
-            applicationStaticDataEnd = compilation.StaticDataEnd,
-        }));
+        RuntimeLayoutFiles.Write(layout, compilation);
         await RunComponentTool("bash", assets.Root,
             Path.Combine(assets.Root, "eng", "build-netwasm-runtime.sh"),
             "--runtime-layout", layout, "--output", runtime,
@@ -2892,12 +2882,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         var layout = Path.Combine(assets.Directory, "runtime-layout.json");
         var component = Path.Combine(assets.Directory, "files.component.wasm");
         File.WriteAllBytes(application, compilation.ApplicationModule);
-        File.WriteAllText(layout, JsonSerializer.Serialize(new
-        {
-            schemaVersion = 2,
-            target = "wasm32",
-            applicationStaticDataEnd = compilation.StaticDataEnd,
-        }));
+        RuntimeLayoutFiles.Write(layout, compilation);
         await RunComponentTool("bash", assets.Root,
             Path.Combine(assets.Root, "eng", "build-netwasm-runtime.sh"),
             "--runtime-layout", layout, "--output", runtime,
@@ -3023,12 +3008,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         var layout = Path.Combine(assets.Directory, "runtime-layout.json");
         var component = Path.Combine(assets.Directory, "managed.component.wasm");
         File.WriteAllBytes(application, compilation.ApplicationModule);
-        File.WriteAllText(layout, JsonSerializer.Serialize(new
-        {
-            schemaVersion = 2,
-            target = "wasm32",
-            applicationStaticDataEnd = compilation.StaticDataEnd,
-        }));
+        RuntimeLayoutFiles.Write(layout, compilation);
         await RunComponentTool("bash", assets.Root,
             Path.Combine(assets.Root, "eng", "build-netwasm-runtime.sh"),
             "--runtime-layout", layout, "--output", runtime,

@@ -153,8 +153,67 @@ public sealed class EarlyCutoffDeclineTests
         }
         """;
 
+    // A generic virtual call, dispatched by receiver flow.
+    private const string Flowed = """
+        public abstract class Shape { public abstract T Echo<T>(T value); }
+        public sealed class Square : Shape { public override T Echo<T>(T value) => value; }
+        public static class EntryPoint
+        {
+            private static readonly Shape Value = new Square();
+            public static int Run(int input) => Value.Echo(input) + 1;
+        }
+        """;
+
+    // A field of a generic type nothing writes: every load of it folds to its default. Its owner has a static
+    // constructor, so a folded load still takes the field's address to run it, and a method names the field the same
+    // way whether it reads it folded or writes it.
+    private const string GenericCounter = """
+        public static class Holder<T>
+        {
+            public static int Seen;
+            public static int Count;
+            static Holder() => Seen = 1;
+        }
+        public static class EntryPoint
+        {
+            public static int Run(int input) => Read() + Touch(input) + Holder<int>.Seen;
+
+            private static int Read() => Holder<int>.Count;
+
+            private static int Touch(int value) => value + Holder<int>.Count;
+        }
+        """;
+
+    // A field of a generic type nothing writes, read by the method the edit changes. Its owner has a static
+    // constructor, so the folded load still takes the field's address to run it: the method names the field the same
+    // way folded or not, and only the fields the last compile left unwritten tell the edit apart.
+    private const string FoldedRead = """
+        public static class Holder<T>
+        {
+            public static int Seen;
+            public static int Count;
+            static Holder() => Seen = 1;
+        }
+        public static class EntryPoint
+        {
+            public static int Run(int input) => Scaled(input) + Holder<int>.Seen;
+
+            private static int Scaled(int value) => value * 2 + Holder<int>.Count;
+        }
+        """;
+
     public static TheoryData<string, string, string, string> Declines => new()
     {
+        // The edit writes the field the last compile folded every load of; a generic type's field is named without its
+        // operation, so only the fields it writes tell the edit apart.
+        { "store", GenericCounter, GenericCounter.Replace("private static int Touch(int value) => value + Holder<int>.Count;",
+            "private static int Touch(int value) { Holder<int>.Count = value; return value + 1; }", StringComparison.Ordinal),
+            "changed what it adds to the program" },
+        // The edited method, analyzed alone, keeps a load a full compile folds.
+        { "folded read", FoldedRead, FoldedRead.Replace("value * 2", "value * 3", StringComparison.Ordinal),
+            "Count, which nothing wrote in the last compile" },
+        { "flow", Flowed, Flowed.Replace("+ 1", "+ 2", StringComparison.Ordinal),
+            "[UnitCutoff]EntryPoint::0x06000005 has a call dispatched by receiver flow" },
         // The edit no longer calls a method it called.
         { "contribution", Plain, Plain.Replace("Twice(input) + 1", "input + 1", StringComparison.Ordinal),
             $"{Run} changed what it adds to the program" },

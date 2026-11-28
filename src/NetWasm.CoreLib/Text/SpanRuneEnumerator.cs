@@ -1,19 +1,64 @@
-// Ported from dotnet/runtime System.Private.CoreLib; upstream commit deae2e32bf0e018e09d64597b7c59b62b73bb3ce.
-// Licensed to the .NET Foundation under the MIT license.
-namespace System.Text;
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime deae2e32bf0e018e09d64597b7c59b62b73bb3ce src/libraries/System.Private.CoreLib/src/System/Text/SpanRuneEnumerator.cs
 
-public ref partial struct SpanRuneEnumerator
+using System;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace System.Text
 {
-    private ReadOnlySpan<char> _remaining;
-    private Rune _current;
-    internal SpanRuneEnumerator(ReadOnlySpan<char> value) { _remaining = value; _current = default; }
-    public Rune Current { get { return _current; } }
-    public SpanRuneEnumerator GetEnumerator() => this;
-    public bool MoveNext()
+    // An enumerator for retrieving System.Text.Rune instances from a ROS<char>.
+    // Methods are pattern-matched by compiler to allow using foreach pattern.
+    public ref struct SpanRuneEnumerator : IEnumerator<Rune>
     {
-        if (_remaining.IsEmpty) { _current = default; return false; }
-        var status = Rune.DecodeFromUtf16(_remaining, out _current, out var consumed);
-        if (status != System.Buffers.OperationStatus.Done) { _current = Rune.ReplacementChar; consumed = consumed == 0 ? 1 : consumed; }
-        _remaining = _remaining.Slice(consumed); return true;
+        private ReadOnlySpan<char> _remaining;
+        private Rune _current;
+
+        internal SpanRuneEnumerator(ReadOnlySpan<char> buffer)
+        {
+            _remaining = buffer;
+            _current = default;
+        }
+
+        public Rune Current => _current;
+
+        public SpanRuneEnumerator GetEnumerator() => this;
+
+        public bool MoveNext()
+        {
+            if (_remaining.IsEmpty)
+            {
+                // reached the end of the buffer
+                _current = default;
+                return false;
+            }
+
+            int scalarValue = Rune.ReadFirstRuneFromUtf16Buffer(_remaining);
+            if (scalarValue < 0)
+            {
+                // replace invalid sequences with U+FFFD
+                scalarValue = Rune.ReplacementChar.Value;
+            }
+
+            // In UTF-16 specifically, invalid sequences always have length 1, which is the same
+            // length as the replacement character U+FFFD. This means that we can always bump the
+            // next index by the current scalar's UTF-16 sequence length. This optimization is not
+            // generally applicable; for example, enumerating scalars from UTF-8 cannot utilize
+            // this same trick.
+
+            _current = Rune.UnsafeCreate((uint)scalarValue);
+            _remaining = _remaining.Slice(_current.Utf16SequenceLength);
+            return true;
+        }
+
+        /// <inheritdoc />
+        object IEnumerator.Current => Current;
+
+        /// <inheritdoc />
+        void IEnumerator.Reset() => throw new NotSupportedException();
+
+        /// <inheritdoc />
+        void IDisposable.Dispose() { }
     }
 }

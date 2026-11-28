@@ -160,6 +160,7 @@ internal sealed class DispatcherBranchTablePlanner : IDispatcherBranchTablePlann
         }
 
         uint? directDepth = null;
+        var exit = false;
         if (indices.TryGetValue(successor.Value, out var targetIndex) &&
             targetIndex < sourceIndex)
         {
@@ -167,9 +168,10 @@ internal sealed class DispatcherBranchTablePlanner : IDispatcherBranchTablePlann
             if (candidate.Block is not null || candidate.Exit!.Body.Regions.IsEmpty)
             {
                 directDepth = checked((uint)(sourceIndex - targetIndex - 1));
+                exit = candidate.Block is null;
             }
         }
-        return new DispatcherTransitionPlan(successor, directDepth);
+        return new DispatcherTransitionPlan(successor, directDepth) { LeavesDispatcher = exit };
     }
 
     private sealed record Candidate(

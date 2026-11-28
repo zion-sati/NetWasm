@@ -10,6 +10,7 @@ using System.Linq;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.Analysis.ManagedCallSites;
 using NetWasm.Compiler.Analysis.Delegates;
@@ -20,7 +21,8 @@ namespace NetWasm.Compiler.Analysis.Reachability;
 internal sealed class ReachabilityDerivedRootExpander(
     IRuntimeReachabilityExpander runtimeRoots,
     IMemberReachabilityExpander memberRoots,
-    ITypeFactsReachabilityExpander typeFactsRoots) : IReachabilityDerivedRootExpander
+    ITypeFactsReachabilityExpander typeFactsRoots,
+    IAnalysisStepRecorder steps) : IReachabilityDerivedRootExpander
 {
     private readonly IRuntimeReachabilityExpander _runtimeRoots = runtimeRoots ??
         throw new ArgumentNullException(nameof(runtimeRoots));
@@ -28,12 +30,13 @@ internal sealed class ReachabilityDerivedRootExpander(
         throw new ArgumentNullException(nameof(memberRoots));
     private readonly ITypeFactsReachabilityExpander _typeFactsRoots = typeFactsRoots ??
         throw new ArgumentNullException(nameof(typeFactsRoots));
+    private readonly IAnalysisStepRecorder _steps = steps ?? throw new ArgumentNullException(nameof(steps));
 
     public void Expand(ReachabilitySession session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        _runtimeRoots.Expand(session);
-        _memberRoots.Expand(session);
-        _typeFactsRoots.Expand(session);
+        _steps.Record("runtime roots", () => _runtimeRoots.Expand(session));
+        _steps.Record("member roots", () => _memberRoots.Expand(session));
+        _steps.Record("type fact roots", () => _typeFactsRoots.Expand(session));
     }
 }

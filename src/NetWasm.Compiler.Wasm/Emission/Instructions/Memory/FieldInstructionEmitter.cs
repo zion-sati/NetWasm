@@ -15,12 +15,11 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 
 internal sealed class FieldInstructionEmitter(
-    ITypeRepository types,
     IFieldRepository fieldRepository,
     ITargetLayout layouts,
     IInstanceFieldLayoutProvider fields,
     IValueLayoutProvider values,
-    IImplicitExceptionEmitter exceptions,
+    INullDereferenceCheckEmitter nullChecks,
     IAddressInstructionEmitter addresses,
     IAddressTakenAggregateProjectionEmitter aggregateProjections,
     IReferenceWriteBarrierEmitter writeBarrier) :
@@ -42,11 +41,43 @@ internal sealed class FieldInstructionEmitter(
 
     private void EmitLoad(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
+        // A returned local's field in its lane.
+        if (request.Context.FieldArgumentLoads.TryGetValue(request.Instruction.Offset, out var parameterField))
+        {
+            var fieldReceiver = request.Stack.Count - 1;
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)parameterField.Parameter)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+                WasmInstructionOperand.Unsigned((uint)GetStackLocal(request.Context, fieldReceiver, parameterField.Kind))));
+            request.Stack[fieldReceiver] = parameterField.Kind;
+            return;
+        }
+        if (request.Context.CallResultLanes.Loads.TryGetValue(request.Instruction.Offset, out var callLane))
+        {
+            var laneKind = callLane.Shape.Fields[callLane.Lane].Kind;
+            var laneReceiver = request.Stack.Count - 1;
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                WasmInstructionOperand.Unsigned((uint)request.Context.StructResultLocals.For(callLane.Shape)[callLane.Lane])));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+                WasmInstructionOperand.Unsigned((uint)GetStackLocal(request.Context, laneReceiver, laneKind))));
+            request.Stack[laneReceiver] = laneKind;
+            return;
+        }
+        if (request.Context.ReturnLanes is { } lanes && lanes.Loads.TryGetValue(request.Instruction.Offset, out var loaded))
+        {
+            var kind = lanes.Shape.Fields[loaded].Kind;
+            var receiver = request.Stack.Count - 1;
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                WasmInstructionOperand.Unsigned((uint)request.Context.StructResultLocals.For(lanes.Shape)[loaded])));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+                WasmInstructionOperand.Unsigned((uint)GetStackLocal(request.Context, receiver, kind))));
+            request.Stack[receiver] = kind;
+            return;
+        }
         if (aggregateProjections.TryEmit(request, code))
         {
             return;
         }
-        var (layout, fieldType, receiverType) = Resolve(request.Instruction);
+        var (layout, fieldType) = Resolve(request.Instruction);
         var slot = request.Stack.Count - 1;
         if (request.Context.TransientAggregatePromotions.Plan.Projections.TryGetValue(
                 request.Instruction.Offset,
@@ -75,7 +106,7 @@ internal sealed class FieldInstructionEmitter(
             return;
         }
         var objectLocal = GetStackLocal(request.Context, slot, request.Stack[slot]);
-        EmitNullCheckIfRequired(request, code, objectLocal, receiverType);
+        nullChecks.Emit(request, code, objectLocal, request.Stack[slot]);
         if (fieldType.StackKind == CliValueKind.ValueType)
         {
             var targetOffset = request.Context.ValueLayout.TemporaryOffsets[
@@ -213,10 +244,10 @@ internal sealed class FieldInstructionEmitter(
 
     private void EmitLoadAddress(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
-        var (layout, _, receiverType) = Resolve(request.Instruction);
+        var (layout, _) = Resolve(request.Instruction);
         var slot = request.Stack.Count - 1;
         var objectLocal = GetStackLocal(request.Context, slot, request.Stack[slot]);
-        EmitNullCheckIfRequired(request, code, objectLocal, receiverType);
+        nullChecks.Emit(request, code, objectLocal, request.Stack[slot]);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(objectLocal))));
         if (layout.Offset != 0)
         {
@@ -232,11 +263,44 @@ internal sealed class FieldInstructionEmitter(
 
     private void EmitStore(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
+        // A returned local's or an argument temporary's field into its lane, narrowed as a store to the
+        // field would be.
+        var argumentStore = request.Context.ArgumentLanes.Stores.TryGetValue(request.Instruction.Offset, out var argumentLane);
+        if (argumentStore || request.Context.ReturnLanes is { } lanes && lanes.Stores.ContainsKey(request.Instruction.Offset))
+        {
+            var shapeStored = argumentStore ? request.Context.ArgumentLanes.Locals[argumentLane.Local] : request.Context.ReturnLanes!.Shape;
+            var stored = argumentStore ? argumentLane.Lane : request.Context.ReturnLanes!.Stores[request.Instruction.Offset];
+            var laneLocal = argumentStore
+                ? request.Context.ArgumentLaneLocals[argumentLane.Local][stored]
+                : request.Context.StructResultLocals.For(shapeStored)[stored];
+            var field = shapeStored.Fields[stored];
+            var value = request.Stack.Count - 1;
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                WasmInstructionOperand.Unsigned((uint)GetStackLocal(request.Context, value, request.Stack[value]))));
+            if (field.Kind == CliValueKind.I4 && field.Size < 4)
+            {
+                // As ManagedMemoryEmitter reads the field: an enum by its storage type, a primitive by its canonical name.
+                var signed = (field.Type.StackStorageType ?? field.Type).CanonicalName is "primitive:i1" or "primitive:i2";
+                if (signed)
+                {
+                    code.Write(WasmInstruction.NoOperand(field.Size == 1 ? WasmOpcodes.I32Extend8Signed : WasmOpcodes.I32Extend16Signed));
+                }
+                else
+                {
+                    code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant,
+                        WasmInstructionOperand.Signed(field.Size == 1 ? 0xFF : 0xFFFF)));
+                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32And));
+                }
+            }
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)laneLocal)));
+            request.Stack.RemoveRange(request.Stack.Count - 2, 2);
+            return;
+        }
         if (aggregateProjections.TryEmit(request, code))
         {
             return;
         }
-        var (layout, fieldType, receiverType) = Resolve(request.Instruction);
+        var (layout, fieldType) = Resolve(request.Instruction);
         var objectSlot = request.Stack.Count - 2;
         var objectLocal = GetStackLocal(
             request.Context,
@@ -246,7 +310,7 @@ internal sealed class FieldInstructionEmitter(
             request.Context,
             objectSlot + 1,
             request.Stack[objectSlot + 1]);
-        EmitNullCheckIfRequired(request, code, objectLocal, receiverType);
+        nullChecks.Emit(request, code, objectLocal, request.Stack[objectSlot]);
         if (fieldType.StackKind == CliValueKind.ValueType)
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(objectLocal))));
@@ -275,45 +339,14 @@ internal sealed class FieldInstructionEmitter(
         request.Stack.RemoveRange(objectSlot, 2);
     }
 
-    private (FieldLayout Layout, CliTypeIdentity FieldType, CliValueKind ReceiverType)
-        Resolve(CilInstruction instruction)
+    private (FieldLayout Layout, CliTypeIdentity FieldType) Resolve(CilInstruction instruction)
     {
         if (instruction.Operand is CilOperand.FieldInstance instance)
         {
-            return (
-                fields.GetFieldLayout(instance.Value),
-                instance.Value.FieldType,
-                instance.Value.DeclaringType.IsValueType
-                    ? CliValueKind.ManagedAddress
-                    : CliValueKind.ManagedReference);
+            return (fields.GetFieldLayout(instance.Value), instance.Value.FieldType);
         }
         var fieldKey = CilOperandReader.GetEntity(instruction);
-        var field = fieldRepository.GetField(fieldKey);
-        return (
-            fields.GetFieldLayout(fieldKey),
-            field.SignatureType,
-            types.GetTypeDefinition(field.DeclaringType).IsValueType
-                ? CliValueKind.ManagedAddress
-                : CliValueKind.ManagedReference);
-    }
-
-    // An object reference is checked unless analysis proved it non-null.
-    private void EmitNullCheckIfRequired(
-        InstructionEmissionRequest request,
-        IWasmInstructionWriter code,
-        int objectLocal,
-        CliValueKind receiverType)
-    {
-        if (receiverType != CliValueKind.ManagedReference || ReceiverNullProof.Proves(request))
-        {
-            return;
-        }
-        var throwFunction = request.Context.ManagedThrowFunction;
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(objectLocal))));
-        addresses.Emit(code, AddressOperation.EqualZero);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        exceptions.Emit(code, ManagedExceptionKind.NullReference, throwFunction);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        return (fields.GetFieldLayout(fieldKey), fieldRepository.GetField(fieldKey).SignatureType);
     }
 
     private int GetStackLocal(

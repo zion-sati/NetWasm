@@ -40,7 +40,8 @@ internal sealed class MethodSpecializerFactory(
         WasmOptimizationSettings optimizationSettings,
         IRuntimeIntrinsicRegistry intrinsics,
         PlatformWorldCapabilities world,
-        ITypeIdentityResolver typeIdentities)
+        ITypeIdentityResolver typeIdentities,
+        CompositeFormats.IToStringOnlyTypeClassifier toStringOnlyTypes)
     {
         var constrainedTargets = new ConstrainedCallTargetResolver(
             types,
@@ -58,6 +59,31 @@ internal sealed class MethodSpecializerFactory(
             new FeatureSwitchBodyStubRewriter(featureSwitches),
             // Then a field instruction naming a static field takes its static form, which every later rule expects.
             new StaticFieldInstanceAccessRewriter(fields),
+            // A string.Format of a constant format calls its typed form with the arguments it boxed, before coercion
+            // converts each one the call now passes as it was to its parameter's type.
+            new CompositeFormats.ConstantCompositeFormatRewriter(
+                new CompositeFormats.CompositeFormatCallResolver(calledMethods, calleeBodies),
+                toStringOnlyTypes,
+                new NullableTypeResolver(),
+                types,
+                methods,
+                methodInstances,
+                symbols,
+                _graphBuilders.Create(),
+                _stackValidators.Create(typeRepository, fields, methods),
+                new StackSlotOriginAnalyzer(calledMethods),
+                new StaticReferenceTypeAnalyzer(calledMethods, fields)),
+            // An interpolated hole that formats a primitive integer as hexadecimal with a constant format, on a handler
+            // without a custom formatter, writes its digits without Number's parser of item formats.
+            new CompositeFormats.InterpolatedHexHoleRewriter(
+                calledMethods,
+                types,
+                methods,
+                methodInstances,
+                symbols,
+                _graphBuilders.Create(),
+                _stackValidators.Create(typeRepository, fields, methods),
+                new StackSlotOriginAnalyzer(calledMethods)),
             // First of the rest, so every later rule sees an argument or store of the kind declared.
             new ImplicitCoercionRewriter(_graphBuilders.Create(), _stackValidators.Create(typeRepository, fields, methods)),
             // Second, so every later rule meets each leave on an empty stack, exiting a block.
@@ -93,6 +119,7 @@ internal sealed class MethodSpecializerFactory(
             new ExecutingAssemblyCallRewriter(calledMethods, typeDefinitions, methods, methodInstances, symbols,
                 typeIdentities),
             new PlatformWorldCallRewriter(calledMethods, symbols, world),
+            new HardwareIntrinsicSupportCallRewriter(calledMethods, symbols),
             new FeatureSwitchCallRewriter(_graphBuilders.Create(), calledMethods, effectFreeLoads, featureSwitches),
             new RuntimeConfigurationRewriter(symbols, world.RuntimeProperties),
             new PlatformServices.PlatformServiceBindingRewriter(calledMethods, symbols, world),
@@ -127,16 +154,14 @@ internal sealed class MethodSpecializerFactory(
                 relationships,
                 constrainedTargets,
                 stackConsumers,
+                calleeBodies,
                 optimizationSettings.Devirtualization == DevirtualizationPolicy.ExactType),
             new EnumEqualsCallRewriter(typeDefinitions, calledMethods, symbols,
                 optimizationSettings.AllocationElimination != AllocationEliminationPolicy.Disabled),
             new BoxedReceiverCallRewriter(
-                typeDefinitions,
                 methods,
-                calledMethods,
                 new NullableTypeResolver(),
                 relationships,
-                constrainedTargets,
                 stackEffects),
             new ConstrainedCallRewriter(
                 types,
@@ -144,7 +169,8 @@ internal sealed class MethodSpecializerFactory(
                 methods,
                 methodInstances,
                 symbols,
-                constrainedTargets),
+                constrainedTargets,
+                intrinsics),
             new ClosedTypeComparisonRewriter(
                 _graphBuilders.Create(),
                 calledMethods,
@@ -153,6 +179,7 @@ internal sealed class MethodSpecializerFactory(
             new ExactObjectTypeRewriter(_graphBuilders.Create(), calledMethods, fields, typeDefinitions,
                 new NullableTypeResolver()),
             new ConstantTypeMaterializationRewriter(_graphBuilders.Create()),
+            new ReferenceTypeBoxRemover(typeDefinitions),
             new BoxedNullComparisonRewriter(_graphBuilders.Create(), new NullableTypeResolver()),
             new BoxedTypeTestRewriter(_graphBuilders.Create(), new NullableTypeResolver(), relationships),
             new NonReturningCallRewriter(calledMethods, calleeBodies, intrinsics),

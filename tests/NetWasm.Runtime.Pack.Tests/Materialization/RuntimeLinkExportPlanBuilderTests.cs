@@ -170,18 +170,22 @@ public sealed class RuntimeLinkExportPlanBuilderTests
         Assert.Contains("--export=gc_collect_young", young.Arguments);
         Assert.DoesNotContain("--export=gc_object_generation", young.Arguments);
 
-        var legacy = builder.Build(new(manifestExports, []));
-        Assert.Contains("--export=gc_object_generation", legacy.Arguments);
-        Assert.Contains("--export=gc_collect_young", legacy.Arguments);
-        Assert.Contains("--export=record_reference_write", legacy.Arguments);
-        Assert.Contains("--export=record_reference_writes", legacy.Arguments);
-        Assert.Contains("--export=ephemeron_handle_new", legacy.Arguments);
-        Assert.Contains("--export=command_exception_capture", legacy.Arguments);
-        Assert.Contains("--export=allocate_finalizable", legacy.Arguments);
-        Assert.Contains("--export=array_set_value", legacy.Arguments);
-        Assert.Contains("--export=object_clone", legacy.Arguments);
-        Assert.Contains("--export=random_seed", legacy.Arguments);
-        Assert.Contains("--export=allocate_uninitialized_value_array", legacy.Arguments);
+        // Every feature, as the runtime pack's complete runtime lists them.
+        var everything = builder.Build(new(manifestExports, [])
+        {
+            RuntimeFeatures = [.. NetWasm.Compiler.Core.NetWasmRuntimeFeatureIds.All],
+        });
+        Assert.Contains("--export=gc_object_generation", everything.Arguments);
+        Assert.Contains("--export=gc_collect_young", everything.Arguments);
+        Assert.Contains("--export=record_reference_write", everything.Arguments);
+        Assert.Contains("--export=record_reference_writes", everything.Arguments);
+        Assert.Contains("--export=ephemeron_handle_new", everything.Arguments);
+        Assert.Contains("--export=command_exception_capture", everything.Arguments);
+        Assert.Contains("--export=allocate_finalizable", everything.Arguments);
+        Assert.Contains("--export=array_set_value", everything.Arguments);
+        Assert.Contains("--export=object_clone", everything.Arguments);
+        Assert.Contains("--export=random_seed", everything.Arguments);
+        Assert.Contains("--export=allocate_uninitialized_value_array", everything.Arguments);
     }
 
     [Fact]

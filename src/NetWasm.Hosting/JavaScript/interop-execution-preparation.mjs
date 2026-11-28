@@ -25,6 +25,8 @@ export function prepareInteropExecution(request = {}) {
   const readers = Object.freeze({
     readInstance() { return readDeferred(state, "instance"); },
     readMemory() { return readDeferred(state, "memory"); },
+    // Whether the program has ended: work for it after that (a callback JavaScript collects later) has nothing to do.
+    isClosed() { return state.phase === "closing" || state.phase === "closed"; },
   });
   const imports = request.createImports(readers);
   assertPlainDataObject(imports, "interop preparation imports");

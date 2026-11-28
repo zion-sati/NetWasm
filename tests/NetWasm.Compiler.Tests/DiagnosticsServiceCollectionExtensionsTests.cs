@@ -51,8 +51,9 @@ public sealed class DiagnosticsServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
         var reporter = provider.GetRequiredService<ICompilerProgressReporter>();
 
-        Assert.IsType<MemoryReportingProgressReporter>(reporter);
+        Assert.IsType<MemoryReleasingProgressReporter>(reporter);
         Assert.IsType<ProcessCompilerMemoryReader>(provider.GetRequiredService<ICompilerMemoryReader>());
+        Assert.IsType<CollectingCompilerMemoryReleaser>(provider.GetRequiredService<ICompilerMemoryReleaser>());
     }
 
 }

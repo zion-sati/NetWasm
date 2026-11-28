@@ -80,7 +80,7 @@ public sealed class ConditionalBranchToFallthroughTests
     public void TheLabeledStructurerHasAnIfWithEmptyArms(CilOperation operation)
     {
         var body = Assert.IsType<StructuredSequenceDraft>(
-            new ReducibleControlFlowStructurer(new CilConditionalBranchClassifier()).Structure(Validate(InLoop(operation))));
+            new ReducibleControlFlowStructurer(new CilConditionalBranchClassifier(), new ElseIfChainPolicy(2)).Structure(Validate(InLoop(operation))));
         var conditionals = DraftDescendants(body).OfType<StructuredIfDraft>()
             .Where(conditional => conditional.ConditionBlock.Terminator.Operation == operation &&
                 conditional.ConditionBlock.StartOffset != 2)

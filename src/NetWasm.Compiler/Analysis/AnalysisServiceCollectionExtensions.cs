@@ -11,6 +11,7 @@ using NetWasm.Compiler.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.Analysis.ManagedCallSites;
 using NetWasm.Compiler.Analysis.Delegates;
 using NetWasm.Compiler.Analysis.Attributes;
+using NetWasm.Compiler.Diagnostics;
 
 namespace NetWasm.Compiler.Analysis;
 
@@ -38,6 +39,7 @@ internal static class AnalysisServiceCollectionExtensions
         services.AddSingleton<Arrays.IRepeatedArrayAccessEliminatorFactory, Arrays.RepeatedArrayAccessEliminatorFactory>();
         services.AddSingleton<NullChecks.IConstructedObjectNullCheckEliminatorFactory,
             NullChecks.ConstructedObjectNullCheckEliminatorFactory>();
+        services.AddSingleton<NullChecks.IByRefNullCheckEliminatorFactory, NullChecks.ByRefNullCheckEliminatorFactory>();
         services.AddSingleton<IIntegerCheckEliminatorFactory, IntegerCheckEliminatorFactory>();
         services.AddSingleton<IManagedMethodOptimizerFactory,
             ManagedMethodOptimizerFactory>();
@@ -47,6 +49,8 @@ internal static class AnalysisServiceCollectionExtensions
             DispatchTargetResolverFactory>();
         services.AddSingleton<ITypeRelationshipClassifierFactory,
             TypeRelationshipClassifierFactory>();
+        services.AddSingleton<IUnrememberedTypeRelationshipClassifierFactory,
+            UnrememberedTypeRelationshipClassifierFactory>();
         services.AddSingleton<ITypeRelationshipKeyResolverFactory,
             TypeRelationshipKeyResolverFactory>();
         services.AddSingleton<IDispatchSiteKeyBuilder, DispatchSiteKeyBuilder>();
@@ -82,6 +86,7 @@ internal static class AnalysisServiceCollectionExtensions
         services.AddSingleton<IReachableMethodBatchObserver, LoggingReachableMethodBatchObserver>();
         services.AddSingleton<IReachabilityClosureObserver, LoggingReachabilityClosureObserver>();
         services.AddSingleton<IReachabilityProgressObserver, ReachabilityProgressReporter>();
+        services.AddSingleton<IAnalysisStepRecorder, LoggingAnalysisStepRecorder>();
         services.AddSingleton<IWholeProgramAnalyzerFactory, WholeProgramAnalyzerFactory>();
         services.AddSingleton<IStandaloneMethodAnalyzerFactory, StandaloneMethodAnalyzerFactory>();
         return services;

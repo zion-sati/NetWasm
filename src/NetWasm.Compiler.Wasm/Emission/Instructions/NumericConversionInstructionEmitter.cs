@@ -65,7 +65,8 @@ internal sealed class NumericConversionInstructionEmitter(
         {
             _nativeIntegerConversions.Emit(code, source, unsigned);
         }
-        else if (source == CliValueKind.NativeInt &&
+        // An address converts as the native int it is (ECMA-335 Table III.8: conv.i8 and conv.u8 stop its tracking).
+        else if (source is CliValueKind.NativeInt or CliValueKind.ManagedAddress &&
                  destination is CliValueKind.I4 or CliValueKind.I8)
         {
             EmitFromNativeInt(code, destination, unsigned);

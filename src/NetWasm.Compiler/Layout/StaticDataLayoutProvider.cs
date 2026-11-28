@@ -23,6 +23,8 @@ internal sealed class StaticDataLayoutProvider(
     public int TypeObjectCacheAddress => _snapshot.StaticData.TypeObjectCacheAddress;
     public int TypeObjectCount => _snapshot.StaticData.TypeObjectCount;
     public int TypeObjectSize => _snapshot.StaticData.TypeObjectSize;
+    public int SharedArrayTargetsAddress => _snapshot.StaticData.SharedArrayTargetsAddress;
+    public int SharedArrayTargetCount => _snapshot.StaticData.SharedArrayTargetCount;
 
     public IEntryLookup<string, int> TypeObjectAddresses { get; } = Lookups.Of(snapshot.StaticData.TypeObjects);
 

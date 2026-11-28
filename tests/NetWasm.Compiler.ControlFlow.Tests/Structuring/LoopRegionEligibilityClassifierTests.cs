@@ -269,7 +269,7 @@ public sealed class LoopRegionEligibilityClassifierTests
         var domains = additionalDomains.IsDefault
             ? ImmutableArray.Create(domain)
             : [domain, .. additionalDomains];
-        return new(graph, naturalLoop, region, domain, domains);
+        return new(graph, naturalLoop, region, domain, new ControlFlowDomains(domains));
     }
 
     private static ImmutableDictionary<int, ImmutableArray<int>>

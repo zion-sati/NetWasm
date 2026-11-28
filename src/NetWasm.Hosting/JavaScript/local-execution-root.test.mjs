@@ -52,7 +52,10 @@ const generatedComponent = encoder.encode(`
 export function instantiate() { return { command: { run: () => 41 } }; }
 `);
 const runtimeLayout = encoder.encode(JSON.stringify({
-  schemaVersion: 2,
+  schemaVersion: 3,
+  runtimeFeatures: [],
+  nativeImports: [],
+  importModules: [],
   target: "wasm32",
   applicationStaticDataEnd: 64,
   managedExecutableEntryPoint: {

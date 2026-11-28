@@ -105,6 +105,14 @@ internal sealed class RootMapInvariantValidator(
             }
             ValidateSources(safepoint.Roots, "ordinary");
             ValidateSources(safepoint.ConstructorCallRoots, "constructor");
+            ValidateSources(safepoint.Deferrable, "deferrable");
+            if (safepoint.Deferrable.Any(source => !safepoint.Roots.Contains(source)))
+            {
+                throw exceptions.Create(
+                    "deferrable roots are not ordinary live roots",
+                    displayName,
+                    safepoint.IlOffset);
+            }
             if (!safepoint.ConstructorCallRoots.IsEmpty &&
                 safepoint.Roots.Any(source =>
                     !safepoint.ConstructorCallRoots.Contains(source)))

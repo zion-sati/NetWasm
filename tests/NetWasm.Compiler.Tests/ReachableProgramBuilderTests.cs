@@ -17,6 +17,8 @@ namespace NetWasm.Compiler.Tests;
 public sealed class ReachableProgramBuilderTests
 {
     private static readonly ObjectDispatchSharing SizeSharing = new(ObjectDispatchPolicy.Shared);
+    private static readonly DispatchSiteTargetSelector SiteTargets =
+        new(new TestTypeRelationshipClassifier(), UnboundedTypeRelationshipKeys.Instance);
 
     [Fact]
     public void BuilderMaterializesAnEmptyReachabilitySnapshot()
@@ -31,11 +33,14 @@ public sealed class ReachableProgramBuilderTests
             1);
         var snapshot = ReachabilityLedgerSnapshot.From(
             new ReachabilityLedgerFactory().Create());
+        var steps = new RecordingAnalysisSteps();
         var builder = new ReachableProgramBuilder(
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
             new EmptyDelegateBindingPlanner(),
-            SizeSharing);
+            SizeSharing,
+            SiteTargets,
+            steps);
 
         var program = builder.Build(
             entry,
@@ -44,6 +49,10 @@ public sealed class ReachableProgramBuilderTests
             new NoDelegateTypeRecognizer(),
             new EmptyTypeTestPlanner());
 
+        Assert.Equal(
+            ["dispatch call sites", "type test sites", "allocation capabilities", "by-ref effects", "root maps",
+                "delegate bindings", "program model"],
+            steps.Steps);
         Assert.Same(entry, program.EntryPoint);
         Assert.Empty(program.Methods);
         Assert.Empty(program.DispatchCallSites);
@@ -75,7 +84,10 @@ public sealed class ReachableProgramBuilderTests
         var only = Finalizer(separate);
         ledger.Finalizers[separate] = only;
         var builder = new ReachableProgramBuilder(
-            new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(), new EmptyDelegateBindingPlanner(), SizeSharing);
+            new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(), new EmptyDelegateBindingPlanner(),
+            SizeSharing,
+            SiteTargets,
+            UnrecordedAnalysisSteps.Instance);
 
         var program = builder.Build(entry, [], ReachabilityLedgerSnapshot.From(ledger), new NoDelegateTypeRecognizer(),
             new EmptyTypeTestPlanner());
@@ -104,7 +116,9 @@ public sealed class ReachableProgramBuilderTests
             new EmptyAllocationAnalyzer(),
             analyzer,
             new EmptyDelegateBindingPlanner(),
-            SizeSharing);
+            SizeSharing,
+            SiteTargets,
+            UnrecordedAnalysisSteps.Instance);
 
         var program = builder.Build(
             entry,
@@ -159,7 +173,9 @@ public sealed class ReachableProgramBuilderTests
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
             new EmptyDelegateBindingPlanner(),
-            SizeSharing).Build(
+            SizeSharing,
+            SiteTargets,
+            UnrecordedAnalysisSteps.Instance).Build(
                 entry,
                 [],
                 snapshot,
@@ -193,7 +209,9 @@ public sealed class ReachableProgramBuilderTests
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
             new EmptyDelegateBindingPlanner(),
-            SizeSharing);
+            SizeSharing,
+            SiteTargets,
+            UnrecordedAnalysisSteps.Instance);
 
         var program = builder.Build(entry, [], snapshot,
             new NoDelegateTypeRecognizer(), new EmptyTypeTestPlanner());
@@ -236,7 +254,9 @@ public sealed class ReachableProgramBuilderTests
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
             new EmptyDelegateBindingPlanner(),
-            SizeSharing);
+            SizeSharing,
+            SiteTargets,
+            UnrecordedAnalysisSteps.Instance);
 
         var program = builder.Build(
             entry,
@@ -324,7 +344,9 @@ public sealed class ReachableProgramBuilderTests
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
             planner,
-            SizeSharing);
+            SizeSharing,
+            SiteTargets,
+            UnrecordedAnalysisSteps.Instance);
 
         var program = builder.Build(
             targetDefinition,
@@ -367,7 +389,10 @@ public sealed class ReachableProgramBuilderTests
         }
         var planner = new RecordingDelegateBindingPlanner([]);
 
-        _ = new ReachableProgramBuilder(new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(), planner, SizeSharing).Build(
+        _ = new ReachableProgramBuilder(new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(), planner,
+            SizeSharing,
+            SiteTargets,
+            UnrecordedAnalysisSteps.Instance).Build(
             invokeDefinition, [], ReachabilityLedgerSnapshot.From(ledger), new RecognizingDelegateType(delegateType),
             new EmptyTypeTestPlanner());
 
@@ -448,7 +473,9 @@ public sealed class ReachableProgramBuilderTests
             new EmptyAllocationAnalyzer(),
             new EmptyByRefEffectAnalyzer(),
             new EmptyDelegateBindingPlanner(),
-            SizeSharing).Build(
+            SizeSharing,
+            SiteTargets,
+            UnrecordedAnalysisSteps.Instance).Build(
                 entry,
                 [],
                 ReachabilityLedgerSnapshot.From(ledger),
@@ -471,6 +498,62 @@ public sealed class ReachableProgramBuilderTests
         Assert.Equal(alpha, program.DelegateTypes[0]);
         Assert.Equal(zulu, program.DelegateTypes[1]);
         Assert.Empty(Assert.Single(program.DispatchCallSites).Value.Targets);
+    }
+
+    // A site's targets are those of its slot use (its method and operation) that its receiver bound admits; the sites
+    // of one slot use and bound share one array.
+    [Fact]
+    public void ASiteTakesTheTargetsOfItsSlotUseThatItsBoundAdmits()
+    {
+        var assembly = new AssemblyIdentity("Tests");
+        CliTypeIdentity Type(string name) => CliTypeIdentity.Named(assembly, "Tests", name, isValueType: false);
+        var contract = Type("IContract");
+        var bound = Type("IBound");
+        var admitted = Type("Admitted");
+        var other = Type("Other");
+        var definition = new MethodDefinitionModel(
+            new EntityKey(assembly, 1), new EntityKey(assembly, 2), "Run", false,
+            MethodSignatureModel.Create(CliValueKind.Void), 0)
+        {
+            IsVirtual = true,
+        };
+        var method = new MethodInstanceModel(definition, contract, [], definition.Signature);
+        var ledger = new ReachabilityLedgerFactory().Create();
+        foreach (var (key, offset, receiverBound) in new[]
+            { ("a", 1, (CliTypeIdentity?)null), ("b", 2, null), ("c", 3, bound), ("d", 4, bound) })
+        {
+            ledger.DispatchDeclarations.Add(key,
+                new DispatchDeclaration("Tests.Caller::Run", offset, method, CilOperation.CallVirtual, receiverBound));
+        }
+        ledger.DispatchTargets.Add(
+            new DispatchSlot(CilOperation.CallVirtual, method.CanonicalName),
+            new(StringComparer.Ordinal)
+            {
+                [other.CanonicalName] = new DispatchTargetModel(other, method),
+                [admitted.CanonicalName] = new DispatchTargetModel(admitted, method),
+            });
+        var selector = new DispatchSiteTargetSelector(
+            new AdmittingRelationshipClassifier(admitted, bound), UnboundedTypeRelationshipKeys.Instance);
+
+        var sites = new ReachableProgramBuilder(new EmptyAllocationAnalyzer(), new EmptyByRefEffectAnalyzer(),
+            new EmptyDelegateBindingPlanner(), SizeSharing, selector, UnrecordedAnalysisSteps.Instance).Build(
+                null, [], ReachabilityLedgerSnapshot.From(ledger), new NoDelegateTypeRecognizer(),
+                new EmptyTypeTestPlanner())
+            .DispatchCallSites;
+
+        Assert.Equal([admitted, other], sites["a"].Targets.Select(target => target.ReceiverType));
+        Assert.Equal([admitted], sites["c"].Targets.Select(target => target.ReceiverType));
+        Assert.True(sites["a"].Targets == sites["b"].Targets);
+        Assert.True(sites["c"].Targets == sites["d"].Targets);
+    }
+
+    private sealed class AdmittingRelationshipClassifier(CliTypeIdentity admitted, CliTypeIdentity bound)
+        : ITypeRelationshipClassifier
+    {
+        public TypeRelationship Classify(CliTypeIdentity candidate, CliTypeIdentity target) =>
+            new(candidate == admitted && target == bound
+                ? TypeRelationshipCharacteristics.Hierarchy
+                : TypeRelationshipCharacteristics.None);
     }
 
     private sealed class EmptyAllocationAnalyzer : IAllocationCapabilityAnalyzer

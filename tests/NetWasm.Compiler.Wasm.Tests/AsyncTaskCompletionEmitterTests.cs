@@ -106,6 +106,38 @@ public sealed class AsyncTaskCompletionEmitterTests
         Assert.Equal(0, writers.Calls);
     }
 
+    // A JavaScript export's completion gives the fault's exception to the export failure offer in its catch, with the
+    // exception rooted, then reads it back from the root; the code before the catch is the same with or without it.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void TheExportFailureOfferRunsOnlyInTheCatchWithTheRootedException(WasmTarget target)
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var imports = WasmRuntimeImports.CreateCatalog();
+        List<WasmInstruction> Emit(AsyncTaskCompletionPlan plan)
+        {
+            var writers = new RecordingWriters();
+            new AsyncTaskCompletionEmitter(layouts, layouts, imports, new RecordingExceptionState(), writers)
+                .Emit(Binding(), plan);
+            return writers.Instructions.ToInstructions().ToList();
+        }
+        var plain = Emit(new(900, 901));
+        var offered = Emit(new(900, 901, 902));
+        var endCatch = (uint)imports.Resolve(RuntimeImportSymbol.EndCatch);
+        var handler = plain.FindIndex(i => i.Opcode == WasmOpcodes.Call && i.Operand.UnsignedValue == endCatch);
+
+        Assert.True(handler > 0);
+        Assert.Equal(plain.Take(handler), offered.Take(handler));
+        var offer = offered.FindIndex(i => i.Opcode == WasmOpcodes.Call && i.Operand.UnsignedValue == 902);
+        var capture = offered.FindIndex(i => i.Opcode == WasmOpcodes.Call && i.Operand.UnsignedValue == 901);
+        Assert.True(offer > handler && offer < capture);
+        Assert.Equal((WasmOpcodes.LocalGet, 2u), (offered[offer - 1].Opcode, offered[offer - 1].Operand.UnsignedValue));
+        Assert.Equal((WasmOpcodes.LocalGet, 3u), (offered[offer + 1].Opcode, offered[offer + 1].Operand.UnsignedValue));
+        Assert.Equal((WasmOpcodes.LocalSet, 2u), (offered[offer + 3].Opcode, offered[offer + 3].Operand.UnsignedValue));
+        Assert.DoesNotContain(plain, i => i.Opcode == WasmOpcodes.Call && i.Operand.UnsignedValue == 902);
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]

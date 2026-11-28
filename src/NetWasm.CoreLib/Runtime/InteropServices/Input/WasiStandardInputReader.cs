@@ -20,10 +20,10 @@ internal sealed class WasiStandardInputReader : IStandardInputReader
     private const uint Dropped = 1;
 
     private readonly IWasiStandardInputOpenInvoker _open;
-    private readonly IWasiByteStreamReadInvoker _read;
-    private readonly IWasiByteStreamReadableDropInvoker _dropReadable;
-    private readonly IWasiResultFutureReadInvoker _readResult;
-    private readonly IWasiResultFutureDropInvoker _dropResult;
+    private readonly IWasiByteStreamReadInvoker<Streams.StandardInputStreamKind> _read;
+    private readonly IWasiByteStreamReadableDropInvoker<Streams.StandardInputStreamKind> _dropReadable;
+    private readonly IWasiResultFutureReadInvoker<Streams.StandardInputStreamKind> _readResult;
+    private readonly IWasiResultFutureDropInvoker<Streams.StandardInputStreamKind> _dropResult;
     private readonly IWaitableEventAwaiter _awaiter;
     private readonly ICanonicalBufferAllocator _allocator;
     private WasiReadableStreamEnds _ends;
@@ -33,10 +33,10 @@ internal sealed class WasiStandardInputReader : IStandardInputReader
 
     internal WasiStandardInputReader(
         IWasiStandardInputOpenInvoker open,
-        IWasiByteStreamReadInvoker read,
-        IWasiByteStreamReadableDropInvoker dropReadable,
-        IWasiResultFutureReadInvoker readResult,
-        IWasiResultFutureDropInvoker dropResult,
+        IWasiByteStreamReadInvoker<Streams.StandardInputStreamKind> read,
+        IWasiByteStreamReadableDropInvoker<Streams.StandardInputStreamKind> dropReadable,
+        IWasiResultFutureReadInvoker<Streams.StandardInputStreamKind> readResult,
+        IWasiResultFutureDropInvoker<Streams.StandardInputStreamKind> dropResult,
         IWaitableEventAwaiter awaiter,
         ICanonicalBufferAllocator allocator)
     {

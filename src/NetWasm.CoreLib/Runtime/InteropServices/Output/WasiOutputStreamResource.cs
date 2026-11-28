@@ -6,20 +6,24 @@ namespace System.Runtime.InteropServices.Output;
 // One standard stream's write-via-stream, opened on first write and closed once.
 // The opened streams form a list that EndOpened closes when the process exits,
 // as an operating system closes a process's descriptors and flushes their output.
-internal sealed class WasiOutputStreamResource : IDisposable
+// TStream names the stream, so each stream keeps its own list. Close is not
+// IDisposable.Dispose: at O0 an interface call dispatches to every allocated
+// implementation, so the program's own Dispose calls must not reach a stream's
+// imports.
+internal sealed class WasiOutputStreamResource<TStream>
 {
-    private static WasiOutputStreamResource? s_opened;
+    private static WasiOutputStreamResource<TStream>? s_opened;
 
-    private readonly IWasiOutputStreamOpener _opener;
-    private readonly IWasiOutputStreamCloser _closer;
+    private readonly IWasiOutputStreamOpener<TStream> _opener;
+    private readonly IWasiOutputStreamCloser<TStream> _closer;
     private WasiOutputStreamEnds _ends;
     private bool _opened;
-    private bool _disposed;
-    private WasiOutputStreamResource? _nextOpened;
+    private bool _closed;
+    private WasiOutputStreamResource<TStream>? _nextOpened;
 
     internal WasiOutputStreamResource(
-        IWasiOutputStreamOpener opener,
-        IWasiOutputStreamCloser closer)
+        IWasiOutputStreamOpener<TStream> opener,
+        IWasiOutputStreamCloser<TStream> closer)
     {
         _opener = opener ?? throw new ArgumentNullException();
         _closer = closer ?? throw new ArgumentNullException();
@@ -29,7 +33,7 @@ internal sealed class WasiOutputStreamResource : IDisposable
     {
         get
         {
-            if (_disposed)
+            if (_closed)
             {
                 throw new ObjectDisposedException(null);
             }
@@ -46,14 +50,14 @@ internal sealed class WasiOutputStreamResource : IDisposable
         }
     }
 
-    public void Dispose()
+    internal void Close()
     {
-        if (_disposed)
+        if (_closed)
         {
             return;
         }
 
-        _disposed = true;
+        _closed = true;
         if (_opened)
         {
             _closer.Close(_ends);
@@ -76,5 +80,5 @@ internal sealed class WasiOutputStreamResource : IDisposable
     // until the host has written everything the program wrote: a host that passes the
     // bytes on asynchronously would otherwise lose what it had accepted but not yet
     // written when the program's export returns (issue 224).
-    internal void End() => Dispose();
+    internal void End() => Close();
 }

@@ -42,7 +42,10 @@ internal sealed class DirectValueLoadSelector : IDirectValueLoadSelector
                 selected.Add(load.Offset);
             }
         }
-        if (method.ExceptionGroups.IsEmpty)
+        // A filter runs in the first pass while the call that threw is still active, so one that writes a local or
+        // argument a callee reads in place would show the callee's finally handlers the change, where the callee's own
+        // copy would not; a catch, finally or fault handler runs only once the callee has left.
+        if (!method.ExceptionGroups.Values.Any(group => group.Clauses.Any(clause => clause.FilterOffset is not null)))
         {
             SelectStackTransfers(method, selected);
         }

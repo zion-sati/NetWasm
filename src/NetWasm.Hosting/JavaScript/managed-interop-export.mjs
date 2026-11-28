@@ -32,7 +32,7 @@ const requestKeys = [
   "descriptor", "exceptionReporter", "getMemory", "handles", "instance", "target", "targetLayout",
 ];
 const optionalRequestKeys = new Set([
-  "assertAvailable", "consumeExceptionPayload", "enterExport", "observeAsyncExport", "staging",
+  "assertAvailable", "consumeExceptionPayload", "enterExport", "observeAsyncExport", "staging", "takeExportFailure",
 ]);
 
 // A host without the runtime's allocator, such as a test of other values, takes no number array. It stages
@@ -72,9 +72,10 @@ export function createManagedInteropExport(request) {
     observeAsyncExport = observeManagedAsyncExport,
     enterExport = () => () => {},
     consumeExceptionPayload,
+    takeExportFailure = () => null,
   } = request;
   if (typeof assertAvailable !== "function" || typeof observeAsyncExport !== "function"
-      || typeof enterExport !== "function") {
+      || typeof enterExport !== "function" || typeof takeExportFailure !== "function") {
     throw new TypeError("managed interop export lifetime actions are invalid");
   }
   if (request.staging !== undefined && (request.staging === null || typeof request.staging !== "object"
@@ -144,21 +145,27 @@ export function createManagedInteropExport(request) {
           : liftResult(descriptor.result, value, getMemory, handles, target, targetLayout);
       }
     } catch (cause) {
+      // A JSException holding a JavaScript error leaves the export's catch having offered that error, which is
+      // thrown in place of the managed failure, as .NET's browser runtime gives the error back.
+      const offeredOr = failure => {
+        const offered = takeExportFailure();
+        return offered === null ? failure : offered.value;
+      };
       if (cause instanceof NetWasmHostError || cause instanceof NetWasmManagedError) {
-        throw cause;
+        throw offeredOr(cause);
       }
       if (cause instanceof WebAssembly.RuntimeError) {
         const terminalEvent = exceptionReporter.consumeTerminalEvent();
         if (terminalEvent !== null) {
           instance.exports.exception_clear_active();
-          throw new NetWasmManagedError(descriptor.name, {
+          throw offeredOr(new NetWasmManagedError(descriptor.name, {
             cause,
             managedType: terminalEvent.typeId,
-          });
+          }));
         }
         throw cause;
       }
-      const managedFailure = new NetWasmManagedError(descriptor.name, { cause });
+      const managedFailure = offeredOr(new NetWasmManagedError(descriptor.name, { cause }));
       if (descriptor.asyncReturn != null) result = Promise.reject(managedFailure);
       else throw managedFailure;
     } finally {

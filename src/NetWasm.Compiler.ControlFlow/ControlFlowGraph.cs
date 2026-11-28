@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.ControlFlow;
@@ -111,6 +112,8 @@ public sealed class BlockEdgeDictionary : IReadOnlyDictionary<int, ImmutableArra
 public sealed record ControlFlowGraph
 {
     private readonly Dictionary<int, BasicBlock> _blocksByOffset;
+    private readonly Lazy<ImmutableHashSet<int>> _protectedEntries;
+    private readonly Lazy<ExceptionRegionBlocks> _regionBlocks;
 
     internal ControlFlowGraph(
         CilMethodBody methodBody,
@@ -130,6 +133,11 @@ public sealed record ControlFlowGraph
         ReachableBlocks = reachableBlocks;
         _blocksByOffset = new(blocks.Length);
         foreach (var block in blocks) _blocksByOffset.Add(block.StartOffset, block);
+        _protectedEntries = new(() => [.. methodBody.ExceptionRegions
+            .SelectMany(region => new[] { region.TryOffset, region.HandlerOffset })
+            .Where(_blocksByOffset.ContainsKey)
+            .Select(offset => _blocksByOffset[offset].Index)]);
+        _regionBlocks = new(() => new ExceptionRegionBlocks(methodBody, blocks));
     }
 
     public CilMethodBody MethodBody { get; }
@@ -140,6 +148,12 @@ public sealed record ControlFlowGraph
     public BlockEdgeDictionary ExceptionalPredecessors { get; }
     public ImmutableHashSet<int> ReachableBlocks { get; }
     public BasicBlock Entry => Blocks[0];
+
+    // The blocks a protected region or a handler starts at, found once for the passes that ask it for every loop.
+    public ImmutableHashSet<int> ProtectedEntries => _protectedEntries.Value;
+
+    // The method's exception regions against its blocks, indexed once.
+    internal ExceptionRegionBlocks RegionBlocks => _regionBlocks.Value;
 
     public BasicBlock GetBlock(int index) => Blocks[index];
     public BasicBlock GetBlockAtOffset(int offset) => _blocksByOffset[offset];

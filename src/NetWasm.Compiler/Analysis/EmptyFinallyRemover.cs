@@ -14,20 +14,23 @@ internal interface IEmptyFinallyRemover
 
 // A finally or fault handler left with nothing to run, as an inlined empty
 // Dispose leaves the one around a foreach over a struct enumerator, protects
-// nothing. Without its region a throw inside the try reaches no handler in the
-// method, so it is no point at which the method's references must be published,
-// and the planners that skip methods with exception regions consider the method.
-// A leave out of the region becomes a branch unless it still leaves another
-// one; validation requires an empty stack at a leave, so the branch moves no
-// values. The handler, which nothing enters any more, becomes nops. .NET's JIT
-// removes empty finallys the same way.
+// nothing. Nor does a catch around a protected block that cannot throw, as a
+// runtime-async method's own catch is once its body has no call (an empty async
+// method): no exception reaches it. Without its region a throw inside the try
+// reaches no handler in the method, so it is no point at which the method's
+// references must be published (a catch's exception local no longer needs a
+// root frame on every call), and the planners that skip methods with exception
+// regions consider the method. A leave out of the region becomes a branch
+// unless it still leaves another one; validation requires an empty stack at a
+// leave, so the branch moves no values. The handler, which nothing enters any
+// more, becomes nops. .NET's JIT removes empty finallys the same way.
 internal sealed class EmptyFinallyRemover(bool enabled) : IEmptyFinallyRemover
 {
     public CilMethodBody Rewrite(CilMethodBody body)
     {
         ArgumentNullException.ThrowIfNull(body);
         if (!enabled) return body;
-        var empty = body.ExceptionRegions.Where(region => IsEmpty(body, region)).ToArray();
+        var empty = body.ExceptionRegions.Where(region => IsEmpty(body, region) || CatchesNothing(body, region)).ToArray();
         if (empty.Length == 0) return body;
 
         var remaining = body.ExceptionRegions.Where(region => !empty.Contains(region)).ToArray();
@@ -59,6 +62,37 @@ internal sealed class EmptyFinallyRemover(bool enabled) : IEmptyFinallyRemover
         body.Instructions
             .Where(instruction => Contains(region.HandlerOffset, region.HandlerLength, instruction.Offset))
             .All(instruction => instruction.Operation is CilOperation.Nop or CilOperation.EndFinally);
+
+    // A catch (not a filter, whose code could run) whose protected block holds no other region and only instructions
+    // that cannot throw, followed by more of the method as an empty handler is.
+    private static bool CatchesNothing(CilMethodBody body, CilExceptionRegion region) =>
+        region.Kind == CilExceptionRegionKind.Catch &&
+        body.Instructions.Any(instruction => instruction.Offset >= region.HandlerOffset + region.HandlerLength) &&
+        !body.ExceptionRegions.Any(other =>
+            other.TryOffset != region.TryOffset && Contains(region.TryOffset, region.TryLength, other.TryOffset) ||
+            Contains(region.TryOffset, region.TryLength, other.HandlerOffset)) &&
+        body.Instructions
+            .Where(instruction => Contains(region.TryOffset, region.TryLength, instruction.Offset))
+            .All(instruction => CannotThrow(instruction.Operation));
+
+    // Instructions that raise no exception: moves between locals, arguments and the stack, constants, branches and
+    // leaves, comparisons, and integer arithmetic without overflow checks or division. A field, element or static
+    // access (which can run a type initializer), a call, an allocation and a conversion can throw.
+    private static bool CannotThrow(CilOperation operation) => operation is
+        CilOperation.Nop or CilOperation.LoadArgument or CilOperation.StoreArgument or CilOperation.LoadLocal or
+        CilOperation.StoreLocal or CilOperation.LoadInt32 or CilOperation.LoadInt64 or CilOperation.LoadFloat32 or
+        CilOperation.LoadFloat64 or CilOperation.LoadNull or CilOperation.Duplicate or CilOperation.Pop or
+        CilOperation.Add or CilOperation.Subtract or CilOperation.Multiply or CilOperation.BitwiseAnd or
+        CilOperation.BitwiseOr or CilOperation.BitwiseXor or CilOperation.ShiftLeft or CilOperation.ShiftRightSigned or
+        CilOperation.ShiftRightUnsigned or CilOperation.Negate or CilOperation.OnesComplement or
+        CilOperation.CompareEqual or CilOperation.CompareGreaterThanSigned or CilOperation.CompareGreaterThanUnsigned or
+        CilOperation.CompareLessThanSigned or CilOperation.CompareLessThanUnsigned or CilOperation.Branch or
+        CilOperation.BranchIfTrue or CilOperation.BranchIfFalse or CilOperation.BranchIfEqual or
+        CilOperation.BranchIfNotEqual or CilOperation.BranchIfGreaterThanSigned or
+        CilOperation.BranchIfGreaterThanUnsigned or CilOperation.BranchIfGreaterThanOrEqualSigned or
+        CilOperation.BranchIfGreaterThanOrEqualUnsigned or CilOperation.BranchIfLessThanSigned or
+        CilOperation.BranchIfLessThanUnsigned or CilOperation.BranchIfLessThanOrEqualSigned or
+        CilOperation.BranchIfLessThanOrEqualUnsigned or CilOperation.Leave;
 
     private static bool Leaves(CilExceptionRegion region, int source, int target) =>
         Contains(region.TryOffset, region.TryLength, source) && !Contains(region.TryOffset, region.TryLength, target) ||

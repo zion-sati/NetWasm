@@ -78,7 +78,7 @@ internal sealed class LinkedCorpusOracleRunner(
         var tracePath = compilation.Fixture.CaptureCompilerDiagnostics
             ? prefix + ".trace.txt"
             : null;
-        var stackTracePath = compilation.Fixture.EmitStackTrace
+        var stackTracePath = compilation.EmitsStackTrace
             ? prefix + ".method-symbols"
             : null;
         var compilerRequest = compilerRequests.Create(

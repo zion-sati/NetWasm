@@ -89,8 +89,14 @@
     <!-- A method that names a member NetWasm lacks compiles to a body that throws MissingMethodException or
          MissingFieldException when called, with warning NW1016; true makes NW1016 an error. -->
     <NetWasmMissingApiAsError Condition="'$(NetWasmMissingApiAsError)' == ''">false</NetWasmMissingApiAsError>
+    <!-- Qualification only: dispatch sites the receiver flow analysis follows precisely fail fast on a receiver
+         outside its set. -->
+    <NetWasmReceiverFlowAudit Condition="'$(NetWasmReceiverFlowAudit)' == ''">false</NetWasmReceiverFlowAudit>
     <NetWasmStructuredDiagnostics Condition="'$(NetWasmStructuredDiagnostics)' == '' AND '$(Configuration)' == 'Debug'">true</NetWasmStructuredDiagnostics>
     <NetWasmStructuredDiagnostics Condition="'$(NetWasmStructuredDiagnostics)' == ''">false</NetWasmStructuredDiagnostics>
+    <!-- Debug information: a Debug build keeps the module's names, for a debugger and trap backtraces. -->
+    <NetWasmDebugInfo Condition="'$(NetWasmDebugInfo)' == '' AND '$(Configuration)' == 'Debug'">true</NetWasmDebugInfo>
+    <NetWasmDebugInfo Condition="'$(NetWasmDebugInfo)' == ''">false</NetWasmDebugInfo>
     <!-- A Debug build compiles for build speed; a project or command line that sets a level keeps it. -->
     <NetWasmOptimization Condition="'$(NetWasmOptimization)' == '' AND '$(Configuration)' == 'Debug'">O0</NetWasmOptimization>
     <NetWasmOptimization Condition="'$(NetWasmOptimization)' == ''">Oz</NetWasmOptimization>
@@ -140,6 +146,7 @@
     <NetWasmManagedRangeBranchFolding Condition="'$(NetWasmManagedRangeBranchFolding)' == ''">Auto</NetWasmManagedRangeBranchFolding>
     <NetWasmManagedUnwrittenStaticFieldFolding Condition="'$(NetWasmManagedUnwrittenStaticFieldFolding)' == ''">Auto</NetWasmManagedUnwrittenStaticFieldFolding>
     <NetWasmManagedConditionalSelects Condition="'$(NetWasmManagedConditionalSelects)' == ''">Auto</NetWasmManagedConditionalSelects>
+    <NetWasmManagedByRefNullCheckElimination Condition="'$(NetWasmManagedByRefNullCheckElimination)' == ''">Auto</NetWasmManagedByRefNullCheckElimination>
     <_NetWasmCanonicalOptimization Condition="'$(_NetWasmCanonicalOptimization)' == ''">$(NetWasmOptimization)</_NetWasmCanonicalOptimization>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmIntermediateOutputPath Condition="'$(NetWasmIntermediateOutputPath)' == ''">$(IntermediateOutputPath)netwasm\$(NetWasmTarget)\</NetWasmIntermediateOutputPath>
@@ -263,6 +270,7 @@
       <!-- The collector decides what the compiler emits around stores and allocations. -->
       <_NetWasmCompilationIdentityLine Include="garbageCollector=$(NetWasmGarbageCollector)" />
       <_NetWasmCompilationIdentityLine Include="missingApiAsError=$(NetWasmMissingApiAsError)" />
+      <_NetWasmCompilationIdentityLine Include="receiverFlowAudit=$(NetWasmReceiverFlowAudit)" />
       <!-- The linked native libraries decide which P/Invokes bind and which throw DllNotFoundException. -->
       <_NetWasmCompilationIdentityLine Include="@(NativeLibrary->'nativeLibrary=%(NetWasmLibraryName)/%(WasmTarget)')" />
       <!-- Folded feature switches change compiled bodies. -->
@@ -308,6 +316,7 @@
       <_NetWasmCompilationIdentityLine Include="managedRangeBranchFolding=$(NetWasmManagedRangeBranchFolding)" />
       <_NetWasmCompilationIdentityLine Include="managedUnwrittenStaticFieldFolding=$(NetWasmManagedUnwrittenStaticFieldFolding)" />
       <_NetWasmCompilationIdentityLine Include="managedConditionalSelects=$(NetWasmManagedConditionalSelects)" />
+      <_NetWasmCompilationIdentityLine Include="managedByRefNullCheckElimination=$(NetWasmManagedByRefNullCheckElimination)" />
       <_NetWasmCompilationIdentityLine Include="pathMap=$(PathMap)" />
       <!-- Modules the project's native archives may import from: each declared
            NetWasmImportModule and each registered JavaScript module. -->
@@ -425,6 +434,7 @@
                         RuntimeHostConfigurationOptions="@(RuntimeHostConfigurationOption)"
                         LinkedNativeOnly="true"
                         MissingApiAsError="$(NetWasmMissingApiAsError)"
+                        ReceiverFlowAudit="$(NetWasmReceiverFlowAudit)"
                         WasmToolsNodePath="$(NetWasmNodePath)"
                         WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                         WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
@@ -473,6 +483,7 @@
                         ManagedRangeBranchFolding="$(NetWasmManagedRangeBranchFolding)"
                         ManagedUnwrittenStaticFieldFolding="$(NetWasmManagedUnwrittenStaticFieldFolding)"
                         ManagedConditionalSelects="$(NetWasmManagedConditionalSelects)"
+                        ManagedByRefNullCheckElimination="$(NetWasmManagedByRefNullCheckElimination)"
                         NoLogo="$(NoLogo)"
                         TypeSymbolsPath="$(NetWasmTypeSymbolsPath)"
                         MethodSymbolsPath="$(NetWasmMethodSymbolsPath)" />
@@ -526,6 +537,7 @@
       <_NetWasmPackagingIdentityLine Include="@(_NetWasmRuntimeWitInput->'runtimeWitInput=%(FullPath)')" />
       <_NetWasmPackagingIdentityLine Include="world=$(NetWasmWorld)" />
       <_NetWasmPackagingIdentityLine Include="structuredDiagnostics=$(NetWasmStructuredDiagnostics)" />
+      <_NetWasmPackagingIdentityLine Include="debugInfo=$(NetWasmDebugInfo)" />
       <_NetWasmPackagingIdentityLine Include="applicationWorld=$(NetWasmApplicationWorld)"
                                       Condition="'$(_NetWasmWorkerKind)' == 'wit'" />
       <_NetWasmPackagingIdentityLine Include="wit=$(_NetWasmComponentWitPath)" />
@@ -591,7 +603,10 @@
                              ManagedInliningHints="$(NetWasmManagedInliningHints)"
                              OptimizerConverge="$(NetWasmOptimizerConverge)"
                              OptimizerLowMemoryUnused="$(NetWasmOptimizerLowMemoryUnused)"
-                             StructuredDiagnostics="$(NetWasmStructuredDiagnostics)">
+                             StructuredDiagnostics="$(NetWasmStructuredDiagnostics)"
+                             DebugInfo="$(NetWasmDebugInfo)"
+                             MethodSymbolsPath="$(NetWasmMethodSymbolsPath)"
+                             SourceDirectory="$(MSBuildProjectDirectory)">
       <Output TaskParameter="Components" ItemName="_NetWasmBuiltComponent" />
       <Output TaskParameter="SelectedWitPath" PropertyName="NetWasmSelectedWitPath" />
       <Output TaskParameter="SelectedWorld" PropertyName="NetWasmSelectedWorld" />
@@ -628,6 +643,9 @@
                               ManagedInliningHints="$(NetWasmManagedInliningHints)"
                               OptimizerConverge="$(NetWasmOptimizerConverge)"
                               OptimizerLowMemoryUnused="$(NetWasmOptimizerLowMemoryUnused)"
+                              DebugInfo="$(NetWasmDebugInfo)"
+                              MethodSymbolsPath="$(NetWasmMethodSymbolsPath)"
+                              SourceDirectory="$(MSBuildProjectDirectory)"
                               Optimization="$(_NetWasmCanonicalOptimization)">
       <Output TaskParameter="Modules" ItemName="_NetWasmBuiltRawModule" />
     </NetWasmLinkRawModuleTask>

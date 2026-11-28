@@ -1,0 +1,35 @@
+// Copyright (c) 2026 Zion Sati and NetWasm contributors (https://github.com/zion-sati/NetWasm).
+// SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
+
+using System;
+using NetWasm.Compiler.ControlFlow;
+using NetWasm.Compiler.Core;
+
+namespace NetWasm.Compiler.Analysis.NullChecks;
+
+internal interface IByRefNullCheckEliminator
+{
+    CilMethodBody Rewrite(CilMethodBody body);
+}
+
+// Adds the reads and writes through managed addresses that cannot be null to the body's proof of non-null references,
+// which the emitters consult before writing a null check. Runs after every pass that rewrites instructions, so the
+// proof describes the emitted body.
+internal sealed class ByRefNullCheckEliminator(
+    IControlFlowGraphBuilder graphs,
+    ITypedStackValidator stacks,
+    IByRefNullCheckPlanner planner,
+    bool enabled) : IByRefNullCheckEliminator
+{
+    private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
+    private readonly ITypedStackValidator _stacks = stacks ?? throw new ArgumentNullException(nameof(stacks));
+    private readonly IByRefNullCheckPlanner _planner = planner ?? throw new ArgumentNullException(nameof(planner));
+
+    public CilMethodBody Rewrite(CilMethodBody body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        if (!enabled) return body;
+        var nonNull = _planner.Plan(_stacks.Validate(_graphs.Build(body)));
+        return nonNull.IsEmpty ? body : NonNullProof.Add(body, nonNull);
+    }
+}

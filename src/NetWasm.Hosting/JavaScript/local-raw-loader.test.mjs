@@ -18,7 +18,10 @@ export const rawAdapterMetadata = Object.freeze({ marker: 7 });
 export function createAdapter() { return Object.freeze({}); }
 `);
 const runtimeLayout = encoder.encode(JSON.stringify({
-  schemaVersion: 2,
+  schemaVersion: 3,
+  runtimeFeatures: [],
+  nativeImports: [],
+  importModules: [],
   target: "wasm32",
   applicationStaticDataEnd: 64,
   managedExecutableEntryPoint: {

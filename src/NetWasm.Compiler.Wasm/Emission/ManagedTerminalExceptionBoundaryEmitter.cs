@@ -26,7 +26,8 @@ internal sealed class ManagedTerminalExceptionBoundaryEmitter(
         int resultLocal,
         int reportFunctionIndex,
         int? raiseFunctionIndex,
-        Action emitBody)
+        Action emitBody,
+        int? exceptionObserverFunctionIndex = null)
     {
         ArgumentNullException.ThrowIfNull(code);
         ArgumentNullException.ThrowIfNull(emitBody);
@@ -68,6 +69,16 @@ internal sealed class ManagedTerminalExceptionBoundaryEmitter(
             layouts.Target,
             0,
             layouts.Target.ObjectReferenceSize);
+        if (exceptionObserverFunctionIndex is { } observer)
+        {
+            // Only the catch pays: the observer runs while the root keeps the exception, which a collection in it
+            // may move, so the exception is read back from the root afterwards.
+            WriteLocalGet(code, exceptionLocal);
+            WriteCall(code, observer);
+            WriteLocalGet(code, rootFrameLocal);
+            ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target, 0, layouts.Target.ObjectReferenceSize);
+            WriteLocalSet(code, exceptionLocal);
+        }
 
         exceptionState.Emit(
             code,

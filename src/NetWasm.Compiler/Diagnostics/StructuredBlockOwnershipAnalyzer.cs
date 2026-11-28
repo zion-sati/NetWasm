@@ -53,6 +53,13 @@ internal sealed class StructuredBlockOwnershipAnalyzer : IStructuredBlockOwnersh
                     case Structured.StructuredLabeledLoop labeled:
                         VisitSequence(labeled.Body, regionPath + ".Body");
                         break;
+                    case Structured.StructuredSwitch table:
+                        Record(table.Head, regionPath + ".Head");
+                        foreach (var block in table.Chain)
+                        {
+                            Record(block, regionPath + ".Chain");
+                        }
+                        break;
                     case Structured.StructuredIf branch:
                         Record(branch.Condition, regionPath + ".Condition");
                         VisitSequence(branch.WhenTrue, regionPath + ".WhenTrue");

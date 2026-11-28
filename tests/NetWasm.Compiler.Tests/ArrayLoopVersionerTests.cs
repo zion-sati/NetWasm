@@ -73,20 +73,21 @@ public sealed class ArrayLoopVersionerTests
         Assert.Equal(new CilOperand.BranchTarget(test), result.Instructions[shape.Entry].Operand);
         Assert.Equal(
             [
-                CilOperation.LoadLocal, CilOperation.LoadInt32, CilOperation.BranchIfLessThanSigned,
+                CilOperation.LoadLocal, CilOperation.LoadInt32, CilOperation.CompareLessThanSigned,
                 CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.LoadLocal, CilOperation.ConvertInt64Unsigned,
-                CilOperation.Add, CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.BranchIfGreaterThanSigned,
+                CilOperation.Add, CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.CompareGreaterThanSigned,
+                CilOperation.BitwiseOr, CilOperation.BranchIfTrue,
                 CilOperation.LoadInt32, CilOperation.StoreLocal, CilOperation.Branch,
             ],
-            result.Instructions[test..(test + 14)].Select(instruction => instruction.Operation));
-        Assert.Equal(new CilOperand.BranchTarget(shape.Guard), result.Instructions[test + 2].Operand);
-        Assert.Equal(new CilOperand.BranchTarget(shape.Guard), result.Instructions[test + 10].Operand);
+            result.Instructions[test..(test + 16)].Select(instruction => instruction.Operation));
+        // Either failure takes the loop as written, in one branch.
+        Assert.Equal(new CilOperand.BranchTarget(shape.Guard), result.Instructions[test + 12].Operand);
         // The copy counts from the loop's start with an index of its own.
-        Assert.Equal(new CilOperand.ConstantI4(shape.Initial), result.Instructions[test + 11].Operand);
-        var copyIndex = Assert.IsType<CilOperand.Index>(result.Instructions[test + 12].Operand).Value;
+        Assert.Equal(new CilOperand.ConstantI4(shape.Initial), result.Instructions[test + 13].Operand);
+        var copyIndex = Assert.IsType<CilOperand.Index>(result.Instructions[test + 14].Operand).Value;
         Assert.Equal(body.Locals.Length, copyIndex);
         Assert.Equal(CliValueKind.I4, result.Locals[copyIndex]);
-        Assert.DoesNotContain(result.Instructions[(test + 13)..], instruction =>
+        Assert.DoesNotContain(result.Instructions[(test + 15)..], instruction =>
             instruction is { Operation: CilOperation.LoadLocal or CilOperation.StoreLocal, Operand: CilOperand.Index { Value: Index } });
         var copiedCheck = Assert.Single(proven);
         Assert.Equal(CilOperation.BranchIfLessThanUnsigned, result.Instructions[copiedCheck].Operation);
@@ -146,14 +147,14 @@ public sealed class ArrayLoopVersionerTests
         Assert.Equal(
             [
                 CilOperation.LoadLocal, CilOperation.ConvertInt64Unsigned, CilOperation.LoadInt64, CilOperation.Add,
-                CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.BranchIfGreaterThanSigned,
+                CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.CompareGreaterThanSigned, CilOperation.BranchIfTrue,
                 CilOperation.LoadInt32, CilOperation.StoreLocal, CilOperation.Branch,
             ],
-            result.Instructions[test..(test + 10)].Select(instruction => instruction.Operation));
+            result.Instructions[test..(test + 11)].Select(instruction => instruction.Operation));
         Assert.Equal(new CilOperand.Index(Count), result.Instructions[test].Operand);
         Assert.Equal(new CilOperand.ConstantI8(2), result.Instructions[test + 2].Operand);
         Assert.Equal(new CilOperand.Index(Length), result.Instructions[test + 4].Operand);
-        Assert.Equal(new CilOperand.BranchTarget(shape.Guard), result.Instructions[test + 6].Operand);
+        Assert.Equal(new CilOperand.BranchTarget(shape.Guard), result.Instructions[test + 7].Operand);
         Assert.Equal(shape.Check, result.Instructions[Assert.Single(proven)].OriginalOffset);
         _ = Validate(result);
     }
@@ -173,20 +174,20 @@ public sealed class ArrayLoopVersionerTests
             [
                 CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.LoadInt64, CilOperation.Add,
                 CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.Subtract,
-                CilOperation.LoadInt64, CilOperation.BranchIfLessThanSigned,
+                CilOperation.LoadInt64, CilOperation.CompareLessThanSigned,
                 CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.LoadLocal, CilOperation.ConvertInt64Unsigned,
                 CilOperation.Add, CilOperation.LoadInt64, CilOperation.Add,
                 CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.Subtract,
-                CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.BranchIfGreaterThanSigned,
+                CilOperation.LoadLocal, CilOperation.ConvertInt64, CilOperation.CompareGreaterThanSigned,
+                CilOperation.BitwiseOr, CilOperation.BranchIfTrue,
             ],
-            result.Instructions[test..(test + 22)].Select(instruction => instruction.Operation));
+            result.Instructions[test..(test + 24)].Select(instruction => instruction.Operation));
         Assert.Equal(new CilOperand.Index(Start), result.Instructions[test].Operand);
         Assert.Equal(new CilOperand.ConstantI8(2 - 1), result.Instructions[test + 2].Operand);
         Assert.Equal(new CilOperand.Index(Count), result.Instructions[test + 4].Operand);
-        Assert.Equal(new CilOperand.BranchTarget(shape.Guard), result.Instructions[test + 8].Operand);
         Assert.Equal(new CilOperand.ConstantI8(-1), result.Instructions[test + 14].Operand);
         Assert.Equal(new CilOperand.Index(Length), result.Instructions[test + 19].Operand);
-        Assert.Equal(new CilOperand.BranchTarget(shape.Guard), result.Instructions[test + 21].Operand);
+        Assert.Equal(new CilOperand.BranchTarget(shape.Guard), result.Instructions[test + 23].Operand);
         Assert.Equal(shape.Check, result.Instructions[Assert.Single(proven)].OriginalOffset);
         _ = Validate(result);
     }
@@ -352,7 +353,7 @@ public sealed class ArrayLoopVersionerTests
         var (result, proven) = Versioner().Version(body);
         Assert.Single(proven);
         var test = body.Instructions[^1].NextOffset;
-        var copiedGuard = ((CilOperand.BranchTarget)result.Instructions[test + 13].Operand).Offset;
+        var copiedGuard = ((CilOperand.BranchTarget)result.Instructions[test + 15].Operand).Offset;
         Assert.Contains(result.Instructions[test..], instruction =>
             instruction.Operation == CilOperation.Branch && instruction.Operand == new CilOperand.BranchTarget(copiedGuard) &&
             instruction.OriginalOffset is { } source && source != shape.Guard);
@@ -382,12 +383,13 @@ public sealed class ArrayLoopVersionerTests
     {
         var (graphs, stacks) = Collaborators();
         var eliminator = new ArrayBoundsCheckEliminator(graphs, stacks,
-            new ArrayBoundsCheckEliminationPlanner(Induction(), new ControlFlowDominanceAnalyzer()), true, Versioner());
+            new ArrayBoundsCheckEliminationPlanner(Induction(), new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder())), true, Versioner());
         var body = Body(new());
         var result = eliminator.Rewrite(body);
         Assert.Equal(1, result.Instructions.Count(instruction => instruction.Operation == CilOperation.BranchIfLessThanUnsigned));
-        // Each loop's guard, and the test's start < 0.
-        Assert.Equal(3, result.Instructions.Count(instruction => instruction.Operation == CilOperation.BranchIfLessThanSigned));
+        // Each loop's guard; the test computes its start < 0 and branches once.
+        Assert.Equal(2, result.Instructions.Count(instruction => instruction.Operation == CilOperation.BranchIfLessThanSigned));
+        Assert.Equal(1, result.Instructions.Count(instruction => instruction.Operation == CilOperation.BranchIfTrue));
         _ = Validate(result);
     }
 
@@ -747,7 +749,7 @@ public sealed class ArrayLoopVersionerTests
 
     private static ArrayLoopInductionAnalyzer Induction()
     {
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
         return new(new ControlFlowNaturalLoopAnalyzer(dominance), dominance);
     }
 

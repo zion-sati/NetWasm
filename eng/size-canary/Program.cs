@@ -46,13 +46,30 @@ if (args is ["compile", var repository, var input, var application, var layout,
             "The Release size canary must keep rich managed stack traces disabled.");
     }
     File.WriteAllBytes(Path.GetFullPath(application), result.ApplicationModule);
+    // The layout nwc writes (schema 3): the runtime features the program uses and its reached native imports.
+    // Native callbacks need schema 4 and their object file, which this canary does not build.
+    if (result.NativeCallbackSupport is not null)
+    {
+        throw new InvalidOperationException("the size canary writes no native callback support");
+    }
     File.WriteAllText(Path.GetFullPath(layout), JsonSerializer.Serialize(new
     {
-        schemaVersion = 2,
+        schemaVersion = 3,
         target = "wasm32",
         applicationStaticDataEnd = result.StaticDataEnd,
+        managedExecutableEntryPoint = (object?)null,
         runtimeFeatures = result.RuntimeFeatures.Order(StringComparer.Ordinal).ToArray(),
+        importModules = Array.Empty<string>(),
+        nativeImports = result.NativeImports.Select(static import => new
+        {
+            libraryName = import.LibraryName,
+            entryPoint = import.EntryPoint,
+            parameters = import.Parameters.Select(ValueTypeName).ToArray(),
+            returnType = import.ReturnType is { } returnType ? ValueTypeName(returnType) : null,
+        }).ToArray(),
     }));
+    static string ValueTypeName(NetWasm.Compiler.Wasm.WasmValueType type) =>
+        JsonNamingPolicy.CamelCase.ConvertName(type.ToString());
     return;
 }
 

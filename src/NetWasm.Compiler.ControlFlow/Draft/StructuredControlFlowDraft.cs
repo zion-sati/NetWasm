@@ -72,6 +72,18 @@ internal sealed record StructuredLabeledLoopDraft(int HeaderBlock, StructuredSeq
 // A branch to the enclosing labeled block or loop that names TargetBlock.
 internal sealed record StructuredLabelBranchDraft(int TargetBlock) : StructuredRegionDraft;
 
+// A switch through a table: Head computes the value, and Chain holds the blocks of its decoded cases (each case's test,
+// the pop before its branch, and the final pop when it does nothing else); the value branches to Cases[value], each an
+// enclosing labeled block's NextBlock, or to Default past the last case.
+internal sealed record StructuredSwitchDraft(
+    BasicBlock Head,
+    ImmutableArray<BasicBlock> Chain,
+    ImmutableArray<int> Cases,
+    int Default) : StructuredRegionDraft
+{
+    public bool IsOriginal { get; init; } = true;
+}
+
 internal sealed record StructuredExceptionRegionDraft(
     StructuredExceptionGroupDraft Group,
     int? FallthroughContinuationIndex) : StructuredRegionDraft

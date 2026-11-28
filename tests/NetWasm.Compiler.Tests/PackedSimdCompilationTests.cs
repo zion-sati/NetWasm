@@ -625,6 +625,106 @@ public sealed partial class PackedSimdCompilationTests
         }
     }
 
+    // Upstream's internal Shuffle (Matrix4x4 reaches it when its lane indices are constants) has a body that calls
+    // itself, which the JIT always replaces. It takes a lane of the first vector for an index below 16, of the
+    // second for 16 to 31, and zero for any other, as i8x16.shuffle does; every index value, for both overloads.
+    private const string ShuffleSource = """
+        using System.Runtime.CompilerServices;
+        using System.Runtime.Intrinsics;
+
+        public static class EntryPoint
+        {
+            [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Shuffle")]
+            private static extern Vector128<byte> ShuffleBytes(
+                [UnsafeAccessorType("System.Runtime.Intrinsics.Wasm.PackedSimd")] object? owner,
+                Vector128<byte> lower, Vector128<byte> upper, Vector128<byte> indices);
+
+            [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Shuffle")]
+            private static extern Vector128<sbyte> ShuffleSignedBytes(
+                [UnsafeAccessorType("System.Runtime.Intrinsics.Wasm.PackedSimd")] object? owner,
+                Vector128<sbyte> lower, Vector128<sbyte> upper, Vector128<sbyte> indices);
+
+            public static int Run(int input)
+            {
+                var lower = Vector128.Create((byte)(input + 1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
+                var upper = Vector128.Create((byte)(input + 101), 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112,
+                    113, 114, 115, 116);
+                for (var first = 0; first < 256; first += 16)
+                {
+                    var indices = Vector128.Create((byte)first) + Vector128.Create((byte)0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                        11, 12, 13, 14, 15);
+                    var bytes = ShuffleBytes(null, lower, upper, indices);
+                    var signed = ShuffleSignedBytes(null, lower.AsSByte(), upper.AsSByte(), indices.AsSByte());
+                    for (var lane = 0; lane < 16; lane++)
+                    {
+                        var index = first + lane;
+                        var expected = index < 16 ? lower[index] : index < 32 ? upper[index - 16] : (byte)0;
+                        if (bytes[lane] != expected || (byte)signed[lane] != expected) return index + 1;
+                    }
+                }
+                return 0;
+            }
+        }
+        """;
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.None)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.None)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O3)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void ShuffleTakesEachIndexFromEitherVectorOrZero(WasmTarget target, FinalWasmOptimization preset)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedUnsafeSource("PackedSimdShuffle", ShuffleSource);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Target: target, Optimization: preset));
+
+        var module = Path.Combine(assets.Directory, "application.wasm");
+        File.WriteAllBytes(module, result.ApplicationModule);
+        using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
+        var printed = services.GetRequiredService<IWasmTools>().Run("print", module);
+        Assert.True(printed.ExitCode == 0, printed.StandardError);
+        var call = PackedSimdCall().Match(printed.StandardOutput);
+        Assert.False(call.Success, call.Value);
+        foreach (var input in new[] { 0, 1 })
+        {
+            Assert.Equal(0,
+                ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, input, target, result.StaticDataEnd));
+        }
+    }
+
+    // RuntimeHelpers.IsKnownConstant answers as .NET's JIT does: true where constant folding knows its argument
+    // (optimized builds, after inlining), false where it does not, as an unoptimized build.
+    private const string KnownConstantSource = """
+        using System.Runtime.CompilerServices;
+
+        public static class EntryPoint
+        {
+            [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "IsKnownConstant")]
+            private static extern bool Known([UnsafeAccessorType("System.Runtime.CompilerServices.RuntimeHelpers")] object? owner, char value);
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static bool Unknown(char value) => Known(null, value);
+
+            public static int Run(int input) => (Known(null, 'x') ? 1 : 0) + (Unknown((char)input) ? 2 : 0);
+        }
+        """;
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.None, 0)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O3, 1)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.O3, 1)]
+    public void IsKnownConstantIsTrueOnlyForAFoldedConstant(WasmTarget target, FinalWasmOptimization preset, int expected)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedUnsafeSource("KnownConstant", KnownConstantSource);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Target: target, Optimization: preset));
+
+        Assert.Equal(expected,
+            ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 65, target, result.StaticDataEnd));
+    }
+
     [GeneratedRegex(@"call \$[^\s]*PackedSimd::\w+")]
     private static partial Regex PackedSimdCall();
 }

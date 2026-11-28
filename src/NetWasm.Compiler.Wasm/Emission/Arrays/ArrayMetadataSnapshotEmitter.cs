@@ -117,7 +117,7 @@ internal sealed class ArrayMetadataSnapshotEmitter(
     }
 
     private static int Reference(MethodEmissionContext context, ArrayReferenceSlot slot) =>
-        checked(slot.Index + (slot.IsArgument ? context.ParameterOffset : context.LocalBase));
+        slot.IsArgument ? context.ArgumentLocal(slot.Index) : checked(context.LocalBase + slot.Index);
 
     private static void Get(IWasmInstructionWriter code, int local) => code.Write(
         WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local)));

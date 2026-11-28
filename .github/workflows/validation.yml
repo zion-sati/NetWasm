@@ -1,0 +1,185 @@
+name: Validation
+
+# The compiler validation a release preview needs beyond pull request CI: every
+# compiler test with coverage, the differential classes under GC stress with each
+# collector, at O3, with compiled units verified and at the dev-loop optimization
+# levels. The release workflow runs it for a preview tag. A push to a validate/**
+# branch runs it (with CI) before the branch's pull request is opened, and it can
+# be started by hand on any ref.
+
+on:
+  push:
+    branches: ['validate/**']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch or tag to validate; empty validates the selected ref.
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit or tag to validate.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # The full suite: every compiler test with each corpus fixture at its declared
+  # matrix, which pull request CI narrows to the Fast profile.
+  full-suite:
+    name: Full suite
+    uses: ./.github/workflows/compiler-tests.yml
+    with:
+      ref: ${{ inputs.ref }}
+      shards: '[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]'
+      timings: eng/compiler-test-full-durations.json
+      timeout-minutes: 120
+      artifact-prefix: full-suite-timings
+      coverage: true
+
+  # Every class that runs differential fixtures, on the linked runtime with a
+  # collection before every allocation, under each collector: a reference the
+  # compiler leaves unrooted is freed at once instead of now and then. Under
+  # NetWasmGen each minor collection also checks that every reference stored
+  # into old memory went through the write barrier.
+  gc-stress:
+    name: GC stress (${{ matrix.collector }})
+    strategy:
+      fail-fast: false
+      matrix:
+        collector: [compact, netwasm, netwasmgen]
+    uses: ./.github/workflows/compiler-tests.yml
+    with:
+      ref: ${{ inputs.ref }}
+      shards: '[1, 2, 3, 4]'
+      timings: eng/compiler-test-full-durations.json
+      classes: eng/compiler-gc-stress-classes.txt
+      corpus-backend: linked
+      collector: ${{ matrix.collector }}
+      gc-stress: true
+      timeout-minutes: 120
+      artifact-prefix: gc-stress-${{ matrix.collector }}-timings
+
+  # The same differential classes on the linked runtime with NetWasmGC and with
+  # NetWasmGen, every fixture that names no preset compiled at O3, so the speed
+  # preset's whole optimization pipeline, write barriers included, meets the
+  # corpus and .NET 11's results.
+  speed-preset:
+    name: Corpus at O3 (${{ matrix.collector }})
+    strategy:
+      fail-fast: false
+      matrix:
+        collector: [netwasm, netwasmgen]
+    uses: ./.github/workflows/compiler-tests.yml
+    with:
+      ref: ${{ inputs.ref }}
+      shards: '[1, 2, 3, 4]'
+      timings: eng/compiler-test-full-durations.json
+      classes: eng/compiler-gc-stress-classes.txt
+      corpus-backend: linked
+      collector: ${{ matrix.collector }}
+      optimization: O3
+      timeout-minutes: 120
+      artifact-prefix: speed-preset-${{ matrix.collector }}-timings
+
+  # The same differential classes at the dev-loop levels, where code takes the
+  # paths the size and speed presets optimize away: O0 and O1 on the default
+  # backend, and on the linked runtime O0 under GC stress with Compact, O1 with
+  # Compact and O1 with NetWasmGen.
+  optimization-levels:
+    name: Corpus at ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: O0
+            key: o0
+            optimization: O0
+          - name: O1
+            key: o1
+            optimization: O1
+          - name: O0 (compact, GC stress)
+            key: o0-compact-gc-stress
+            optimization: O0
+            corpus-backend: linked
+            collector: compact
+            gc-stress: true
+          - name: O1 (compact)
+            key: o1-compact
+            optimization: O1
+            corpus-backend: linked
+            collector: compact
+          - name: O1 (netwasmgen)
+            key: o1-netwasmgen
+            optimization: O1
+            corpus-backend: linked
+            collector: netwasmgen
+    uses: ./.github/workflows/compiler-tests.yml
+    with:
+      ref: ${{ inputs.ref }}
+      shards: '[1, 2, 3, 4]'
+      timings: eng/compiler-test-full-durations.json
+      classes: eng/compiler-gc-stress-classes.txt
+      corpus-backend: ${{ matrix.corpus-backend || '' }}
+      collector: ${{ matrix.collector || '' }}
+      optimization: ${{ matrix.optimization }}
+      gc-stress: ${{ matrix.gc-stress || false }}
+      timeout-minutes: 120
+      artifact-prefix: optimization-levels-${{ matrix.key }}-timings
+
+  # The same differential classes with every corpus request also compiled twice at its own level
+  # with compiled units under verification, in stores the shard's requests share: the second
+  # compile restores the units the first left, every restored method is compiled again and
+  # compared, and each module must equal a plain compile's. Verification takes
+  # longer per test than the full suite, so the lane plans on its own timings (the
+  # compiled-units-timings artifacts it uploads, merged by eng/merge-compiler-test-timings.py).
+  compiled-units:
+    name: Corpus with compiled units verified
+    uses: ./.github/workflows/compiler-tests.yml
+    with:
+      ref: ${{ inputs.ref }}
+      shards: '[1, 2, 3, 4, 5, 6]'
+      timings: eng/compiler-test-compiled-units-durations.json
+      classes: eng/compiler-gc-stress-classes.txt
+      compiled-units: verify
+      timeout-minutes: 120
+      artifact-prefix: compiled-units-timings
+
+  # The full suite's merged coverage must meet eng/coverage-baseline.json. The
+  # badge it writes is attached to a release for the README.
+  coverage:
+    needs: full-suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the tested source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Download shard coverage
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: full-suite-timings-coverage-*
+          path: ${{ runner.temp }}/shard-coverage
+      - name: Check the coverage baseline
+        shell: bash
+        run: |
+          mapfile -t reports < <(find "$RUNNER_TEMP/shard-coverage" -name coverage.json | sort)
+          mkdir -p "$RUNNER_TEMP/coverage"
+          python3 eng/merge-coverlet-reports.py --output "$RUNNER_TEMP/coverage.json" "${reports[@]}"
+          node eng/check-coverage.mjs "$RUNNER_TEMP/coverage.json" eng/coverage-baseline.json \
+            "$RUNNER_TEMP/coverage/coverage-report.json"
+          node eng/write-coverage-badge.mjs "$RUNNER_TEMP/coverage/coverage-report.json" \
+            "$RUNNER_TEMP/coverage/coverage-badge.json"
+      - name: Retain the coverage report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: coverage-report
+          path: ${{ runner.temp }}/coverage/
+          if-no-files-found: warn
+          retention-days: 90

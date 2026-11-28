@@ -45,7 +45,7 @@ internal sealed class ReachabilityImportClassifier(
                 .ToImmutableArray();
             // The host supplies a [WasmImportLinkage] function; its throw raises JSException.
             ImmutableArray<ReachabilityExceptionRequirement> nativeExceptions = method.NativeImport.HasWasmImportLinkage
-                ? [new(ManagedExceptionKind.JSException, "System.JSException")]
+                ? [new(ManagedExceptionKind.JSException, "System.Runtime.InteropServices.JavaScript.JSException")]
                 : [];
             return new(true,
                 [.. layoutTypes.Where(type => type.Shape == CliTypeShape.GenericInstantiation)],
@@ -200,9 +200,14 @@ internal sealed class ReachabilityImportClassifier(
                 enqueuedMethods.Add(asyncBinding.SetException);
                 enqueuedMethods.Add(asyncBinding.SetCanceled);
                 exceptions.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
+                // A completion whose handle names no task throws it.
+                exceptions.Add(new(ManagedExceptionKind.InvalidOperation, "System.InvalidOperationException"));
             }
             AddHostCallbacks(method, types, allocatedTypes, constructedTypes, exceptions, hostCallbacks);
-            exceptions.Add(new(ManagedExceptionKind.JSException, "System.JSException"));
+            // A failure the host reports raises the JSException carrying the JavaScript error; one the boundary finds
+            // in a result raises a plain JSException.
+            exceptions.Add(new(ManagedExceptionKind.JSImportFailure, "System.Runtime.InteropServices.JavaScript.JSException"));
+            exceptions.Add(new(ManagedExceptionKind.JSException, "System.Runtime.InteropServices.JavaScript.JSException"));
             // An async import's settled value is marshalled exactly like a synchronous result.
             var resultType = asyncBinding?.Return.ResultType ?? method.Signature.ReturnSignatureType;
             if (resultType.CanonicalName == "primitive:string")
@@ -268,6 +273,7 @@ internal sealed class ReachabilityImportClassifier(
             asyncBinding)
         {
             Conversions = exportConversions,
+            JavaScriptExportBoundary = method.JSExport is not null && request.IsOutwardBoundary,
         };
 
         void AddAllocatedString()

@@ -59,6 +59,9 @@ public sealed record WasmEmissionRequest(
     public ImmutableDictionary<string, MethodInstanceModel> JavaScriptConversions { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
 
+    // The program builds a JSException holding a JavaScript error, so its exports offer it back to JavaScript.
+    public bool ProducesJavaScriptErrors { get; init; }
+
     public ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites { get; init; } =
         ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty;
 
@@ -77,6 +80,9 @@ public sealed record WasmEmissionRequest(
     // The shared body each of object's virtual calls uses at its many-target sites, by declaration.
     public ImmutableDictionary<string, MethodInstanceModel> SharedObjectDispatch { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
+    // The shared arrays the program allocates and their GetType (SharedArrayShapes); null when it allocates none.
+    public SharedArrayPlan? SharedArrays { get; init; }
 
     public EntityKey? EntryPointArgumentFactory { get; init; }
     // CoreLib's process-exit method, which the process entry calls after Main.
@@ -121,6 +127,9 @@ public sealed record WasmEmissionRequest(
     // Objects of known layout are allocated through allocate_object, which the
     // runtime inlines.
     public bool InlineObjectAllocation { get; init; }
+    // Whether the program reaches a protected block with a filter: without one, no first pass runs filters, so a catch
+    // never makes itself known to it.
+    public bool ReachesFilters { get; init; } = true;
     // Each delegate type's multicast function dispatches its entries itself rather than
     // calling the type's invoke function.
     public bool InlineMulticastDispatch { get; init; }

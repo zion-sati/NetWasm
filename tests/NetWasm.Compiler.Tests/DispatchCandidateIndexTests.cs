@@ -30,7 +30,7 @@ public sealed class DispatchCandidateIndexTests
 
         var candidate = Assert.Single(index.Index(
             new DispatchReceiverCandidate(receiver)));
-        Assert.Equal("first", candidate.DispatchKey);
+        Assert.Equal("first", Method(candidate));
         Assert.Same(declaration, candidate.Declaration);
         Assert.Same(receiver, candidate.Receiver);
         Assert.Equal(1, relationships.CallCount);
@@ -49,7 +49,7 @@ public sealed class DispatchCandidateIndexTests
 
         var candidate = Assert.Single(index.Index(
             new DispatchDeclarationCandidate("first", declaration)));
-        Assert.Equal("first", candidate.DispatchKey);
+        Assert.Equal("first", Method(candidate));
         Assert.Same(declaration, candidate.Declaration);
         Assert.Same(receiver, candidate.Receiver);
         Assert.Equal(1, relationships.CallCount);
@@ -93,7 +93,7 @@ public sealed class DispatchCandidateIndexTests
             new DispatchReceiverCandidate(Type("Implementation")));
 
         Assert.Equal(["first", "second", "third"],
-            candidates.Select(candidate => candidate.DispatchKey));
+            candidates.Select(Method));
         Assert.Equal(2, relationships.CallCount);
     }
 
@@ -248,9 +248,11 @@ public sealed class DispatchCandidateIndexTests
                 .. receivers.SelectMany(receiver => index.Index(new DispatchReceiverCandidate(receiver)))];
 
         Assert.Equal([ofA, ofDerived],
-            candidates.Where(static candidate => candidate.DispatchKey == "bounded").Select(static candidate => candidate.Receiver));
+            candidates.Where(static candidate => Method(candidate) == "MoveNext")
+                .Select(static candidate => candidate.Receiver));
         Assert.Equal(receivers,
-            candidates.Where(static candidate => candidate.DispatchKey == "unbounded").Select(static candidate => candidate.Receiver));
+            candidates.Where(static candidate => Method(candidate) == "Reset")
+                .Select(static candidate => candidate.Receiver));
     }
 
     [Theory]
@@ -292,14 +294,102 @@ public sealed class DispatchCandidateIndexTests
                 .. receivers.SelectMany(receiver => index.Index(new DispatchReceiverCandidate(receiver)))];
 
         IEnumerable<CliTypeIdentity> For(string key) => candidates
-            .Where(candidate => candidate.DispatchKey == key)
+            .Where(candidate => Method(candidate) == key)
             .Select(candidate => candidate.Receiver);
-        Assert.Equal([onlyA, open, both], For("a"));
-        Assert.Equal([onlyB, open, both], For("b"));
-        Assert.Equal(receivers, For("open"));
+        Assert.Equal([onlyA, open, both], For("A"));
+        Assert.Equal([onlyB, open, both], For("B"));
+        Assert.Equal(receivers, For("Open"));
         Assert.DoesNotContain((onlyA, contractB), relationships.Pairs);
         Assert.DoesNotContain((onlyB, contractA), relationships.Pairs);
     }
+
+    // Sites of one slot use (one method, one operation) share its resolutions: a receiver is one candidate however
+    // many sites call the slot use, whichever comes first.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SitesOfOneSlotUseResolveEachReceiverOnce(bool receiversFirst)
+    {
+        var relationships = new TestTypeRelationshipClassifier();
+        var index = CreateIndex(relationships).Index;
+        var contract = Type("IContract");
+        var method = MethodInstance("Run", 1, contract);
+        DispatchDeclarationCandidate[] sites =
+        [
+            new("Caller::A@00000001", new("Caller::A", 1, method, CilOperation.CallVirtual)),
+            new("Caller::B@00000002", new("Caller::B", 2, method, CilOperation.CallVirtual)),
+            new("Caller::C@00000003", new("Caller::C", 3, method, CilOperation.CallVirtual)),
+        ];
+        CliTypeIdentity[] receivers = [Type("First"), Type("Second")];
+
+        DispatchCandidate[] candidates = receiversFirst
+            ? [.. receivers.SelectMany(receiver => index.Index(new DispatchReceiverCandidate(receiver))),
+                .. sites.SelectMany(site => index.Index(site))]
+            : [.. sites.SelectMany(site => index.Index(site)),
+                .. receivers.SelectMany(receiver => index.Index(new DispatchReceiverCandidate(receiver)))];
+
+        Assert.Equal(receivers, candidates.Select(candidate => candidate.Receiver));
+        Assert.All(candidates, candidate =>
+        {
+            Assert.Equal(new DispatchSlot(CilOperation.CallVirtual, method.CanonicalName), candidate.Slot);
+            Assert.Same(sites[0].Declaration, candidate.Declaration);
+        });
+    }
+
+    // A further bounded site of a slot use adds only the receivers its bound admits and no earlier site's did; an
+    // unbounded one adds the rest, and after it no site adds any.
+    [Fact]
+    public void ALaterSiteOfASlotUseAddsOnlyTheReceiversNoEarlierSiteAdmitted()
+    {
+        var contract = Type("IContract");
+        var narrow = Type("INarrow");
+        var wide = Type("IWide");
+        var inNarrow = Type("InNarrow");
+        var inWide = Type("InWide");
+        var other = Type("Other");
+        var later = Type("Later");
+        var relationships = new TableRelationshipClassifier(new()
+        {
+            [(later, contract)] = TypeRelationshipCharacteristics.Hierarchy,
+            [(inNarrow, contract)] = TypeRelationshipCharacteristics.Hierarchy,
+            [(inWide, contract)] = TypeRelationshipCharacteristics.Hierarchy,
+            [(other, contract)] = TypeRelationshipCharacteristics.Hierarchy,
+            [(inNarrow, narrow)] = TypeRelationshipCharacteristics.Hierarchy,
+            [(inNarrow, wide)] = TypeRelationshipCharacteristics.Hierarchy,
+            [(inWide, wide)] = TypeRelationshipCharacteristics.Hierarchy,
+        });
+        var index = new DispatchCandidateIndex(relationships, UnboundedTypeRelationshipKeys.Instance);
+        var method = MethodInstance("Run", 1, contract);
+        DispatchDeclarationCandidate Site(int offset, CliTypeIdentity? bound) =>
+            new($"Caller::Run@{offset:x8}", new("Caller::Run", offset, method, CilOperation.CallVirtual, bound));
+        foreach (var receiver in new[] { inNarrow, inWide, other })
+            Assert.Empty(index.Index(new DispatchReceiverCandidate(receiver)));
+
+        Assert.Equal([inNarrow], index.Index(Site(1, narrow)).Select(candidate => candidate.Receiver));
+        Assert.Empty(index.Index(Site(2, narrow)));
+        Assert.Equal([inWide], index.Index(Site(3, wide)).Select(candidate => candidate.Receiver));
+        Assert.Equal([other], index.Index(Site(4, null)).Select(candidate => candidate.Receiver));
+        Assert.Empty(index.Index(Site(5, Type("IThird"))));
+        Assert.Equal([later],
+            index.Index(new DispatchReceiverCandidate(later)).Select(candidate => candidate.Receiver));
+    }
+
+    // The operation is part of the slot use: a call names its target, and ldvirtftn also makes its target callable.
+    [Fact]
+    public void EachOperationOnAMethodIsItsOwnSlotUse()
+    {
+        var index = CreateIndex(new TestTypeRelationshipClassifier()).Index;
+        var method = MethodInstance("Run", 1, Type("IContract"));
+        index.Index(new DispatchDeclarationCandidate("a", new("Caller::Run", 1, method, CilOperation.CallVirtual)));
+        index.Index(new DispatchDeclarationCandidate(
+            "b", new("Caller::Run", 2, method, CilOperation.LoadVirtualFunction)));
+
+        Assert.Equal([CilOperation.CallVirtual, CilOperation.LoadVirtualFunction],
+            index.Index(new DispatchReceiverCandidate(Type("Implementation")))
+                .Select(candidate => candidate.Slot.Operation));
+    }
+
+    private static string Method(DispatchCandidate candidate) => candidate.Declaration.Declaration.Definition.Name;
 
     private sealed class KeyTable(Dictionary<CliTypeIdentity, TypeRelationshipKeys> keys) : ITypeRelationshipKeyResolver
     {

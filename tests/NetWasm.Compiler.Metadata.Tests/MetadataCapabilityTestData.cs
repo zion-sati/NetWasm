@@ -75,6 +75,15 @@ internal static class MetadataCapabilityTestData
         return new MetadataMethodFinderFactory(materializations, methods).Create(snapshot);
     }
 
+    internal static global::NetWasm.Compiler.Metadata.RuntimeProvidedMembers.RuntimeAsync.RuntimeAsyncMemberResolver RuntimeAsyncMembers(
+        MetadataCompilationSnapshot snapshot) =>
+        new(new MetadataTypeFinderFactory(Materializations()), snapshot, Methods(snapshot), Fields(snapshot),
+            TypeDefinitions(snapshot), new MetadataStackTypeResolver(TypeDefinitions(snapshot)));
+
+    internal static global::NetWasm.Compiler.Metadata.RuntimeProvidedMembers.RuntimeAsync.RuntimeAsyncFrameLayoutResolver
+        RuntimeAsyncFrames(MetadataCompilationSnapshot snapshot) =>
+        new(new MetadataTypeFinderFactory(Materializations()), snapshot, Fields(snapshot), TypeDefinitions(snapshot));
+
     internal static ISymbolFormatter Symbols(MetadataCompilationSnapshot snapshot)
     {
         var materializations = Materializations();

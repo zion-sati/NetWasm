@@ -82,7 +82,7 @@ public sealed class ComponentCoreModuleLinkExecution(
                 Exports = new(CanonicalAbiNames.ModulePrefix(wasmTarget), []),
                 Intermediates = new(workspace.SanitizedModulePath, workspace.SanitizedRuntimeModulePath,
                     workspace.MergedModulePath),
-                KeepNames = DiagnosticNames.Kept,
+                KeepNames = DiagnosticNames.KeptWith(request.DebugInformation is not null),
             });
             _optimizer.Optimize(
                 workspace.SanitizedModulePath,
@@ -90,7 +90,8 @@ public sealed class ComponentCoreModuleLinkExecution(
                 request.Target,
                 settings.BackendPreset,
                 settings.Converge,
-                settings.LowMemoryUnused);
+                settings.LowMemoryUnused,
+                request.DebugInformation is not null);
         }
         finally
         {

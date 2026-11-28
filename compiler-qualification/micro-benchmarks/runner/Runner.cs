@@ -8,8 +8,12 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 
-internal sealed record BenchmarkCase(string Id, Func<Action> Prepare);
+// Prepare gives a case's call; PrepareAsync, for a benchmark that returns a task, a timed batch that awaits that many
+// calls and returns the ticks they took, once its setup, which it awaits, has run. NetWasm and Mono AOT run on one thread and throw on a synchronous wait for a
+// task that has not completed, so such a case is awaited, on the runtime's own loop as an async Main is.
+internal sealed record BenchmarkCase(string Id, Func<Action>? Prepare, Func<Task<Func<long, Task<long>>>>? PrepareAsync = null);
 
 internal static class Runner
 {
@@ -46,7 +50,7 @@ internal static class Runner
     [MethodImpl(MethodImplOptions.NoInlining)]
     public static void Consume<T>(ReadOnlySpan<T> value) => Consume<int>(value.Length);
 
-    public static int Run(string[] args)
+    public static async Task<int> Run(string[] args)
     {
         var filter = args.Length > 0 ? args[0] : "";
         var excluding = filter.StartsWith('!');
@@ -67,13 +71,24 @@ internal static class Runner
             }
             try
             {
-                var action = benchmark.Prepare();
-                action();
+                // The ticks a batch of the case's calls takes.
+                Func<long, ValueTask<long>> time;
+                if (benchmark.PrepareAsync is { } prepareAsync)
+                {
+                    var timed = await prepareAsync();
+                    time = count => new ValueTask<long>(timed(count));
+                }
+                else
+                {
+                    var action = benchmark.Prepare!();
+                    time = count => new ValueTask<long>(Time(action, count));
+                }
+                await time(1);
                 if (s_checking)
                 {
                     s_last = null;
-                    action();
-                    action();
+                    await time(1);
+                    await time(1);
                     var text = s_last ?? "void";
                     Console.WriteLine($"{benchmark.Id}\tok {(text.Length > 80 ? text[..80] : text)}");
                     continue;
@@ -82,12 +97,12 @@ internal static class Runner
                 long elapsed;
                 while (true)
                 {
-                    elapsed = Time(action, batch);
+                    elapsed = await time(batch);
                     if (elapsed >= batchTicks || batch >= 1L << 30) break;
                     batch *= 2;
                 }
                 var best = elapsed;
-                for (var sample = 0; sample < 4; sample++) best = Math.Min(best, Time(action, batch));
+                for (var sample = 0; sample < 4; sample++) best = Math.Min(best, await time(batch));
                 var nanoseconds = best * 1_000_000_000.0 / Stopwatch.Frequency / batch;
                 Console.WriteLine($"{benchmark.Id}\t{nanoseconds:F2}");
             }

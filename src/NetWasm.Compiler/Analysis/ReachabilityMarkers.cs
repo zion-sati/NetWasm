@@ -52,6 +52,11 @@ internal static class ReachabilityMarkers
     public static bool RequiresInterfaces(MethodInstanceModel method) =>
         method.DeclaringType.FullName == "System.RuntimeTypeTable" && method.Definition.Name == "Interfaces";
 
+    // Type.MakeArrayType, which returns the array type the type table holds: a program that reaches it carries the
+    // array types of the elements it can read.
+    public static bool MakesArrayTypes(MethodInstanceModel method) =>
+        method.DeclaringType.FullName == "System.Type" && method.Definition.Name == "MakeArrayType";
+
     public static bool RequiresMemberNames(MethodInstanceModel method) =>
         method.DeclaringType.FullName == "System.Reflection.MemberInfo" && method.Definition.Name == "get_Name";
 
@@ -63,5 +68,6 @@ internal static class ReachabilityMarkers
         RequiresElementTypes(method) ||
         RequiresTypeAttributes(method) ||
         RequiresInterfaces(method) ||
+        MakesArrayTypes(method) ||
         RequiresMemberNames(method);
 }

@@ -19,19 +19,19 @@ namespace System.Runtime.InteropServices.TimeZones
         private const uint Dropped = 1;
 
         private readonly IWasiFileStreamOpenInvoker _open;
-        private readonly IWasiByteStreamReadInvoker _read;
-        private readonly IWasiByteStreamReadableDropInvoker _dropReadable;
-        private readonly IWasiResultFutureReadInvoker _readResult;
-        private readonly IWasiResultFutureDropInvoker _dropResult;
+        private readonly IWasiByteStreamReadInvoker<Streams.ReadOnlyFileStreamKind> _read;
+        private readonly IWasiByteStreamReadableDropInvoker<Streams.ReadOnlyFileStreamKind> _dropReadable;
+        private readonly IWasiResultFutureReadInvoker<Streams.ReadOnlyFileStreamKind> _readResult;
+        private readonly IWasiResultFutureDropInvoker<Streams.ReadOnlyFileStreamKind> _dropResult;
         private readonly IWaitableEventAwaiter _awaiter;
         private readonly ICanonicalBufferAllocator _allocator;
 
         internal WasiReadOnlyFileReader(
             IWasiFileStreamOpenInvoker open,
-            IWasiByteStreamReadInvoker read,
-            IWasiByteStreamReadableDropInvoker dropReadable,
-            IWasiResultFutureReadInvoker readResult,
-            IWasiResultFutureDropInvoker dropResult,
+            IWasiByteStreamReadInvoker<Streams.ReadOnlyFileStreamKind> read,
+            IWasiByteStreamReadableDropInvoker<Streams.ReadOnlyFileStreamKind> dropReadable,
+            IWasiResultFutureReadInvoker<Streams.ReadOnlyFileStreamKind> readResult,
+            IWasiResultFutureDropInvoker<Streams.ReadOnlyFileStreamKind> dropResult,
             IWaitableEventAwaiter awaiter,
             ICanonicalBufferAllocator allocator)
         {

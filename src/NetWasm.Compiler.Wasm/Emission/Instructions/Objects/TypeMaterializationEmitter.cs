@@ -6,6 +6,7 @@ using NetWasm.Compiler.Wasm.Encoding;
 using System;
 using System.Collections.Immutable;
 using System.Collections.Generic;
+using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
@@ -72,7 +73,8 @@ internal sealed class TypeMaterializationEmitter(
 
     private void EmitObjectType(
         InstructionEmissionRequest request,
-        IWasmInstructionWriter code)
+        IWasmInstructionWriter code,
+        IFunctionIndexResolver functionIndices)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (CilTypeMaterialization.IsExactObjectType(request.Instruction))
@@ -93,7 +95,20 @@ internal sealed class TypeMaterializationEmitter(
             true,
             request.Instruction.Operand is CilOperand.TypeIdentity constrained
                 ? constrained.Value
-                : null);
+                : null,
+            SharedArrayTypes(request.Target.SharedArrays, functionIndices));
+    }
+
+    // The type ids of the shared arrays the program allocates, and the function of their GetType, or null.
+    private (ImmutableArray<int> TypeIds, int TypeOf)? SharedArrayTypes(
+        SharedArrayPlan? plan, IFunctionIndexResolver functionIndices)
+    {
+        if (plan is null) return null;
+        var ids = plan.Types
+            .Select(type => typeLayouts.GetObjectLayout(type, out var layout) ? layout.TypeId : 0)
+            .Where(id => id != 0)
+            .ToImmutableArray();
+        return ids.IsEmpty ? null : (ids, functionIndices.Resolve(plan.TypeOf));
     }
 
     // The runtime type table's address, from which CoreLib reads its type queries.
@@ -121,7 +136,8 @@ internal sealed class TypeMaterializationEmitter(
     private void EmitCommand(
         InstructionEmissionRequest request, IWasmInstructionWriter code,
         bool readObjectHeader,
-        CliTypeIdentity? constrainedType = null)
+        CliTypeIdentity? constrainedType = null,
+        (ImmutableArray<int> TypeIds, int TypeOf)? sharedArrays = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         Materialize(
@@ -129,7 +145,8 @@ internal sealed class TypeMaterializationEmitter(
             request.Stack,
             request.Context,
             readObjectHeader,
-            constrainedType);
+            constrainedType,
+            sharedArrays);
     }
 
     private void Materialize(
@@ -137,7 +154,8 @@ internal sealed class TypeMaterializationEmitter(
         List<CliValueKind> stack,
         MethodEmissionContext context,
         bool readObjectHeader,
-        CliTypeIdentity? constrainedType)
+        CliTypeIdentity? constrainedType,
+        (ImmutableArray<int> TypeIds, int TypeOf)? sharedArrays)
     {
         var slot = stack.Count - 1;
         var typeIdLocal = GetStackLocal(context, slot, CliValueKind.I4);
@@ -171,8 +189,46 @@ internal sealed class TypeMaterializationEmitter(
             EmitNullCheck(code, typeLocal, context.ManagedThrowFunction);
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(typeLocal))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(0))));
+            if (sharedArrays is { } shared)
+            {
+                // An object of a shared array type answers its element's array type (CoreLib's SharedArrays.TypeOf),
+                // asked while the slot's local still holds the object; the id and the object may share that local.
+                var id = context.NumericTemporaryI4;
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)id)));
+                for (var index = 0; index < shared.TypeIds.Length; index++)
+                {
+                    code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)id)));
+                    code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(shared.TypeIds[index])));
+                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
+                    if (index != 0) code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Or));
+                }
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)typeLocal)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)id)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)shared.TypeOf)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)typeLocal)));
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)id)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(typeIdLocal))));
+                EmitTypeObject(code, context, readObjectHeader, typeIdLocal, typeLocal);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+                stack[slot] = CliValueKind.ManagedReference;
+                return;
+            }
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(typeIdLocal))));
         }
+        EmitTypeObject(code, context, readObjectHeader, typeIdLocal, typeLocal);
+        stack[slot] = CliValueKind.ManagedReference;
+    }
+
+    // The Type object of the type id: the runtime's cached one, or the one it makes.
+    private void EmitTypeObject(
+        IWasmInstructionWriter code,
+        MethodEmissionContext context,
+        bool readObjectHeader,
+        int typeIdLocal,
+        int typeLocal)
+    {
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(typeIdLocal))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         // The type id and the Type object can share the slot's local, so the
@@ -199,7 +255,6 @@ internal sealed class TypeMaterializationEmitter(
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        stack[slot] = CliValueKind.ManagedReference;
     }
 
     // A type's Type object, once the runtime has made it, is in the runtime's

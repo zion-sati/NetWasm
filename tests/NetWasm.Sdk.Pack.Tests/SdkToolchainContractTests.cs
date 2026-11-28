@@ -710,8 +710,7 @@ public sealed partial class SdkToolchainContractTests
 
     // A command's asynchronous Main needs no contract setting: the toolchain packages every
     // command with its command world (netwasm:command, wasi:cli's command with wasi:http's
-    // client) and compiles it against the platform world, and NetWasmComponentContract fails
-    // with NWSDK025.
+    // client) and compiles it against the platform world.
     [Fact]
     public void ToolchainTargetBuildsEveryCommandWithOneWorld()
     {
@@ -728,8 +727,7 @@ public sealed partial class SdkToolchainContractTests
         var compilerWorlds = document.Descendants(XName.Get("NetWasmCompilerWitWorld",
             "http://schemas.microsoft.com/developer/msbuild/2003")).ToArray();
         Assert.Contains(compilerWorlds, world => world.Value == "netwasm:platform@1.0.0/platform");
-        Assert.Contains("NWSDK025", source, StringComparison.Ordinal);
-        Assert.Contains("NetWasmComponentContract is no longer used", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("NetWasmComponentContract", source, StringComparison.Ordinal);
     }
 
     [Fact]

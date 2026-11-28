@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.ControlFlow;
@@ -150,13 +151,29 @@ internal sealed class CilControlFlowGraphBuilder : IControlFlowGraphBuilder
         ImmutableArray<BasicBlock> blocks,
         int[] blockAtOffset)
     {
+        // Blocks in offset order meet the protected blocks overlapping them, kept open from where each starts until a
+        // block starts at or past its end: each block reads only its own regions, not every region of the method.
         var result = new ImmutableArray<int>[blocks.Length];
         var targets = new List<int>();
-        foreach (var block in blocks)
+        var regions = body.ExceptionRegions;
+        var byStart = Enumerable.Range(0, regions.Length).OrderBy(index => regions[index].TryOffset).ToArray();
+        var open = new List<int>();
+        var next = 0;
+        foreach (var block in blocks.OrderBy(block => block.StartOffset))
         {
             targets.Clear();
-            foreach (var region in body.ExceptionRegions)
+            if (block.Instructions.IsEmpty)
             {
+                result[block.Index] = [];
+                continue;
+            }
+            var first = block.Instructions[0].Offset;
+            var last = block.Instructions[^1].Offset;
+            while (next < byStart.Length && regions[byStart[next]].TryOffset <= last) open.Add(byStart[next++]);
+            open.RemoveAll(index => regions[index].TryOffset + regions[index].TryLength <= first);
+            foreach (var index in open)
+            {
+                var region = regions[index];
                 var tryEnd = region.TryOffset + region.TryLength;
                 foreach (var instruction in block.Instructions)
                 {
@@ -264,6 +281,22 @@ internal sealed class CilControlFlowGraphBuilder : IControlFlowGraphBuilder
         ImmutableArray<int>[] successors,
         int[] blockAtOffset)
     {
+        // A reached block brings the handlers and filters of the tries holding its start: through its innermost try
+        // and that try's parents up to the first already brought (whose parents came with it), each try once. Tries
+        // that overlap without nesting (invalid, which validation rejects) are tested at each block.
+        var tries = body.ExceptionRegions
+            .GroupBy(region => (Start: region.TryOffset, End: region.TryOffset + region.TryLength))
+            .ToArray();
+        var byStart = Enumerable.Range(0, blocks.Length).OrderBy(block => blocks[block].StartOffset).ToArray();
+        var nesting = ProtectedRangeNesting.Build(
+            [.. tries.Select(group => group.Key)],
+            [.. byStart.Select(block => blocks[block].StartOffset)]);
+        var innermost = new int[blocks.Length];
+        if (nesting is not null)
+        {
+            for (var index = 0; index < byStart.Length; index++) innermost[byStart[index]] = nesting.Innermost[index];
+        }
+        var brought = new bool[tries.Length];
         var reached = new bool[blocks.Length];
         var pending = new Stack<int>();
         pending.Push(0);
@@ -277,6 +310,20 @@ internal sealed class CilControlFlowGraphBuilder : IControlFlowGraphBuilder
             foreach (var successor in successors[current])
             {
                 pending.Push(successor);
+            }
+            if (nesting is not null)
+            {
+                for (var group = innermost[current]; group >= 0 && !brought[group]; group = nesting.Parents[group])
+                {
+                    brought[group] = true;
+                    foreach (var region in tries[group])
+                    {
+                        pending.Push(blockAtOffset[region.HandlerOffset]);
+                        if (region.FilterOffset is int filter)
+                            pending.Push(blockAtOffset[filter]);
+                    }
+                }
+                continue;
             }
             var start = blocks[current].StartOffset;
             foreach (var region in body.ExceptionRegions)

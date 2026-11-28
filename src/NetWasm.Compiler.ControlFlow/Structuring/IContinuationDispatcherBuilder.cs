@@ -8,5 +8,6 @@ namespace NetWasm.Compiler.ControlFlow.Structuring;
 
 internal interface IContinuationDispatcherBuilder
 {
-    StructuredDispatcherDraft Build(ControlFlowStructuringState state, IEnumerable<int> targets, int continuationBoundary, int methodEnd);
+    // A dispatcher over the blocks the targets reach before end.
+    StructuredDispatcherDraft Build(ControlFlowStructuringState state, IEnumerable<int> targets, int end);
 }

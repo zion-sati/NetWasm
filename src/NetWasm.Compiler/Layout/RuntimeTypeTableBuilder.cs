@@ -215,9 +215,23 @@ internal sealed class RuntimeTypeTableBuilder(
             {
                 return [];
             }
-            var declared = _interfaces.GetInterfaces(type.Identity).ToHashSet();
+            // GetInterfaces reports the interfaces a type's base types declare as well as its own.
+            var declared = new HashSet<CliTypeIdentity>();
+            for (var current = type; current is not null; current = BaseOf(current))
+            {
+                if (current.Identity.Shape is CliTypeShape.Named or CliTypeShape.Primitive or CliTypeShape.GenericInstantiation)
+                {
+                    declared.UnionWith(_interfaces.GetInterfaces(current.Identity));
+                }
+            }
             return [.. assignable.Where(id => declared.Contains(types[id].Identity))];
         }
+
+        PendingRuntimeTypeFacts? BaseOf(PendingRuntimeTypeFacts type) =>
+            registrations.TryGetValue(type.TypeId, out var registration) && registration.BaseTypeId != 0 &&
+            registration.BaseTypeId != type.TypeId
+                ? types.GetValueOrDefault(registration.BaseTypeId)
+                : null;
 
         // A generic parameter's base type as .NET reports it: ValueType under the struct constraint,
         // otherwise Object, where the program has that type.

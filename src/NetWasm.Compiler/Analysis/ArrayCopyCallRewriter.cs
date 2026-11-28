@@ -15,8 +15,10 @@ namespace NetWasm.Compiler.Analysis;
 // arrays have one static one-dimensional type calls Array.CopyOfOneType with the same parameters
 // instead, which never converts: such arrays hold one element type, or two the runtime treats as
 // one (signed and unsigned integers of one size, an enum and its underlying type), which desktop
-// .NET copies as they are. A program then carries the conversion only where arrays of two static
-// types, or typed Array, meet in a Copy.
+// .NET copies as they are. So does a Copy between one-dimensional arrays whose static element types
+// are both reference types (string[] to object[]): such an array holds references whatever its
+// run-time type, and the runtime checks each element it assigns. A program then carries the
+// conversion only where arrays of value elements of two static types, or typed Array, meet in a Copy.
 internal sealed class ArrayCopyCallRewriter(
     ICalledMethodResolver calledMethods,
     ITypeDefinitionResolver typeDefinitions,
@@ -44,7 +46,7 @@ internal sealed class ArrayCopyCallRewriter(
             var instruction = body.Instructions[index];
             if (Copy(instruction) is not { } copy ||
                 !types.TryGetValue(instruction.Offset, out var stack) ||
-                !CopiesOneType(copy, stack))
+                !CopiesWithoutConversion(copy, stack))
             {
                 continue;
             }
@@ -67,14 +69,19 @@ internal sealed class ArrayCopyCallRewriter(
             : null;
 
     // The source is the first argument and the destination the second or third, each typed by what
-    // produced it; both must be the same one-dimensional array type. The validated stack holds the call's arguments.
-    private static bool CopiesOneType(MethodInstanceModel copy, ImmutableArray<CliTypeIdentity?> stack)
+    // produced it; both must be one-dimensional arrays, of one static type or both of reference elements.
+    // The validated stack holds the call's arguments.
+    private static bool CopiesWithoutConversion(MethodInstanceModel copy, ImmutableArray<CliTypeIdentity?> stack)
     {
         var arity = copy.Definition.Signature.ParameterSignatureTypes.Length;
         var source = stack[^arity];
         var destination = arity == 3 ? stack[^2] : stack[^3];
-        return source is { Shape: CliTypeShape.SzArray } && Equals(source, destination);
+        return source is { Shape: CliTypeShape.SzArray } && destination is { Shape: CliTypeShape.SzArray } &&
+            (Equals(source, destination) || HoldsReferences(source) && HoldsReferences(destination));
     }
+
+    private static bool HoldsReferences(CliTypeIdentity array) =>
+        array.ElementType is { IsValueType: false, StackKind: CliValueKind.ManagedReference, ContainsGenericParameters: false };
 
     // CoreLib's Array declares a CopyOfOneType for each Copy overload, and a program has one System.Array (NW1004).
     private MethodInstanceModel OneTypeOverload(MethodInstanceModel copy)

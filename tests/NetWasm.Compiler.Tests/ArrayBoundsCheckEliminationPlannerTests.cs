@@ -67,7 +67,7 @@ public sealed class ArrayBoundsCheckEliminationPlannerTests
     public void RejectsMissingDependenciesAndInput()
     {
         var fixture = ArrayLoopInductionAnalyzerTests.Create(0, 1);
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
 
         Assert.Throws<ArgumentNullException>(() => new ArrayBoundsCheckEliminationPlanner(null!, dominance));
         Assert.Throws<ArgumentNullException>(() => new ArrayBoundsCheckEliminationPlanner(fixture.Analyzer, null!));
@@ -168,7 +168,7 @@ public sealed class ArrayBoundsCheckEliminationPlannerTests
                 ArrayLoopIdioms: NetWasm.Compiler.ComponentModel.Optimization.ManagedArrayLoopIdioms.Disabled,
                 LoopVectorization: NetWasm.Compiler.ComponentModel.Optimization.ManagedLoopVectorization.Disabled)));
         var method = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == "Run");
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
         var planner = new ArrayBoundsCheckEliminationPlanner(
             new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance), dominance);
         var accesses = planner.Plan(method.ControlFlow);
@@ -243,7 +243,7 @@ public sealed class ArrayBoundsCheckEliminationPlannerTests
             assembly, [assets.CoreLib], "EntryPoint", "Run", [], Optimization: FinalWasmOptimization.O3));
         var method = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == "Run");
         var load = Assert.Single(method.Body.Instructions.Where(i => i.Operation == CilOperation.LoadArrayElement));
-        var dominance = new ControlFlowDominanceAnalyzer();
+        var dominance = new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder());
         var planner = new ArrayBoundsCheckEliminationPlanner(
             new ArrayLoopInductionAnalyzer(new ControlFlowNaturalLoopAnalyzer(dominance), dominance), dominance);
 
@@ -302,18 +302,17 @@ public sealed class ArrayBoundsCheckEliminationPlannerTests
     {
         var fixture = ArrayLoopInductionAnalyzerTests.Create(0, 1);
         var proofs = fixture.Analyzer.Analyze(fixture.Flow);
-        var facts = new ControlFlowDominanceAnalyzer().Analyze(fixture.Flow.Graph,
-            fixture.Flow.Graph.Entry.Index, fixture.Flow.Graph.ReachableBlocks);
-        facts[proofs[0].BodyEntryBlock] = [];
-        var planner = Assert.IsAssignableFrom<IArrayBoundsCheckEliminationPlanner>(
-            new ArrayBoundsCheckEliminationPlanner(new FrozenInduction(proofs), new FrozenDominance(facts)));
-        Assert.Empty(planner.Plan(fixture.Flow));
+        // The guard's successful edge leads to the method's return, which does not dominate the access in the
+        // loop body.
+        var exit = fixture.Flow.Graph.Blocks.Single(block => block.Terminator.Operation == CilOperation.Return).Index;
+        Assert.NotEmpty(Create(proofs, fixture.Flow).Plan(fixture.Flow));
+        Assert.Empty(Create([proofs[0] with { BodyEntryBlock = exit }], fixture.Flow).Plan(fixture.Flow));
     }
 
     private static IArrayBoundsCheckEliminationPlanner Create(
         ImmutableArray<ArrayLoopInduction> proofs, ValidatedControlFlowGraph flow) =>
         Assert.IsAssignableFrom<IArrayBoundsCheckEliminationPlanner>(new ArrayBoundsCheckEliminationPlanner(new FrozenInduction(proofs),
-            new FrozenDominance(new ControlFlowDominanceAnalyzer().Analyze(
+            new FrozenDominance(new ControlFlowDominanceAnalyzer(new DominatorTreeBuilder()).Analyze(
                 flow.Graph, flow.Graph.Entry.Index, flow.Graph.ReachableBlocks))));
 
     private static ValidatedControlFlowGraph Replace(ValidatedControlFlowGraph flow,
@@ -330,9 +329,9 @@ public sealed class ArrayBoundsCheckEliminationPlannerTests
         public ImmutableArray<ArrayLoopInduction> Analyze(ValidatedControlFlowGraph controlFlow) => facts;
     }
 
-    private sealed class FrozenDominance(Dictionary<int, ImmutableHashSet<int>> facts) : IControlFlowDominanceAnalyzer
+    private sealed class FrozenDominance(DominatorTree facts) : IControlFlowDominanceAnalyzer
     {
-        public Dictionary<int, ImmutableHashSet<int>> Analyze(ControlFlowGraph graph, int entry,
+        public DominatorTree Analyze(ControlFlowGraph graph, int entry,
             ImmutableHashSet<int> blocks) => facts;
     }
 }

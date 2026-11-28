@@ -148,6 +148,12 @@ internal sealed class CompilationPreparationBuilder(
         var namedCallbacks = metadata.Methods
             .Where(method => method.NativeCallback?.EntryPoint is not null)
             .Select(method => method.Key);
+        // The receiver flow audit fails through CoreLib's ReceiverFlowAudit.Fail(string).
+        var auditFailure = options.ReceiverFlowAudit
+            ? types.FindType("System.Runtime.CompilerServices.ReceiverFlowAudit").Methods.Select(methods.GetMethod)
+                .First(static method => method.Name == "Fail").Key
+            : (EntityKey?)null;
+        if (auditFailure is { } failure) namedCallbacks = namedCallbacks.Append(failure);
         reachabilityRoots = reachabilityRoots with
         {
             InvokedMethods =
@@ -209,6 +215,9 @@ internal sealed class CompilationPreparationBuilder(
             InliningExcludedMethods = options.InliningExcludedMethods,
             MissingApiAsError = options.MissingApiAsError,
             CollectorHasGenerations = options.Collector?.HasGenerations == true,
+            ReportsReceiverFlow = options.ReceiverFlowAudit || options.DiagnosticTracePath is not null ||
+                options.DiagnosticLogLevel <= Microsoft.Extensions.Logging.LogLevel.Trace,
+            ReceiverFlowAuditFailure = auditFailure,
         };
     }
 }

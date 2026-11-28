@@ -243,8 +243,11 @@ public sealed class RuntimeLinkPlannerTests
             GarbageCollector = collector,
         };
 
-        var legacy = RuntimeLinkPlanner.Plan(request);
-        var baseRuntime = RuntimeLinkPlanner.Plan(request with { RuntimeFeatures = [] });
+        var everything = RuntimeLinkPlanner.Plan(request with
+        {
+            RuntimeFeatures = ["ephemeron-handles", "structured-command-diagnostics"],
+        });
+        var baseRuntime = RuntimeLinkPlanner.Plan(request);
         var ephemerons = RuntimeLinkPlanner.Plan(request with
         {
             RuntimeFeatures = ["ephemeron-handles"],
@@ -254,7 +257,7 @@ public sealed class RuntimeLinkPlannerTests
             RuntimeFeatures = ["structured-command-diagnostics"],
         });
 
-        Assert.All([legacy, baseRuntime, ephemerons, diagnostics], plan =>
+        Assert.All([everything, baseRuntime, ephemerons, diagnostics], plan =>
         {
             Assert.Equal(collector, plan.GarbageCollector);
             Assert.Equal($"/runtime/{targetName}/{collector.ToLowerInvariant()}/libnetwasm-runtime.a",
@@ -262,8 +265,8 @@ public sealed class RuntimeLinkPlannerTests
             Assert.Equal($"/runtime/{targetName}/{collector.ToLowerInvariant()}/libgc.a",
                 plan.Inputs[1].Path);
         });
-        Assert.Contains("--export=ephemeron_handle_new", legacy.Arguments);
-        Assert.Contains("--export=command_exception_capture", legacy.Arguments);
+        Assert.Contains("--export=ephemeron_handle_new", everything.Arguments);
+        Assert.Contains("--export=command_exception_capture", everything.Arguments);
         Assert.DoesNotContain(baseRuntime.Arguments,
             argument => argument.Contains("ephemeron_handle", StringComparison.Ordinal));
         Assert.DoesNotContain(baseRuntime.Arguments,
@@ -274,7 +277,7 @@ public sealed class RuntimeLinkPlannerTests
         Assert.DoesNotContain(diagnostics.Arguments,
             argument => argument.Contains("ephemeron_handle", StringComparison.Ordinal));
         Assert.Contains("--export=command_exception_capture", diagnostics.Arguments);
-        Assert.NotEqual(legacy.Cache.Key, baseRuntime.Cache.Key);
+        Assert.NotEqual(everything.Cache.Key, baseRuntime.Cache.Key);
         Assert.NotEqual(baseRuntime.Cache.Key, ephemerons.Cache.Key);
         Assert.NotEqual(baseRuntime.Cache.Key, diagnostics.Cache.Key);
     }

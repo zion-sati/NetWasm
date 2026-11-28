@@ -71,6 +71,7 @@ internal sealed class StructuredControlFlowOwnershipProjector : IStructuredContr
         private StructuredRegionDraft Project(StructuredRegionDraft region) => region switch
         {
             StructuredBlockDraft block => block with { IsOriginal = Owns(block.Block.Index) },
+            StructuredSwitchDraft table => table with { IsOriginal = OwnsAll(table) },
             StructuredIfDraft conditional => conditional with
             {
                 IsOriginal = Owns(conditional.ConditionBlock.Index),
@@ -119,5 +120,17 @@ internal sealed class StructuredControlFlowOwnershipProjector : IStructuredContr
         }
 
         private bool Owns(int block) => selectedOwners[block] == _ordinal++;
+
+        // The head and each chain block are occurrences of their own, in the order the collector recorded them; the
+        // chain's blocks appear nowhere else, so they are owned exactly when the head is.
+        private bool OwnsAll(StructuredSwitchDraft table)
+        {
+            var owned = Owns(table.Head.Index);
+            foreach (var block in table.Chain)
+            {
+                owned &= Owns(block.Index);
+            }
+            return owned;
+        }
     }
 }

@@ -66,6 +66,46 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
         Assert.Equal(ManagedExceptionKind.DivideByZero, requirement.Kind);
     }
 
+    // A PackedSimd lane index outside the vector throws as upstream does; the other shapes, the internal Shuffle
+    // among them (any index is defined: zero beyond 31), throw nothing.
+    [Theory]
+    [InlineData("Add", "v:i4,v:i4", false)]
+    [InlineData("Shuffle", "v:u1,v:u1,v:u1", false)]
+    [InlineData("ExtractScalar", "v:i4,s:u1", true)]
+    [InlineData("LoadScalarAndInsert", "p:i4,v:i4,s:u1", true)]
+    [InlineData("StoreSelectedScalar", "p:i4,v:i4,s:u1", true)]
+    public void APackedSimdLaneIndexAloneRequiresArgumentOutOfRange(string name, string parameters, bool laneIndex)
+    {
+        var types = parameters.Split(',').Select(static token =>
+        {
+            var element = token[2..];
+            var primitive = CliTypeIdentity.Primitive(element, CliValueKind.I4);
+            return token[0] switch
+            {
+                'v' => CliTypeIdentity.GenericInstantiation(
+                    CliTypeIdentity.Named(Assembly, "System.Runtime.Intrinsics", "Vector128`1", true), [primitive]),
+                'p' => CliTypeIdentity.UnmanagedPointer(primitive),
+                _ => primitive,
+            };
+        }).ToArray();
+        var method = new MethodDefinitionModel(
+            new EntityKey(Assembly, 3),
+            new EntityKey(Assembly, 2),
+            name,
+            true,
+            MethodSignatureModel.Create(CliValueKind.V128, [.. types.Select(static type => type.StackKind)]) with
+            {
+                ParameterSignatureTypes = [.. types],
+            },
+            0);
+        var provider = new RuntimeIntrinsicExceptionRequirementProvider(
+            new FixedRegistry(method.Key, RuntimeIntrinsic.PackedSimdInstruction));
+
+        Assert.Equal(
+            laneIndex ? [ManagedExceptionKind.ArgumentOutOfRange] : [],
+            provider.Discover(method).Select(requirement => requirement.Kind));
+    }
+
     [Fact]
     public void ProviderRejectsMissingDependenciesAndMethods()
     {
@@ -130,7 +170,8 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
             RuntimeIntrinsic.EnumGetHashCode or
             RuntimeIntrinsic.EnumGetTypeCode => [ManagedExceptionKind.NullReference],
             RuntimeIntrinsic.ArrayElementType or RuntimeIntrinsic.ArrayCreateInstance or
-                RuntimeIntrinsic.ArrayCreateRectangularInstance or
+                RuntimeIntrinsic.ArrayCreateRectangularInstance or RuntimeIntrinsic.ArrayCreateBoundedInstance or
+                RuntimeIntrinsic.ArrayCreateSharedInstance or
                 RuntimeIntrinsic.AllocateUninitializedObject => [ManagedExceptionKind.OutOfMemory],
             // The frozen OutOfMemoryException it returns is built only when required.
             RuntimeIntrinsic.PreallocatedOutOfMemoryException => [ManagedExceptionKind.OutOfMemory],

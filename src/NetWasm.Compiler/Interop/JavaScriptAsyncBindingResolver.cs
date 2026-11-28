@@ -67,8 +67,9 @@ internal sealed class JavaScriptAsyncBindingResolver(
         var resultMethods = taskDefinition.Methods
             .Select(_methodRepository.GetMethod)
             .ToArray();
+        // The import's task runs its continuations as the event loop's queued work (Task.SetResultForJavaScriptInterop).
         var setResult = resultMethods.Single(candidate =>
-            candidate.Name == "SetResult" &&
+            candidate.Name == "SetResultForJavaScriptInterop" &&
             candidate.Signature.ParameterSignatureTypes.Length ==
                 (asyncReturn.HasResult ? 1 : 0));
         var commonMethods = taskBaseDefinition.Methods

@@ -10,6 +10,7 @@ using System.Linq;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.Analysis.ManagedCallSites;
 using NetWasm.Compiler.Analysis.Delegates;
@@ -21,9 +22,11 @@ internal sealed class RuntimeReachabilityExpander(
     IObjectDispatchSharing objectDispatchSharing,
     IDelegateTypeRecognizer delegateTypes,
     IRuntimeIntrinsicTypeRootPlanner runtimeIntrinsicTypeRoots,
+    ISharedArrayTypeOfResolver sharedArrayTypeOf,
     ITypeDefinitionResolver typeDefinitions,
     ITypeIdentityResolver typeIdentities,
-    IObjectArrayDelegateAdapterPlanner objectArrayDelegateAdapters) : IRuntimeReachabilityExpander
+    IObjectArrayDelegateAdapterPlanner objectArrayDelegateAdapters,
+    IAnalysisStepRecorder steps) : IRuntimeReachabilityExpander
 {
     private readonly ISharedObjectDispatchResolver _sharedObjectDispatch = sharedObjectDispatch ??
         throw new ArgumentNullException(nameof(sharedObjectDispatch));
@@ -33,28 +36,36 @@ internal sealed class RuntimeReachabilityExpander(
         throw new ArgumentNullException(nameof(delegateTypes));
     private readonly IRuntimeIntrinsicTypeRootPlanner _runtimeIntrinsicTypeRoots = runtimeIntrinsicTypeRoots ??
         throw new ArgumentNullException(nameof(runtimeIntrinsicTypeRoots));
+    private readonly ISharedArrayTypeOfResolver _sharedArrayTypeOf = sharedArrayTypeOf ??
+        throw new ArgumentNullException(nameof(sharedArrayTypeOf));
     private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ??
         throw new ArgumentNullException(nameof(typeDefinitions));
     private readonly ITypeIdentityResolver _typeIdentities = typeIdentities ??
         throw new ArgumentNullException(nameof(typeIdentities));
     private readonly IObjectArrayDelegateAdapterPlanner _objectArrayDelegateAdapters = objectArrayDelegateAdapters ??
         throw new ArgumentNullException(nameof(objectArrayDelegateAdapters));
+    private readonly IAnalysisStepRecorder _steps = steps ?? throw new ArgumentNullException(nameof(steps));
 
     public void Expand(ReachabilitySession session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        AddSharedObjectDispatch(session);
+        _steps.Record("shared object dispatch", () => AddSharedObjectDispatch(session));
         if (session.State.AllocatedTypes.Any(_delegateTypes.Recognize))
         {
             session.AddImplicit(ManagedExceptionKind.Argument, "System.ArgumentException");
             session.AddImplicit(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException");
         }
-        var intrinsicRoots = _runtimeIntrinsicTypeRoots.Plan(
+        var intrinsicRoots = _steps.Record("intrinsic type root plan", () => _runtimeIntrinsicTypeRoots.Plan(
             session.State.MethodInstances.Values,
             session.State.Types.Select(_typeIdentities.GetTypeIdentity).Concat(session.State.ConstructedTypes),
-            [.. session.ArrayElementSeeds],
             [.. session.TypeHandleSeeds],
-            [.. session.State.AllocatedTypes]);
+            [.. session.State.AllocatedTypes]));
+        _steps.Record("intrinsic type roots", () => AddIntrinsicRoots(session, intrinsicRoots));
+        _steps.Record("object array delegate adapters", () => AddObjectArrayDelegateAdapters(session));
+    }
+
+    private void AddIntrinsicRoots(ReachabilitySession session, RuntimeIntrinsicTypeRootPlan intrinsicRoots)
+    {
         foreach (var type in intrinsicRoots.RuntimeTypes)
         {
             session.AddRuntimeType(type);
@@ -86,6 +97,18 @@ internal sealed class RuntimeReachabilityExpander(
         {
             session.AddAllocatedType(type);
         }
+        // GetType of an object of a shared array type answers its element's array type, which CoreLib finds.
+        var shared = intrinsicRoots.AllocatedTypes.Where(SharedArrayShapes.IsShared).ToArray();
+        if (shared.Length != 0 && (session.State.SharedArrays is null || shared.Length != session.State.SharedArrays.Types.Length))
+        {
+            var typeOf = session.State.SharedArrays?.TypeOf ?? _sharedArrayTypeOf.Resolve();
+            session.State.SharedArrays = new([.. shared.OrderBy(type => type.CanonicalName, StringComparer.Ordinal)], typeOf);
+            session.VisitGenerated(CilOperation.Call, typeOf);
+        }
+    }
+
+    private void AddObjectArrayDelegateAdapters(ReachabilitySession session)
+    {
         foreach (var pair in _objectArrayDelegateAdapters.Plan(
                      session.State.MethodInstances.Values))
         {
@@ -94,7 +117,7 @@ internal sealed class RuntimeReachabilityExpander(
                 continue;
             }
             var plan = pair.Value;
-            session.EnqueueInstance(plan.Target);
+            session.EnqueueGenerated(plan.Target);
             if (plan.IsSupported)
             {
                 session.AddAllocatedType(plan.DelegateType);
@@ -112,7 +135,10 @@ internal sealed class RuntimeReachabilityExpander(
             .Where(pair => pair.Value.Operation == CilOperation.CallVirtual &&
                 pair.Value.ReceiverBound is null &&
                 !session.State.SharedObjectDispatch.ContainsKey(pair.Value.Declaration.CanonicalName) &&
-                session.State.DispatchTargets.TryGetValue(pair.Key, out var siteTargets) &&
+                // An unbounded site reaches every target of its slot use.
+                session.State.DispatchTargets.TryGetValue(
+                    new DispatchSlot(pair.Value.Operation, pair.Value.Declaration.CanonicalName),
+                    out var siteTargets) &&
                 _objectDispatchSharing.Shares(siteTargets.Count))
             .Select(pair => pair.Value.Declaration)
             .DistinctBy(declaration => declaration.CanonicalName)
@@ -122,7 +148,7 @@ internal sealed class RuntimeReachabilityExpander(
             if (_sharedObjectDispatch.Resolve(declaration) is { } helper)
             {
                 session.State.SharedObjectDispatch.Add(declaration.CanonicalName, helper);
-                session.VisitMethod(CilOperation.Call, helper);
+                session.VisitGenerated(CilOperation.Call, helper);
             }
         }
     }

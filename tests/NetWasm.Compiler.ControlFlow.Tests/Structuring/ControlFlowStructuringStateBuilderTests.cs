@@ -203,7 +203,7 @@ public sealed class ControlFlowStructuringStateBuilderTests
     {
         public int CallCount { get; private set; }
         public LoopRegionCreation Create(ControlFlowStructuringState state, ControlFlowGraph graph,
-            ImmutableHashSet<int> component, ControlFlowDomain domain, ImmutableArray<ControlFlowDomain> domains)
+            ImmutableHashSet<int> component, ControlFlowDomain domain, ControlFlowDomains domains)
         {
             Assert.Same(original, state.Graph);
             Assert.Same(original, graph);
@@ -272,7 +272,7 @@ public sealed class ControlFlowStructuringStateBuilderTests
             ControlFlowGraph graph,
             ImmutableHashSet<int> component,
             ControlFlowDomain domain,
-            ImmutableArray<ControlFlowDomain> domains)
+            ControlFlowDomains domains)
         {
             throw new NotSupportedException();
         }
@@ -288,7 +288,7 @@ public sealed class ControlFlowStructuringStateBuilderTests
             ControlFlowGraph graph,
             ImmutableHashSet<int> component,
             ControlFlowDomain domain,
-            ImmutableArray<ControlFlowDomain> domains)
+            ControlFlowDomains domains)
         {
             CallCount++;
             return creation;

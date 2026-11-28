@@ -92,7 +92,8 @@ internal sealed class WasmModulePlanner(
             request.ReferenceWriteBarrier,
             calledIntrinsics.Contains(RuntimeIntrinsic.GcObjectGeneration),
             calledIntrinsics.Overlaps(EventLoopCollectionIntrinsics),
-            calledIntrinsics.Contains(RuntimeIntrinsic.GcCollectYoung));
+            calledIntrinsics.Contains(RuntimeIntrinsic.GcCollectYoung),
+            request.SharedArrays is not null);
         var selectedRuntimeImports = runtimeImports.Resolve(runtimeImportSelection);
         var runtimeImportCount = selectedRuntimeImports.Length;
         var interopImports = interopImportPlanner.Build(request, runtimeImportCount);
@@ -246,6 +247,7 @@ internal sealed class WasmModulePlanner(
                 Index: new WasmFunctionIndex(sharedVirtualDispatchBase + index)))
             .ToImmutableDictionary(item => item.CanonicalName, item => item.Index, StringComparer.Ordinal);
         var helperBase = sharedVirtualDispatchBase + sharedVirtualDispatches.Length;
+        interopImports = interopImports with { RequiresExportFailure = request.ProducesJavaScriptErrors };
         if (!request.JavaScriptConversions.IsEmpty)
         {
             interopImports = interopImports with

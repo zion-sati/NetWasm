@@ -65,6 +65,11 @@ public sealed record CompilerOptions(
     // differ: proves units sound on a workload (tests, diagnosis). Costs a full emission.
     public bool VerifyCompiledUnits { get; init; }
 
+    // At None and O0, analyze the program at O1 as well, and fail the compile when the two reach different host
+    // imports, naming each one with how it was reached: an optimization level never changes which imports a program
+    // has. Costs one more analysis (tests, the dev-loop levels lane).
+    public bool VerifyImportParity { get; init; }
+
     // Modules the project's native archives import from; the host supplies
     // them beside the modules [WasmImportLinkage] imports name.
     public ImmutableArray<string> ImportModules { get; init; } = [];
@@ -77,6 +82,10 @@ public sealed record CompilerOptions(
     // compiles to a body that throws MissingMethodException or MissingFieldException when called, as .NET throws
     // when it first compiles such a method, and the compile warns NW1016 for it.
     public bool MissingApiAsError { get; init; }
+
+    // Qualification: dispatch sites whose receivers the receiver flow analysis follows precisely check each receiver
+    // against its set and fail fast outside it (RECEIVER_TYPE_FLOW_DESIGN.md, step B). Dispatch is unchanged.
+    public bool ReceiverFlowAudit { get; init; }
 
     // The least severe entries the diagnostic log keeps. Trace, the most detailed (an entry for each emitted
     // function and each method's metrics), is left out unless asked for: it is nearly all of a large program's log.

@@ -30,6 +30,7 @@ public sealed class CompilerHostArtifactFormatterTests
         var result = Result with
         {
             InteropManifest = new(1, name, new(0, 1, 0), new(width, 8, 12, 8, 16, 0, width), [], []),
+            RuntimeFeatures = ["finalization", "array-set-value"],
             NativeImports =
             [
                 new("libc", "pow", [WasmValueType.F64, WasmValueType.F64], WasmValueType.F64),
@@ -45,8 +46,12 @@ public sealed class CompilerHostArtifactFormatterTests
         Assert.Equal(result.ApplicationModule, artifacts[0].Bytes);
         Assert.Equal(result.MethodSymbols!.Bytes, artifacts[1].Bytes);
         using var layout = JsonDocument.Parse(artifacts[2].Bytes.AsMemory());
-        Assert.Equal(4, layout.RootElement.EnumerateObject().Count());
-        Assert.Equal(2, layout.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(7, layout.RootElement.EnumerateObject().Count());
+        Assert.Equal(3, layout.RootElement.GetProperty("schemaVersion").GetInt32());
+        // The program's runtime features in ordinal order, as nwc writes them: the linked runtime keeps only those.
+        Assert.Equal(["array-set-value", "finalization"],
+            layout.RootElement.GetProperty("runtimeFeatures").EnumerateArray().Select(feature => feature.GetString()));
+        Assert.Empty(layout.RootElement.GetProperty("importModules").EnumerateArray());
         Assert.Equal(name, layout.RootElement.GetProperty("target").GetString());
         Assert.Equal(1234, layout.RootElement.GetProperty("applicationStaticDataEnd").GetInt32());
         // The reached native imports in nwc's form, so a linked test runtime exports the C library's (Math's libm).
@@ -66,7 +71,7 @@ public sealed class CompilerHostArtifactFormatterTests
     }
 
     [Fact]
-    public void LegacyRequestsNeedNoSidecarsAndSnapshotModuleBytes()
+    public void RequestsWithoutSidecarsGetASnapshotOfTheModuleBytes()
     {
         var result = Result with { InteropManifest = null!, MethodSymbols = null };
 

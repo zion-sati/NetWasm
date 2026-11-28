@@ -84,7 +84,15 @@ public sealed class StackStorageTypeAnalyzer(
             return StackStorageAnalysis.Empty;
         }
 
-        var initialLocals = method.Body.LocalSignatureTypes.Select(type =>
+        // Only a byref local addresses storage, so the state holds the byref locals alone, each in its slot.
+        var slots = new int[method.Body.Locals.Length];
+        var addressed = 0;
+        for (var local = 0; local < slots.Length; local++)
+        {
+            slots[local] = method.Body.Locals[local] == CliValueKind.ManagedAddress ? addressed++ : -1;
+        }
+        var localSlots = ImmutableArray.Create(slots);
+        var initialLocals = method.Body.LocalSignatureTypes.Where((_, local) => slots[local] >= 0).Select(type =>
         {
             var closed = type.Substitute(method.Method.DeclaringType.TypeArguments, method.Method.MethodArguments);
             while (closed.Shape == CliTypeShape.Modified) closed = closed.ElementType!;
@@ -96,7 +104,7 @@ public sealed class StackStorageTypeAnalyzer(
         var entries = new Dictionary<int, StorageState>();
         var pending = new Queue<int>();
         var result = ImmutableDictionary.CreateBuilder<int, ImmutableArray<StackStorageType>>();
-        var localResult = ImmutableDictionary.CreateBuilder<int, ImmutableArray<StackStorageType>>();
+        var localResult = ImmutableDictionary.CreateBuilder<int, StackStorageLocals>();
         var transfers = ImmutableDictionary.CreateBuilder<int, StackStorageTransfer>();
         Merge(graph.Entry.Index, new([], initialLocals));
         var detachedRegionsSeeded = false;
@@ -116,11 +124,13 @@ public sealed class StackStorageTypeAnalyzer(
             var block = graph.GetBlock(blockIndex);
             var stack = entries[blockIndex].Stack.ToList();
             var locals = entries[blockIndex].Locals.ToBuilder();
+            // The locals' storage as the instructions since the last store to a byref local see it.
+            StackStorageLocals? localStorage = null;
             for (var index = 0; index < block.Instructions.Length; index++)
             {
                 var instruction = block.Instructions[index];
                 result[instruction.Offset] = [.. stack.Select(Describe)];
-                localResult[instruction.Offset] = [.. locals.Select(Describe)];
+                localResult[instruction.Offset] = localStorage ??= new(localSlots, [.. locals.Select(Describe)]);
                 if (CilSafepointClassifier.MayTransferControlExceptionally(instruction))
                 {
                     foreach (var successor in flow.Exceptional[blockIndex])
@@ -143,21 +153,27 @@ public sealed class StackStorageTypeAnalyzer(
                     method.Body.Locals[((CilOperand.Index)instruction.Operand).Value] == CliValueKind.ManagedAddress)
                 {
                     var local = ((CilOperand.Index)instruction.Operand).Value;
+                    var slot = slots[local];
                     // An unmanaged pointer stored into a byref local, as `ref *pointer` stores one,
                     // addresses memory the collector does not manage: no backing to keep alive.
-                    locals[local] = controlFlow.InstructionEntryStacks[instruction.Offset][^1] == CliValueKind.NativeInt
-                        ? new StorageIdentity(initialLocals[local].Type, false, true, [], true)
+                    locals[slot] = controlFlow.InstructionEntryStacks[instruction.Offset][^1] == CliValueKind.NativeInt
+                        ? new StorageIdentity(initialLocals[slot].Type, false, true, [], true)
                         : stack[^1];
+                    localStorage = null;
                     transfers[instruction.Offset] = new(new(StackStorageLocationKind.Local, local),
-                        locals[local].Captures.ToImmutableDictionary(type => type,
+                        locals[slot].Captures.ToImmutableDictionary(type => type,
                             _ => new StackStorageLocation(StackStorageLocationKind.EvaluationStack, stack.Count - 1)), []);
                 }
 
+                // What the instruction leaves, as it leaves it: a block's last instruction is read from the block's
+                // exit, not from a successor, whose join may take a native int this block leaves as a managed pointer.
                 var outgoing = index + 1 < block.Instructions.Length
                     ? controlFlow.InstructionEntryStacks[block.Instructions[index + 1].Offset]
-                    : graph.Successors[blockIndex].IsEmpty
-                        ? []
-                        : controlFlow.EntryStacks[graph.Successors[blockIndex][0]];
+                    : controlFlow.ExitStacks.TryGetValue(blockIndex, out var exit)
+                        ? exit
+                        : graph.Successors[blockIndex].IsEmpty
+                            ? []
+                            : controlFlow.EntryStacks[graph.Successors[blockIndex][0]];
                 var produced = ProducedCount(instruction);
                 var identity = producers.GetValueOrDefault(instruction.Offset);
                 StackStorageLocation? copySource = null;
@@ -165,7 +181,7 @@ public sealed class StackStorageTypeAnalyzer(
                     method.Body.Locals[((CilOperand.Index)instruction.Operand).Value] == CliValueKind.ManagedAddress)
                 {
                     var local = ((CilOperand.Index)instruction.Operand).Value;
-                    identity = locals[local];
+                    identity = locals[slots[local]];
                     copySource = new(StackStorageLocationKind.Local, local);
                 }
                 if (instruction.Operation == CilOperation.LoadFieldAddress &&

@@ -9,65 +9,44 @@ namespace NetWasm.Compiler.ControlFlow;
 
 public sealed class ControlFlowDominanceAnalyzer : IControlFlowDominanceAnalyzer
 {
-    // The maximal fixed point of Dom(n) = {n} ∪ ∩ Dom(p) over n's predecessors within the
-    // blocks, starting from {entry} for the entry and every block for the rest.
-    public Dictionary<int, ImmutableHashSet<int>> Analyze(
+    private readonly IDominatorTreeBuilder _trees;
+
+    public ControlFlowDominanceAnalyzer(IDominatorTreeBuilder trees) =>
+        _trees = trees ?? throw new ArgumentNullException(nameof(trees));
+
+    // Dom(n) = {n} ∪ ∩ Dom(p) over n's predecessors within the blocks, its maximal fixed point:
+    // the entry, each handler's and filter's first block (control enters it from wherever its
+    // protected block throws, though a loop in the handler may branch back to it too) and a block
+    // with no predecessor among the blocks dominate only themselves, and a block neither reaches is
+    // dominated by every block.
+    public DominatorTree Analyze(
         ControlFlowGraph graph,
         int entry,
         ImmutableHashSet<int> blocks)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(blocks);
-        var sets = new DominanceBitSets(DominanceBitSets.CountFor(graph, blocks));
-        // Every block but the entry starts dominated by all blocks: one full row, copied.
-        var all = new ulong[sets.Scratch.Length];
-        DominanceBitSets.Fill(all, blocks);
-        foreach (var node in blocks)
+        var handlerEntries = new HashSet<int>();
+        foreach (var region in graph.MethodBody.ExceptionRegions)
         {
-            var row = sets.Row(node);
-            if (node == entry)
-            {
-                row.Clear();
-                DominanceBitSets.Set(row, entry);
-            }
-            else
-            {
-                all.CopyTo(row);
-            }
+            handlerEntries.Add(graph.GetBlockAtOffset(region.HandlerOffset).Index);
+            if (region.FilterOffset is int filter) handlerEntries.Add(graph.GetBlockAtOffset(filter).Index);
         }
-        var order = new List<int>(blocks.Count);
-        foreach (var node in blocks)
+        var roots = new List<int>();
+        foreach (var block in blocks)
         {
-            if (node != entry) order.Add(node);
+            if (block == entry || handlerEntries.Contains(block) || !HasPredecessorWithin(graph, block, blocks)) roots.Add(block);
         }
-        order.Sort();
-        var scratch = sets.Scratch;
-        bool changed;
-        do
+        return _trees.Build(new DominanceProblem(
+            blocks, roots, graph.Predecessors, graph.Successors));
+    }
+
+    private static bool HasPredecessorWithin(ControlFlowGraph graph, int block, ImmutableHashSet<int> blocks)
+    {
+        foreach (var predecessor in graph.Predecessors[block])
         {
-            changed = false;
-            foreach (var node in order)
-            {
-                var first = true;
-                foreach (var predecessor in graph.Predecessors[node])
-                {
-                    if (!blocks.Contains(predecessor)) continue;
-                    if (first)
-                    {
-                        sets.Row(predecessor).CopyTo(scratch);
-                        first = false;
-                    }
-                    else
-                    {
-                        DominanceBitSets.And(scratch, sets.Row(predecessor));
-                    }
-                }
-                if (first) Array.Clear(scratch);
-                DominanceBitSets.Set(scratch, node);
-                changed |= sets.Update(node);
-            }
+            if (blocks.Contains(predecessor)) return true;
         }
-        while (changed);
-        return sets.ToSets(blocks);
+        return false;
     }
 }

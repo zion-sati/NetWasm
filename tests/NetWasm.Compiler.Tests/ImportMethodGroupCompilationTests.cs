@@ -60,7 +60,7 @@ public sealed class ImportMethodGroupCompilationTests
 
         ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Equal(["resolve", "twice"],
-            result.InteropManifest.Imports.Select(import => import.Name).Order(StringComparer.Ordinal));
+            ProgramImports(result.InteropManifest.Imports).Select(import => import.Name).Order(StringComparer.Ordinal));
     }
 
     [Theory]

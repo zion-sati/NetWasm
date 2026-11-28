@@ -29,7 +29,14 @@ public readonly record struct RootSource(
 public sealed record SafepointRootMap(
     int IlOffset,
     ImmutableArray<RootSource> Roots,
-    ImmutableArray<RootSource> ConstructorCallRoots);
+    ImmutableArray<RootSource> ConstructorCallRoots)
+{
+    // Of Roots, those a point that collects only while what it throws travels to a handler in the method need not
+    // publish where their slot still holds null: no handler reads them, and the evaluation stack is gone once the throw
+    // leaves. A collection there sees null in the slot, so a value dead after the throw is not kept alive. A point that
+    // can collect and go on has none.
+    public ImmutableArray<RootSource> Deferrable { get; init; } = [];
+}
 
 public sealed record MethodRootMap(
     EntityKey Method,

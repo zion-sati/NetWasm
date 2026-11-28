@@ -46,6 +46,14 @@ internal sealed class CompilerStructuredMethodFormatter : ICompilerStructuredMet
                             CultureInfo.InvariantCulture) ?? "none")
                         .AppendLine();
                     break;
+                case Structured.StructuredSwitch table:
+                    text.Append(indent).Append("switch IL_")
+                        .Append(Hex(method.Blocks[table.Head.Block].StartOffset))
+                        .Append(" to ")
+                        .AppendJoin(", ", table.Cases.Append(table.Default)
+                            .Select(target => "IL_" + Hex(method.Blocks[target].StartOffset)))
+                        .AppendLine();
+                    break;
                 case Structured.StructuredIf conditional:
                     text.Append(indent).Append("if IL_")
                         .Append(Hex(method.Blocks[conditional.Condition.Block].StartOffset))

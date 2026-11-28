@@ -166,6 +166,10 @@ internal sealed record CorpusCompilation(
     string Directory)
 {
     public ImmutableArray<CorpusSourceArtifact> Sources { get; init; } = [];
+
+    // Whether the compile records managed stack traces: when the fixture asks, and always from Debug IL, as the SDK's
+    // Debug configuration does (NetWasmManagedStackTrace).
+    public bool EmitsStackTrace => Fixture.EmitStackTrace || Profile == CilProfile.Debug;
 }
 
 internal sealed record OracleObservation(

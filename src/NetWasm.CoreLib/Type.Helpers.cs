@@ -162,7 +162,8 @@ public partial class Type
         throw new PlatformNotSupportedException("COM type lookup is not supported on NetWasm.");
 
     // NetWasm: a program cannot create types, so these return the type the program has, from the type
-    // table, and throw where it has none.
+    // table. An array type the program has none of is a shared array type's for the element (ranks one to
+    // three, SharedArrays); other types it has none of throw.
     public virtual Type MakeArrayType() => WithElement(RuntimeTypeFactsFlags.SzArray, 1);
 
     public virtual Type MakeArrayType(int rank)
@@ -246,7 +247,10 @@ public partial class Type
                 return GetTypeFromSemanticId(id);
             }
         }
-        throw NotInProgram();
+        return (kind & (RuntimeTypeFactsFlags.SzArray | RuntimeTypeFactsFlags.Array)) != 0 &&
+            SharedArrays.Made(this, kind, rank, excluded) is { } made
+            ? made
+            : throw NotInProgram();
     }
 
     private static PlatformNotSupportedException NotInProgram() =>

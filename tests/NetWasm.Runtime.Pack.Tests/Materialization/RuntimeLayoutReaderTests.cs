@@ -20,19 +20,24 @@ public sealed class RuntimeLayoutReaderTests
         using var directory = new TemporaryDirectory();
         var path = directory.Write("runtime-layout.json", JsonSerializer.Serialize(new
         {
-            schemaVersion = 2,
+            schemaVersion = 3,
             target = "wasm64",
             applicationStaticDataEnd = 65_537,
+            managedExecutableEntryPoint = (object?)null,
+            runtimeFeatures = Array.Empty<string>(),
+            nativeImports = Array.Empty<object>(),
+            importModules = Array.Empty<string>(),
         }));
 
         var reader = Assert.IsAssignableFrom<IRuntimeLayoutReader>(new RuntimeLayoutReader());
         var layout = reader.Read(path);
 
-        Assert.Equal(2, layout.SchemaVersion);
+        Assert.Equal(3, layout.SchemaVersion);
         Assert.Equal("wasm64", layout.Target);
         Assert.Equal(65_537, layout.ApplicationStaticDataEnd);
         Assert.Empty(layout.NativeImports);
-        Assert.True(layout.RuntimeFeatures.IsDefault);
+        Assert.Empty(layout.RuntimeFeatures);
+        Assert.False(layout.RuntimeFeatures.IsDefault);
     }
 
     [Fact]
@@ -41,11 +46,13 @@ public sealed class RuntimeLayoutReaderTests
         using var directory = new TemporaryDirectory();
         var selectedPath = directory.Write("selected.json", """
             {"schemaVersion":3,"target":"wasm32","applicationStaticDataEnd":0,
+             "importModules":[],
              "runtimeFeatures":["ephemeron-handles","finalization","structured-command-diagnostics","weak-handles"],
              "nativeImports":[]}
             """);
         var emptyPath = directory.Write("empty.json", """
             {"schemaVersion":3,"target":"wasm32","applicationStaticDataEnd":0,
+             "importModules":[],
              "runtimeFeatures":[],"nativeImports":[]}
             """);
 
@@ -72,7 +79,7 @@ public sealed class RuntimeLayoutReaderTests
 
         var reader = new RuntimeLayoutReader();
         Assert.Equal(["host_gl", "host_ui"], reader.Read(declared).ImportModules.ToArray());
-        Assert.Empty(reader.Read(omitted).ImportModules);
+        Assert.Throws<InvalidOperationException>(() => reader.Read(omitted));
         foreach (var modules in new[] { "\"host_ui\"", "[1]", "[\"\"]", "[\"host_ui\",\"host_ui\"]" })
         {
             var invalid = directory.Write("invalid.json", $$"""
@@ -94,6 +101,7 @@ public sealed class RuntimeLayoutReaderTests
             applicationStaticDataEnd = 0,
             runtimeFeatures = NetWasmRuntimeFeatureIds.All,
             nativeImports = Array.Empty<object>(),
+            importModules = Array.Empty<string>(),
         }));
 
         Assert.Equal(
@@ -110,6 +118,7 @@ public sealed class RuntimeLayoutReaderTests
         using var directory = new TemporaryDirectory();
         var layout = $$"""
             {"schemaVersion":3,"target":"wasm32","applicationStaticDataEnd":0,
+             "importModules":[],
              "runtimeFeatures":{{features}},"nativeImports":[]}
             """;
 
@@ -123,6 +132,7 @@ public sealed class RuntimeLayoutReaderTests
         using var directory = new TemporaryDirectory();
         var path = directory.Write("layout.json", """
             {"schemaVersion":3,"target":"wasm64","applicationStaticDataEnd":123,
+             "runtimeFeatures":[],"importModules":[],
              "nativeImports":[
                {"libraryName":"mule","entryPoint":"compute","parameters":["i32","i64","f32","f64"],"returnType":"i64"},
                {"libraryName":"__Internal","entryPoint":"reset","parameters":[],"returnType":null}]}
@@ -150,6 +160,7 @@ public sealed class RuntimeLayoutReaderTests
         using var directory = new TemporaryDirectory();
         var path = directory.Write("layout.json", """
             {"schemaVersion":4,"target":"wasm64","applicationStaticDataEnd":123,
+             "runtimeFeatures":[],"importModules":[],
              "nativeImports":[],
              "nativeCallbackSupport":{
                "fileName":"application.callbacks.o",
@@ -197,6 +208,8 @@ public sealed class RuntimeLayoutReaderTests
             target = "wasm32",
             applicationStaticDataEnd = 0,
             nativeImports = Array.Empty<object>(),
+            runtimeFeatures = Array.Empty<string>(),
+            importModules = Array.Empty<string>(),
             nativeCallbackSupport = new
             {
                 fileName,
@@ -388,18 +401,18 @@ public sealed class RuntimeLayoutReaderTests
                 root.ToJsonString())));
     }
 
-    [Theory]
-    [InlineData(2)]
-    [InlineData(3)]
-    public void ReadsExplicitEmptyNativeImports(int schema)
+    [Fact]
+    public void ReadsExplicitEmptyNativeImports()
     {
         using var directory = new TemporaryDirectory();
         var path = directory.Write("layout.json", JsonSerializer.Serialize(new
         {
-            schemaVersion = schema,
+            schemaVersion = 3,
             target = "wasm32",
             applicationStaticDataEnd = 0,
             nativeImports = Array.Empty<object>(),
+            runtimeFeatures = Array.Empty<string>(),
+            importModules = Array.Empty<string>(),
         }));
 
         Assert.Empty(new RuntimeLayoutReader().Read(path).NativeImports);
@@ -408,12 +421,12 @@ public sealed class RuntimeLayoutReaderTests
     [Theory]
     [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0}")]
     [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"nativeImports\":[]}")]
-    [InlineData("{\"schemaVersion\":3,\"applicationStaticDataEnd\":0,\"nativeImports\":[]}")]
-    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"nativeImports\":null}")]
-    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"nativeImports\":{}}")]
-    [InlineData("{\"schemaVersion\":3,\"SchemaVersion\":2,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"nativeImports\":[]}")]
-    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"target\":\"wasm64\",\"applicationStaticDataEnd\":0,\"nativeImports\":[]}")]
-    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"nativeImports\":[],\"NativeImports\":[]}")]
+    [InlineData("{\"schemaVersion\":3,\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":[]}")]
+    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":null}")]
+    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":{}}")]
+    [InlineData("{\"schemaVersion\":3,\"SchemaVersion\":2,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":[]}")]
+    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"target\":\"wasm64\",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":[]}")]
+    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":[],\"NativeImports\":[]}")]
     [InlineData("{\"schemaVersion\":\"3\",\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"nativeImports\":[]}")]
     public void RejectsIncompleteOrContradictorySchemaThreeContracts(string content)
     {
@@ -436,7 +449,7 @@ public sealed class RuntimeLayoutReaderTests
     public void RejectsIncompleteOrContradictoryNativeImportRecords(string import)
     {
         using var directory = new TemporaryDirectory();
-        var content = "{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"nativeImports\":[" + import + "]}";
+        var content = "{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":[" + import + "]}";
         var error = Assert.Throws<InvalidOperationException>(() =>
             new RuntimeLayoutReader().Read(directory.Write("layout.json", content)));
         Assert.Equal("The NetWasm runtime layout evidence is invalid.", error.Message);
@@ -450,22 +463,10 @@ public sealed class RuntimeLayoutReaderTests
     public void RejectsUnqualifiedPhysicalValueTypes(string parameters, string result)
     {
         using var directory = new TemporaryDirectory();
-        var content = "{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"nativeImports\":[{\"libraryName\":\"mule\",\"entryPoint\":\"compute\",\"parameters\":" + parameters + ",\"returnType\":" + result + "}]}";
+        var content = "{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":[{\"libraryName\":\"mule\",\"entryPoint\":\"compute\",\"parameters\":" + parameters + ",\"returnType\":" + result + "}]}";
         var error = Assert.Throws<InvalidOperationException>(() =>
             new RuntimeLayoutReader().Read(directory.Write("layout.json", content)));
         Assert.Equal("The NetWasm runtime layout evidence is malformed.", error.Message);
-    }
-
-    [Fact]
-    public void RejectsNativeImportsInLegacySchema()
-    {
-        using var directory = new TemporaryDirectory();
-        var path = directory.Write("layout.json", """
-            {"schemaVersion":2,"target":"wasm32","applicationStaticDataEnd":0,
-             "nativeImports":[{"libraryName":"mule","entryPoint":"reset","parameters":[],"returnType":null}]}
-            """);
-        var error = Assert.Throws<InvalidOperationException>(() => new RuntimeLayoutReader().Read(path));
-        Assert.Equal("The NetWasm runtime layout evidence is invalid.", error.Message);
     }
 
     [Fact]
@@ -491,9 +492,13 @@ public sealed class RuntimeLayoutReaderTests
     [InlineData("{}")]
     [InlineData("{\"schemaVersion\":1,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0}")]
     [InlineData("{\"schemaVersion\":1,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"nativeImports\":[]}")]
-    [InlineData("{\"schemaVersion\":4,\"target\":\"wasm64\",\"applicationStaticDataEnd\":0,\"nativeImports\":[]}")]
-    [InlineData("{\"schemaVersion\":2,\"target\":\" \",\"applicationStaticDataEnd\":0}")]
-    [InlineData("{\"schemaVersion\":2,\"target\":\"wasm32\",\"applicationStaticDataEnd\":-1}")]
+    [InlineData("{\"schemaVersion\":4,\"target\":\"wasm64\",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":[]}")]
+    [InlineData("{\"schemaVersion\":3,\"target\":\" \",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":[]}")]
+    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":-1,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":[]}")]
+    // Schema 2, and schema 3 without the runtime features or import modules every compiler writes.
+    [InlineData("{\"schemaVersion\":2,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"importModules\":[],\"nativeImports\":[]}")]
+    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"importModules\":[],\"nativeImports\":[]}")]
+    [InlineData("{\"schemaVersion\":3,\"target\":\"wasm32\",\"applicationStaticDataEnd\":0,\"runtimeFeatures\":[],\"nativeImports\":[]}")]
     public void RejectsInvalidLayoutEvidence(string content)
     {
         using var directory = new TemporaryDirectory();
@@ -516,6 +521,8 @@ public sealed class RuntimeLayoutReaderTests
             target = "wasm32",
             applicationStaticDataEnd = 0,
             nativeImports = Array.Empty<object>(),
+            runtimeFeatures = Array.Empty<string>(),
+            importModules = Array.Empty<string>(),
             nativeCallbackSupport = new
             {
                 fileName = "application.callbacks.o",

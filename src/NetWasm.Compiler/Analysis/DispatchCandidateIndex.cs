@@ -10,6 +10,13 @@ using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis;
 
+// The (slot use, receiver) pairs the closure resolves. A slot use (DispatchSlot) is resolved for a receiver once,
+// when a site of it first admits the receiver: an unbounded site admits every receiver its method's declaring type
+// admits, a bounded one those assignable to its bound, variance included. So a receiver costs one pair per slot use
+// that admits it, however many sites call the slot use, and a further site of a slot use costs a pair only for each
+// receiver its bound admits and no earlier site's did.
+// Receivers are filed under every key they reach and contract groups under their own, so a new receiver or contract
+// is classified only against those its keys can match.
 internal sealed class DispatchCandidateIndex(
     ITypeRelationshipClassifier relationships,
     ITypeRelationshipKeyResolver relationshipKeys)
@@ -19,8 +26,6 @@ internal sealed class DispatchCandidateIndex(
         relationships ?? throw new ArgumentNullException(nameof(relationships));
     private readonly ITypeRelationshipKeyResolver _relationshipKeys =
         relationshipKeys ?? throw new ArgumentNullException(nameof(relationshipKeys));
-    // Receivers filed under every key they reach and contract groups under their own, so a
-    // new receiver or contract is classified only against those its keys can match.
     private readonly Dictionary<string, List<(int Order, CliTypeIdentity Receiver)>> _receiversByKey =
         new(StringComparer.Ordinal);
     private readonly List<(int Order, CliTypeIdentity Receiver)> _unboundedReceivers = [];
@@ -28,20 +33,20 @@ internal sealed class DispatchCandidateIndex(
     private readonly Dictionary<string, List<ContractGroup>> _groupsByKey = new(StringComparer.Ordinal);
     private readonly List<ContractGroup> _unboundedGroups = [];
     private readonly List<ContractGroup> _groupOrder = [];
-    private readonly Dictionary<string, IndexedDeclaration> _declarations =
-        new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DispatchDeclaration> _sites = new(StringComparer.Ordinal);
+    private readonly Dictionary<DispatchSlot, SlotUse> _slots = [];
     private readonly Dictionary<CliTypeIdentity, ContractGroup> _groups = [];
     private readonly HashSet<CliTypeIdentity> _receiverSet = [];
-    private int _nextDeclarationOrdinal;
+    private int _nextSlotOrdinal;
 
     public ImmutableArray<DispatchCandidate> Index(DispatchDeclarationCandidate candidate)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(candidate.DispatchKey);
         ArgumentNullException.ThrowIfNull(candidate.Declaration);
 
-        if (_declarations.TryGetValue(candidate.DispatchKey, out var existing))
+        if (_sites.TryGetValue(candidate.DispatchKey, out var existing))
         {
-            if (existing.Declaration == candidate.Declaration)
+            if (existing == candidate.Declaration)
             {
                 return [];
             }
@@ -50,31 +55,44 @@ internal sealed class DispatchCandidateIndex(
                 $"Dispatch key '{candidate.DispatchKey}' identifies conflicting declarations.");
         }
 
-        var contract = candidate.Declaration.Declaration.DeclaringType;
+        var declaration = candidate.Declaration;
+        var contract = declaration.Declaration.DeclaringType;
         if (!_groups.TryGetValue(contract, out var group))
         {
             group = CreateGroup(contract);
             _groups.Add(contract, group);
             FileGroup(group);
         }
+        _sites.Add(candidate.DispatchKey, declaration);
 
-        var indexed = new IndexedDeclaration(
-            _nextDeclarationOrdinal++,
-            candidate.DispatchKey,
-            candidate.Declaration);
-        _declarations.Add(candidate.DispatchKey, indexed);
-        group.Declarations.Add(indexed);
+        var key = new DispatchSlot(declaration.Operation, declaration.Declaration.CanonicalName);
+        if (!_slots.TryGetValue(key, out var slot))
+        {
+            slot = new SlotUse(_nextSlotOrdinal++, key, declaration);
+            _slots.Add(key, slot);
+            group.Slots.Add(slot);
+        }
+        if (slot.Unbounded)
+        {
+            return [];
+        }
+        var bound = declaration.ReceiverBound;
+        if (bound is null)
+        {
+            slot.Unbounded = true;
+        }
+        else if (!slot.Bounds.Add(bound))
+        {
+            return [];
+        }
 
-        var result = ImmutableArray.CreateBuilder<DispatchCandidate>(
-            group.CompatibleReceivers.Count);
+        var result = ImmutableArray.CreateBuilder<DispatchCandidate>();
         foreach (var receiver in group.CompatibleReceivers)
         {
-            if (Admits(indexed.Declaration, receiver))
+            if (!slot.Admitted.Contains(receiver) && (bound is null || Admits(bound, receiver)))
             {
-                result.Add(new DispatchCandidate(
-                    indexed.DispatchKey,
-                    indexed.Declaration,
-                    receiver));
+                slot.Admitted.Add(receiver);
+                result.Add(new DispatchCandidate(slot.Key, slot.FirstSite, receiver));
             }
         }
 
@@ -89,8 +107,8 @@ internal sealed class DispatchCandidateIndex(
             return [];
         }
 
+        var slots = new List<SlotUse>();
         var compatibleGroups = new List<ContractGroup>();
-        var declarations = new List<IndexedDeclaration>();
         foreach (var group in GroupsFor(candidate.Receiver))
         {
             if (!_relationships.Classify(candidate.Receiver, group.Contract).IsAssignmentCompatible)
@@ -99,10 +117,10 @@ internal sealed class DispatchCandidateIndex(
             }
 
             compatibleGroups.Add(group);
-            declarations.AddRange(group.Declarations);
+            slots.AddRange(group.Slots);
         }
 
-        declarations.Sort(static (left, right) => left.Ordinal.CompareTo(right.Ordinal));
+        slots.Sort(static (left, right) => left.Ordinal.CompareTo(right.Ordinal));
         _receiverSet.Add(candidate.Receiver);
         FileReceiver(candidate.Receiver);
         foreach (var group in compatibleGroups)
@@ -110,25 +128,22 @@ internal sealed class DispatchCandidateIndex(
             group.CompatibleReceivers.Add(candidate.Receiver);
         }
 
-        var result = ImmutableArray.CreateBuilder<DispatchCandidate>(declarations.Count);
-        foreach (var declaration in declarations)
+        var result = ImmutableArray.CreateBuilder<DispatchCandidate>(slots.Count);
+        foreach (var slot in slots)
         {
-            if (Admits(declaration.Declaration, candidate.Receiver))
+            if (slot.Unbounded || slot.Bounds.Any(bound => Admits(bound, candidate.Receiver)))
             {
-                result.Add(new DispatchCandidate(
-                    declaration.DispatchKey,
-                    declaration.Declaration,
-                    candidate.Receiver));
+                slot.Admitted.Add(candidate.Receiver);
+                result.Add(new DispatchCandidate(slot.Key, slot.FirstSite, candidate.Receiver));
             }
         }
 
         return result.ToImmutable();
     }
 
-    // A call site whose receivers all have a known static type reaches only
-    // the receivers assignable to it, variance included.
-    private bool Admits(DispatchDeclaration declaration, CliTypeIdentity receiver) =>
-        declaration.ReceiverBound is not { } bound ||
+    // A call site whose receivers all have a known static type reaches only the receivers assignable to it, variance
+    // included.
+    private bool Admits(CliTypeIdentity bound, CliTypeIdentity receiver) =>
         _relationships.Classify(receiver, bound).IsAssignmentCompatible;
 
     private ContractGroup CreateGroup(CliTypeIdentity contract)
@@ -208,10 +223,21 @@ internal sealed class DispatchCandidateIndex(
                 .Concat(_unboundedGroups);
     }
 
-    private sealed record IndexedDeclaration(
-        int Ordinal,
-        string DispatchKey,
-        DispatchDeclaration Declaration);
+    // A slot use, its sites' bounds (none once an unbounded site calls it) and the receivers some site of it admits.
+    private sealed class SlotUse(int ordinal, DispatchSlot key, DispatchDeclaration firstSite)
+    {
+        public int Ordinal { get; } = ordinal;
+
+        public DispatchSlot Key { get; } = key;
+
+        public DispatchDeclaration FirstSite { get; } = firstSite;
+
+        public bool Unbounded { get; set; }
+
+        public HashSet<CliTypeIdentity> Bounds { get; } = [];
+
+        public HashSet<CliTypeIdentity> Admitted { get; } = [];
+    }
 
     private sealed class ContractGroup(
         CliTypeIdentity contract,
@@ -219,7 +245,7 @@ internal sealed class DispatchCandidateIndex(
     {
         public CliTypeIdentity Contract { get; } = contract;
 
-        public List<IndexedDeclaration> Declarations { get; } = [];
+        public List<SlotUse> Slots { get; } = [];
 
         public List<CliTypeIdentity> CompatibleReceivers { get; } = compatibleReceivers;
     }

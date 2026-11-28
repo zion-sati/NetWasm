@@ -11,7 +11,7 @@ public sealed class AttributeFallbackContractCompilationTests
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void UnfilteredQueriesUseCatchableManagedFallbacks(WasmTarget target)
+    public void UnfilteredQueriesAnswerForKnownTypesAndFallBackForRunTimeOnes(WasmTarget target)
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource("AttributeFallbackFixture", Source);
@@ -30,15 +30,22 @@ public sealed class AttributeFallbackContractCompilationTests
         namespace AttributeFallbackFixture;
         public static class EntryPoint
         {
+            // A known type's unfiltered queries answer as desktop's do (its attributes, as object[] or Attribute[]); one on a
+            // Type known only at run time would take every attribute of every type the program has, so it keeps the
+            // catchable fallback.
             public static int Run(int input)
             {
+                if (typeof(Target).GetCustomAttributes(true) is not { Length: 0 } own || own.GetType() != typeof(object[])) return 1;
+                if (CustomAttributeExtensions.GetCustomAttributes(typeof(Target)) is not Attribute[] { Length: 0 }) return 2;
+                if (CustomAttributeExtensions.GetCustomAttributes(typeof(Target), false) is not Attribute[] { Length: 0 }) return 3;
+                if (((ICustomAttributeProvider)typeof(Target)).GetCustomAttributes(false).Length != 0) return 4;
+                var runtime = Pick(input);
                 var caught = 0;
-                try { typeof(Target).GetCustomAttributes(true); } catch (PlatformNotSupportedException e) { if (e.Message.Length > 0) caught++; }
-                try { CustomAttributeExtensions.GetCustomAttributes(typeof(Target)); } catch (PlatformNotSupportedException e) { if (e.Message.Length > 0) caught++; }
-                try { CustomAttributeExtensions.GetCustomAttributes(typeof(Target), false); } catch (PlatformNotSupportedException e) { if (e.Message.Length > 0) caught++; }
-                try { ((ICustomAttributeProvider)typeof(Target)).GetCustomAttributes(false); } catch (PlatformNotSupportedException e) { if (e.Message.Length > 0) caught++; }
-                return caught == 4 ? input + 1 : 1;
+                try { runtime.GetCustomAttributes(true); } catch (PlatformNotSupportedException e) { if (e.Message.Length > 0) caught++; }
+                try { CustomAttributeExtensions.GetCustomAttributes(runtime, false); } catch (PlatformNotSupportedException e) { if (e.Message.Length > 0) caught++; }
+                return caught == 2 ? input + 1 : 5;
             }
+            private static Type Pick(int input) => input > 0 ? typeof(Target) : typeof(EntryPoint);
             private sealed class Target { }
         }
         """;

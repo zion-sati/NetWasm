@@ -26,6 +26,19 @@ internal sealed record InteropImportPlan(
     public ImmutableDictionary<string, int> Conversions { get; init; } =
         ImmutableDictionary<string, int>.Empty;
 
+    // The program builds a JSException holding a JavaScript error, so its exports offer it back to JavaScript.
+    public bool RequiresExportFailure { get; init; }
+
+    /// <summary>The function an export's catch gives its exception to: present exactly where the program builds
+    /// JSExceptions holding JavaScript errors.</summary>
+    public int? ExportFailure =>
+        Conversions.TryGetValue(JavaScriptConversion.ExportFailure, out var function)
+            ? function
+            : RequiresExportFailure
+                ? throw new InvalidOperationException(
+                    "the program builds JSExceptions holding JavaScript errors, but no export failure offer was reached")
+                : null;
+
     /// <summary>The function that takes a managed value of the type to JavaScript.</summary>
     public int FromManaged(CliTypeIdentity type) => Require(JavaScriptConversion.FromManaged(type), type);
 

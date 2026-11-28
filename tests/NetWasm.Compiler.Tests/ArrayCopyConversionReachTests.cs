@@ -10,8 +10,8 @@ using NetWasm.TestInfrastructure;
 namespace NetWasm.Compiler.Tests;
 
 // Array.Copy's primitive conversion is pay-for-use: a program whose copies all take two arrays of one static
-// one-dimensional type (List<T> included) carries none of it, and one that may copy between element types, or
-// through arrays typed Array, carries it and widens as desktop does.
+// one-dimensional type (List<T> included), or two of reference elements, carries none of it, and one that may copy
+// between value element types, or through arrays typed Array, carries it and widens as desktop does.
 public sealed partial class ArrayCopyConversionReachTests
 {
     private const string OneTypeSource = """
@@ -36,6 +36,39 @@ public sealed partial class ArrayCopyConversionReachTests
                 Array.Copy(names, copiedNames, 2);
                 return numbers[0] == 19 && numbers.Count == 20 && target[0] == 1 && target[2] == 2 && target[4] == 4 &&
                     target[5] == 9 && copiedDays[1] == DayOfWeek.Friday && (string)copiedNames[1] == "b" ? 42 : 1;
+            }
+        }
+        """;
+
+    // Arrays of reference elements of two static types: the runtime still checks each element it assigns, so a
+    // downcast copy succeeds when every element fits and throws InvalidCastException, as on desktop, when one does not.
+    private const string ReferenceElementsSource = """
+        using System;
+        public class Animal { public int Legs; }
+        public sealed class Bird : Animal { }
+        public static class EntryPoint
+        {
+            public static int Run(int input)
+            {
+                var names = new[] { "a", "b", "c" };
+                var boxes = new object[3];
+                Array.Copy(names, boxes, 3);
+                Array.Copy(names, 1, boxes, 0, 2);
+                var birds = new[] { new Bird { Legs = 2 }, new Bird { Legs = 3 } };
+                var animals = new Animal[2];
+                Array.Copy(birds, animals, 2);
+                var back = new Bird[2];
+                Array.Copy(animals, back, 2);
+                Animal[] mixed = { new Animal(), new Bird() };
+                var failed = false;
+                try { Array.Copy(mixed, back, 2); }
+                catch (InvalidCastException) { failed = true; }
+                object[] holder = new string[1];
+                var mismatch = false;
+                try { Array.Copy(new object[] { 1 }, holder, 1); }
+                catch (InvalidCastException) { mismatch = true; }
+                return (string)boxes[0] == "b" && (string)boxes[2] == "c" && animals[1].Legs == 3 && back[0].Legs == 2 &&
+                    failed && mismatch ? 42 : 1;
             }
         }
         """;
@@ -74,6 +107,12 @@ public sealed partial class ArrayCopyConversionReachTests
     [InlineData(WasmTarget.Wasm64)]
     public void CopiesOfOneStaticTypeCarryNoConversion(WasmTarget target) =>
         Assert.False(CompileAndRun("ArrayCopyOneType", OneTypeSource, target));
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void CopiesBetweenReferenceElementTypesCarryNoConversion(WasmTarget target) =>
+        Assert.False(CompileAndRun("ArrayCopyReferenceElements", ReferenceElementsSource, target));
 
     [Theory]
     [InlineData(WasmTarget.Wasm32)]

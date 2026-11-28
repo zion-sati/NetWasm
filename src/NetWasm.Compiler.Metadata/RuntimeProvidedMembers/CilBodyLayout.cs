@@ -59,20 +59,30 @@ internal sealed class CilBodyLayout : ICilBodyLayout
                 CilBodyElement.Instruction plain => (plain.Operation, plain.Operand),
                 CilBodyElement.LocalInstruction local => (local.Operation, new CilOperand.Index(locals[local.Local])),
                 CilBodyElement.Branch branch => (branch.Operation, new CilOperand.BranchTarget(Resolve(labels, branch.Target))),
+                CilBodyElement.Switch cases => (CilOperation.Switch,
+                    new CilOperand.SwitchTargets([.. cases.Targets.Select(target => Resolve(labels, target))])),
                 _ => null,
             };
             if (instruction is var (operation, operand))
             {
-                instructions.Add(new(instructions.Count, instructions.Count + 1, operation, operand));
+                instructions.Add(new(instructions.Count, instructions.Count + 1, operation, operand)
+                {
+                    OriginalOffset = element.Source,
+                });
             }
         }
-        var regions = draft.FinallyRegions
+        var regions = draft.Regions
             .Select(region =>
             {
                 var tryStart = Resolve(labels, region.TryStart);
                 var handlerStart = Resolve(labels, region.HandlerStart);
-                return new CilExceptionRegion(CilExceptionRegionKind.Finally, tryStart, handlerStart - tryStart,
-                    handlerStart, Resolve(labels, region.HandlerEnd) - handlerStart, null, null);
+                return new CilExceptionRegion(region.Kind, tryStart, Resolve(labels, region.TryEnd) - tryStart,
+                    handlerStart, Resolve(labels, region.HandlerEnd) - handlerStart, region.CatchType,
+                    region.FilterStart is { } filter ? Resolve(labels, filter) : null)
+                {
+                    CatchTypeIdentity = region.CatchTypeIdentity,
+                    PassThroughLocal = region.PassThroughLocal is { } local ? locals[local] : null,
+                };
             })
             .ToImmutableArray();
         return new(method.Definition, maxStack, [.. order.Select(local => local.Type.StackKind)],
@@ -83,7 +93,7 @@ internal sealed class CilBodyLayout : ICilBodyLayout
             PinnedLocals = [.. order.Select((local, index) => (local, index)).Where(item => item.local.Pinned)
                 .Select(item => item.index)],
             ExceptionRegions = regions,
-            InitializesLocals = true,
+            InitializesLocals = draft.InitializesLocals,
         };
     }
 

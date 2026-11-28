@@ -60,7 +60,7 @@ public sealed class SynchronousJSExportEmitterTests
             terminal,
             terminal,
             new AddressInstructionEmitter(layouts),
-            new GeneratedFunctionWriterFactory());
+            new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory());
         var selection = new RuntimeImportSelection(
             WasmModuleProfile.CoreApplication,
             IncludeTerminalExceptionReporter: includeReporter,
@@ -144,7 +144,7 @@ public sealed class SynchronousJSExportEmitterTests
             terminal,
             terminal,
             new AddressInstructionEmitter(layouts),
-            new GeneratedFunctionWriterFactory());
+            new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory());
 
         var body = emitter.Emit(
             method,
@@ -158,6 +158,54 @@ public sealed class SynchronousJSExportEmitterTests
         Assert.Equal(CliValueKind.I4, terminal.ResultType);
         Assert.Contains(WasmOpcodes.I32Load, body);
         Assert.Single(Calls(body), call => call == (byte)imports.Resolve(RuntimeImportSymbol.RootFrameEnter));
+    }
+
+    // A synchronous export's catch gives the exception leaving it to CoreLib's OfferExportFailure, which gives a
+    // JSException's JavaScript error to the host; without that conversion the boundary has no observer.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ExportCatchGivesItsExceptionToTheExportFailureOffer(bool hasOffer)
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm32);
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var program = new FakeProgram();
+        var method = program.GetMethod(EntryKey) with
+        {
+            Signature = MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.I4),
+        };
+        var indices = new FunctionIndexMap(
+            ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty.Add(EntryKey, new(30)), [], [], []);
+        var terminal = new RecordingTerminalBoundary();
+        var emitter = new SynchronousJSExportEmitter(
+            layouts,
+            imports,
+            new RecordingRuntimeInitializer(),
+            new JavaScriptReferenceArgumentEmitter(
+                new RecordingStringMarshaller(), new RecordingByteArrayMarshaller(), new RecordingHostObjectMarshaller()),
+            EmitterTestSupport.ValueFramePlanner(layouts),
+            EmitterTestSupport.ValueFrames(layouts, imports),
+            terminal,
+            terminal,
+            new AddressInstructionEmitter(layouts),
+            new GeneratedFunctionWriterFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory());
+        var interop = EmptyInteropImports() with
+        {
+            Conversions = hasOffer
+                ? ImmutableDictionary<string, int>.Empty.Add(JavaScriptConversion.ExportFailure, 77)
+                : ImmutableDictionary<string, int>.Empty,
+        };
+
+        emitter.Emit(
+            method,
+            TestRuntimeInitialization.Create(512, new RuntimeImportSelection(
+                WasmModuleProfile.CoreApplication, IncludeTerminalExceptionReporter: true)),
+            hasFinalizers: false,
+            new FunctionIndexResolver(program, program, indices),
+            interop);
+
+        Assert.True(terminal.ReportCalled);
+        Assert.Equal(hasOffer ? 77 : null, terminal.ExceptionObserver);
     }
 
     private static InteropImportPlan EmptyInteropImports() => new(
@@ -235,6 +283,7 @@ public sealed class SynchronousJSExportEmitterTests
         public int? RaiseFunctionIndex { get; private set; }
         public CliValueKind? ResultType { get; private set; }
         public int? UnhandledExceptionReporter { get; private set; }
+        public int? ExceptionObserver { get; private set; }
 
         public void Emit(
             IWasmInstructionWriter code,
@@ -262,9 +311,11 @@ public sealed class SynchronousJSExportEmitterTests
             int resultLocal,
             int reportFunctionIndex,
             int? raiseFunctionIndex,
-            Action emitBody)
+            Action emitBody,
+            int? exceptionObserverFunctionIndex = null)
         {
             ReportCalled = true;
+            ExceptionObserver = exceptionObserverFunctionIndex;
             ResultType = resultType;
             ReportFunctionIndex = reportFunctionIndex;
             RaiseFunctionIndex = raiseFunctionIndex;

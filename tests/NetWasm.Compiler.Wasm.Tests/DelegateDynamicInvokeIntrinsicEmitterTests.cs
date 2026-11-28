@@ -162,5 +162,5 @@ public sealed class DelegateDynamicInvokeIntrinsicEmitterTests
         fixture,
         fixture,
         fixture,
-        new ReferenceWriteBarrierEmitter(fixture.Imports, new ReferenceWriteRecordPolicy(fixture.Scalars)));
+        new ReferenceWriteBarrierEmitter(fixture.Imports, new ReferenceWriteRecordPolicy(fixture.Scalars)), new NetWasm.Compiler.Wasm.Emission.StructResults.StackArgumentConventionFactory(), new NetWasm.Compiler.Wasm.Emission.StructResults.BufferResultConventionFactory());
 }

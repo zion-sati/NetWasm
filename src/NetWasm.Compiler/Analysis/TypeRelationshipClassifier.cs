@@ -15,25 +15,47 @@ internal sealed class TypeRelationshipClassifier(
     ITypeDefinitionResolver typeDefinitions,
     ITypeIdentityResolver identities,
     IImplementedInterfaceResolver interfaces,
-    IBaseTypeResolver baseTypes) : ITypeRelationshipClassifier
+    IBaseTypeResolver baseTypes,
+    bool remembersClassifiedPairs = true) : ITypeRelationshipClassifier
 {
-    private readonly ConcurrentDictionary<(CliTypeIdentity Candidate, CliTypeIdentity Target),
-        TypeRelationship> _relationships = [];
+    private readonly TypePairMemo _relationships = new();
     private readonly ConcurrentDictionary<CliTypeIdentity, IReadOnlySet<CliTypeIdentity>> _interfaceClosures = [];
 
     public TypeRelationship Classify(
         CliTypeIdentity candidate,
         CliTypeIdentity target)
     {
-        var key = (candidate, target);
-        if (_relationships.TryGetValue(key, out var relationship))
-        {
-            return relationship;
-        }
+        // Assignability metadata classifies each runtime type against its targets once: remembering those pairs held
+        // most of the layout phase's heap on Devolutions' Avalonia sample (over a hundred million of them), and none
+        // was asked twice. Its classifier remembers only the argument and element pairs classified on the way, which
+        // recur (Remembered).
+        return remembersClassifiedPairs
+            ? Remembered(candidate, target)
+            : _relationships.TryGet(candidate, target, out var characteristics)
+                ? new((TypeRelationshipCharacteristics)characteristics)
+                : Compute(candidate, target);
+    }
 
+    private TypeRelationship Remembered(CliTypeIdentity candidate, CliTypeIdentity target)
+    {
+        if (_relationships.TryGet(candidate, target, out var characteristics))
+        {
+            return new((TypeRelationshipCharacteristics)characteristics);
+        }
+        var relationship = Compute(candidate, target);
+        _relationships.Add(candidate, target, (byte)relationship.Characteristics);
+        return relationship;
+    }
+
+    private TypeRelationship Compute(CliTypeIdentity candidate, CliTypeIdentity target)
+    {
         var arrayInterface = IsSzArrayGenericInterface(candidate, target);
         var hierarchy = IsHierarchyAssignable(candidate, target, out var throughVariance);
-        relationship = new TypeRelationship(
+        if (!arrayInterface && !hierarchy && SharedArrayShapes.IsShared(candidate))
+        {
+            return new TypeRelationship(SharedElementChecked(candidate, target));
+        }
+        return new TypeRelationship(
             (arrayInterface
                 ? TypeRelationshipCharacteristics.SzArrayGenericInterface
                 : TypeRelationshipCharacteristics.None) |
@@ -43,7 +65,6 @@ internal sealed class TypeRelationshipClassifier(
             (throughVariance
                 ? TypeRelationshipCharacteristics.GenericVariance
                 : TypeRelationshipCharacteristics.None));
-        return _relationships.GetOrAdd(key, relationship);
     }
 
     // Whether the candidate is assignable to the target through the CLI type hierarchy: the same type, an
@@ -127,7 +148,7 @@ internal sealed class TypeRelationshipClassifier(
     {
         if (IsManagedReference(candidate) && IsManagedReference(target))
         {
-            return Classify(candidate, target).IsAssignmentCompatible;
+            return Remembered(candidate, target).IsAssignmentCompatible;
         }
 
         if (SameType(candidate, target))
@@ -140,7 +161,9 @@ internal sealed class TypeRelationshipClassifier(
                candidateReducedType == GetReducedArrayElementType(target);
     }
 
-    private static string? GetReducedArrayElementType(CliTypeIdentity type)
+    // The reduced type an array of the value type converts through: arrays whose elements reduce to the same one
+    // convert to each other (an enum through its underlying type); a value type with none converts only to itself.
+    internal static string? GetReducedArrayElementType(CliTypeIdentity type)
     {
         var storage = type.StackStorageType ?? type;
         return storage.CanonicalName switch
@@ -319,9 +342,9 @@ internal sealed class TypeRelationshipClassifier(
             var compatible = definition.GenericParameterVariances[index] switch
             {
                 CliGenericVariance.Covariant =>
-                    Classify(source, destination).IsAssignmentCompatible,
+                    Remembered(source, destination).IsAssignmentCompatible,
                 CliGenericVariance.Contravariant =>
-                    Classify(destination, source).IsAssignmentCompatible,
+                    Remembered(destination, source).IsAssignmentCompatible,
                 _ => false,
             };
             if (!compatible)
@@ -332,6 +355,30 @@ internal sealed class TypeRelationshipClassifier(
 
         return true;
     }
+
+    // A shared array holds any reference element in its shape, so beyond what every array of the shape converts to, it
+    // may convert to an array of the shape with a reference element, and a vector to one of the generic interfaces
+    // arrays implement over a reference type: where the element in its header converts to that element or argument.
+    private TypeRelationshipCharacteristics SharedElementChecked(CliTypeIdentity candidate, CliTypeIdentity target)
+    {
+        if (target.ContainsGenericParameters)
+        {
+            return TypeRelationshipCharacteristics.None;
+        }
+        if (target.Shape == candidate.Shape && GetArrayRank(target) == GetArrayRank(candidate) &&
+            IsSharedElement(target.ElementType!))
+        {
+            return TypeRelationshipCharacteristics.ElementChecked;
+        }
+        return candidate.Shape == CliTypeShape.SzArray && target.Shape == CliTypeShape.GenericInstantiation &&
+            target.TypeArguments.Length == 1 && IsSharedElement(target.TypeArguments[0]) && IsArrayInterface(target)
+                ? TypeRelationshipCharacteristics.ElementChecked | TypeRelationshipCharacteristics.SzArrayGenericInterface
+                : TypeRelationshipCharacteristics.None;
+    }
+
+    // An element a shared array can hold: a reference type that is not the shared arrays' own element.
+    private static bool IsSharedElement(CliTypeIdentity type) =>
+        IsManagedReference(type) && type.Shape != CliTypeShape.FunctionPointer && !SharedArrayShapes.IsElement(type);
 
     private bool IsSzArrayGenericInterface(
         CliTypeIdentity candidate,
@@ -345,11 +392,15 @@ internal sealed class TypeRelationshipClassifier(
             return false;
         }
 
-        return typeDefinitions.ResolveTypeIdentity(target).FullName is
+        return IsArrayInterface(target);
+    }
+
+    // IEnumerable<T>, ICollection<T>, IList<T>, IReadOnlyCollection<T> or IReadOnlyList<T>, which every vector implements.
+    private bool IsArrayInterface(CliTypeIdentity target) =>
+        typeDefinitions.ResolveTypeIdentity(target).FullName is
             "System.Collections.Generic.IEnumerable`1" or
             "System.Collections.Generic.ICollection`1" or
             "System.Collections.Generic.IList`1" or
             "System.Collections.Generic.IReadOnlyCollection`1" or
             "System.Collections.Generic.IReadOnlyList`1";
-    }
 }

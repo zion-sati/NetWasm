@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
+using NetWasm.Compiler.Diagnostics;
 
 namespace NetWasm.Compiler.Layout;
 
@@ -27,8 +28,10 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
     private readonly IEnumMetadataBuilder _enumMetadata;
     private readonly IStructMarshallingDataCollector _structMarshallingCollector;
     private readonly IStructMarshallingDataBuilder _structMarshalling;
+    private readonly ISharedArrayTargetDataBuilder _sharedArrayTargets;
     private readonly ImmutableArray<CliTypeIdentity> _uninitializedObjectTypes;
     private readonly WasmTargetLayout _target;
+    private readonly IAnalysisStepRecorder _steps;
 
     internal ManagedStaticDataBuilder(
         ManagedTypeLayouts types,
@@ -47,8 +50,12 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         IEnumMetadataBuilder enumMetadata,
         IStructMarshallingDataCollector? structMarshallingCollector = null,
         IStructMarshallingDataBuilder? structMarshalling = null,
-        ImmutableArray<CliTypeIdentity> uninitializedObjectTypes = default)
+        ImmutableArray<CliTypeIdentity> uninitializedObjectTypes = default,
+        IAnalysisStepRecorder? steps = null,
+        ISharedArrayTargetDataBuilder? sharedArrayTargets = null)
     {
+        _sharedArrayTargets = sharedArrayTargets ?? EmptySharedArrayTargetDataBuilder.Instance;
+        _steps = steps ?? UnrecordedAnalysisStepRecorder.Instance;
         _structMarshallingCollector = structMarshallingCollector ?? EmptyStructMarshallingDataCollector.Instance;
         _structMarshalling = structMarshalling ?? EmptyStructMarshallingDataBuilder.Instance;
         _uninitializedObjectTypes = uninitializedObjectTypes.IsDefault ? [] : uninitializedObjectTypes;
@@ -78,20 +85,21 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
 
     public ManagedStaticData Build()
     {
-        _staticFields.Build();
-        _typeDescriptors.Build();
-        _constructedTypeDescriptors.Build();
-        _valueTypeDescriptors.Build();
-        _genericArguments.Build();
-        _enumMetadataCollector.Collect();
-        _structMarshallingCollector.Collect();
-        _strings.Build();
-        _memberDescriptors.Build();
-        _typeTable.Build();
-        _enumMetadata.Build();
-        _structMarshalling.Build();
-        _exceptionObjects.Build();
-        _typeObjects.Build();
+        _steps.Record("static data: static fields", () => _staticFields.Build());
+        _steps.Record("static data: type descriptors", () => _typeDescriptors.Build());
+        _steps.Record("static data: constructed type descriptors", () => _constructedTypeDescriptors.Build());
+        _steps.Record("static data: value type descriptors", () => _valueTypeDescriptors.Build());
+        _steps.Record("static data: generic arguments", () => _genericArguments.Build());
+        _steps.Record("static data: enum metadata collection", () => _enumMetadataCollector.Collect());
+        _steps.Record("static data: struct marshalling collection", () => _structMarshallingCollector.Collect());
+        _steps.Record("static data: strings", () => _strings.Build());
+        _steps.Record("static data: member descriptors", () => _memberDescriptors.Build());
+        _steps.Record("static data: type table", () => _typeTable.Build());
+        _steps.Record("static data: enum metadata", () => _enumMetadata.Build());
+        _steps.Record("static data: struct marshalling", () => _structMarshalling.Build());
+        _steps.Record("static data: exception objects", () => _exceptionObjects.Build());
+        _steps.Record("static data: type objects", () => _typeObjects.Build());
+        _steps.Record("static data: shared array targets", () => _sharedArrayTargets.Build());
 
         return new ManagedStaticData(
             ManagedTypeLayoutCompiler.Align(
@@ -128,6 +136,8 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
             TypeObjectCacheAddress = _state.TypeObjectCacheAddress,
             TypeObjectCount = _state.TypeObjectCount,
             TypeObjectSize = _state.TypeObjectSize,
+            SharedArrayTargetsAddress = _state.SharedArrayTargetsAddress,
+            SharedArrayTargetCount = _state.SharedArrayTargetCount,
         };
     }
 }

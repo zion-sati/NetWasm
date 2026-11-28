@@ -46,6 +46,7 @@ internal sealed record WasmModuleTarget(
         Request.EnableAddressTakenAggregatePromotion)
     {
         SharedObjectDispatch = Request.SharedObjectDispatch,
+        SharedArrays = Request.SharedArrays,
         NativeImports = Plan.NativeImports,
         NativeCallbacks = Plan.NativeCallbacks,
         ManagedByRefEffects = Lookups.Of(Request.ManagedByRefEffects.Methods),
@@ -63,6 +64,7 @@ internal sealed record WasmModuleTarget(
         InlineSmallBlockOperations = Request.InlineSmallBlockOperations,
         InlineArrayData = Request.InlineArrayData,
         InlineObjectAllocation = Request.InlineObjectAllocation,
+        ReachesFilters = Request.ReachesFilters,
         RootMaps = Lookups.Of(Request.Methods.Values.Select(method =>
                 (ManagedMethodBodyKey.Resolve(method), Request.RootMaps[method.Header.Method.Key]))
             .Concat(Request.ConstructedMethods.Select(pair =>
@@ -102,12 +104,16 @@ internal sealed record InstructionModuleTarget(
     public bool InlineSmallBlockOperations { get; init; }
     public bool InlineArrayData { get; init; }
     public bool InlineObjectAllocation { get; init; }
+    public bool ReachesFilters { get; init; } = true;
     public ObjectAllocationPolicy ObjectAllocation => new(RuntimeImportSelection, InlineObjectAllocation);
     public NativeImportPlan NativeImports { get; init; } = NativeImportPlan.Empty;
     // The shared body each of object's virtual calls uses at its many-target sites, by declaration. A site's use
     // of it follows from its own target count (SharedDispatchPolicy), which a unit's answers record.
     public IReadOnlyDictionary<string, MethodInstanceModel> SharedObjectDispatch { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
+    // The shared arrays the program allocates and their GetType (SharedArrayShapes); null when it allocates none. GetType
+    // of an object of unknown type asks for them, so every unit's emission depends on them (TargetPlans).
+    public SharedArrayPlan? SharedArrays { get; init; }
     public NativeCallbackPlan NativeCallbacks { get; init; } = NativeCallbackPlan.Empty;
     public IEntryLookup<string, MethodRootMap> RootMaps { get; init; } = Lookups.NoEntries<string, MethodRootMap>();
     public IEntryLookup<string, ManagedByRefMethodEffects> ManagedByRefEffects { get; init; } =

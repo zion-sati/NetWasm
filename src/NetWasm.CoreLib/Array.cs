@@ -68,19 +68,10 @@ namespace System
         {
             if (array is null)
             {
-                throw new ArgumentNullException();
+                ThrowArgumentNull("array");
             }
 
             return new ReadOnlyCollection<T>(array);
-        }
-
-        public static void Clear<T>(T[] array, int index, int length)
-        {
-            ValidateRange(array, index, length);
-            for (var current = index; current < index + length; current++)
-            {
-                array[current] = default!;
-            }
         }
 
         public static void Clear(Array array)
@@ -97,18 +88,6 @@ namespace System
                 throw new IndexOutOfRangeException();
             InternalClear(array, (int)offset, length);
         }
-
-        public static void Copy<T>(
-            T[] sourceArray,
-            int sourceIndex,
-            T[] destinationArray,
-            int destinationIndex,
-            int length) => CopyPhysical<NoElementConversion>(
-                (Array)sourceArray,
-                sourceIndex,
-                destinationArray,
-                destinationIndex,
-                length);
 
         // The first element is always at physical offset zero, including ARRAY instances whose
         // public indices start at a non-zero bound.
@@ -133,18 +112,32 @@ namespace System
         // treats as one (int and uint, an enum and its underlying type), so they never convert
         // and a program that copies only such arrays carries no conversion.
         internal static void CopyOfOneType(Array sourceArray, Array destinationArray, int length) =>
-            CopyPhysical<NoElementConversion>(sourceArray, 0, destinationArray, 0, length);
+            CopyOfOneType(sourceArray, 0, destinationArray, 0, length);
 
         internal static void CopyOfOneType(Array sourceArray, Array destinationArray, long length) =>
             CopyOfOneType(sourceArray, destinationArray, ToInt32(length));
 
+        // Both arrays are one-dimensional by their static types, so each starts at index 0 and has rank 1: upstream's fast
+        // path (one method table, not multidimensional) checks only the range against the lengths, then copies; the
+        // runtime's copy still checks each element it assigns. Anything out of range takes the full checks, which throw
+        // as upstream's do.
         internal static void CopyOfOneType(
             Array sourceArray,
             int sourceIndex,
             Array destinationArray,
             int destinationIndex,
-            int length) =>
-            CopyIndexed<NoElementConversion>(sourceArray, sourceIndex, destinationArray, destinationIndex, length);
+            int length)
+        {
+            if (sourceArray is not null && destinationArray is not null && length >= 0 && sourceIndex >= 0 &&
+                destinationIndex >= 0 && (uint)(sourceIndex + length) <= (uint)sourceArray.Length &&
+                (uint)(destinationIndex + length) <= (uint)destinationArray.Length)
+            {
+                CopyValidated<NoElementConversion>(sourceArray, sourceIndex, destinationArray, destinationIndex, length);
+                return;
+            }
+            // A null array reaches the full checks, which throw ArgumentNullException as upstream's do.
+            CopyIndexed<NoElementConversion>(sourceArray!, sourceIndex, destinationArray!, destinationIndex, length);
+        }
 
         internal static void CopyOfOneType(
             Array sourceArray,
@@ -164,21 +157,9 @@ namespace System
         {
             ArgumentNullException.ThrowIfNull(sourceArray);
             ArgumentNullException.ThrowIfNull(destinationArray);
-            if (sourceArray.Rank != destinationArray.Rank)
-            {
-                throw new RankException();
-            }
-            if (length < 0) throw new ArgumentOutOfRangeException();
             var sourceOffset = (long)sourceIndex - sourceArray.GetLowerBound(0);
             var destinationOffset = (long)destinationIndex - destinationArray.GetLowerBound(0);
-            if (sourceOffset < 0 || destinationOffset < 0)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-            if (sourceOffset > int.MaxValue || destinationOffset > int.MaxValue)
-            {
-                throw new ArgumentException();
-            }
+            ValidateCopy(sourceArray, sourceOffset, destinationArray, destinationOffset, length);
             CopyPhysical<TConversion>(sourceArray, (int)sourceOffset, destinationArray, (int)destinationOffset, length);
         }
 
@@ -217,14 +198,20 @@ namespace System
             int length)
             where TConversion : struct, IElementConversion
         {
-            ArgumentNullException.ThrowIfNull(sourceArray);
-            ArgumentNullException.ThrowIfNull(destinationArray);
-            if (sourceArray.Rank != destinationArray.Rank)
-            {
-                throw new RankException();
-            }
-            ValidateRange(sourceArray.Length, sourceOffset, length);
-            ValidateRange(destinationArray.Length, destinationOffset, length);
+            ValidateCopy(sourceArray, sourceOffset, destinationArray, destinationOffset, length);
+            CopyValidated<TConversion>(sourceArray, sourceOffset, destinationArray, destinationOffset, length);
+        }
+
+        // The copy once its arguments are known good: the runtime copies what it can assign, and the conversion takes
+        // what it cannot.
+        private static void CopyValidated<TConversion>(
+            Array sourceArray,
+            int sourceOffset,
+            Array destinationArray,
+            int destinationOffset,
+            int length)
+            where TConversion : struct, IElementConversion
+        {
             var status = InternalCopy(
                 sourceArray,
                 sourceOffset,
@@ -327,20 +314,39 @@ namespace System
                 ToInt32(length));
         }
 
+        // Upstream's, from Array.cs at deae2e32bf0e018e09d64597b7c59b62b73bb3ce: an array already of the size stays as it is,
+        // and the elements move with Buffer.Memmove rather than through Array.Copy's checks.
         public static void Resize<T>([NotNull] ref T[]? array, int newSize)
         {
             if (newSize < 0)
             {
-                throw new ArgumentOutOfRangeException();
+                ThrowArgumentOutOfRange("newSize", SR.ArgumentOutOfRange_NeedNonNegNum);
             }
 
-            var replacement = new T[newSize];
-            if (array is not null)
+            T[]? larray = array; // local copy
+            if (larray == null)
             {
-                var length = array.Length < newSize ? array.Length : newSize;
-                Copy(array, 0, replacement, 0, length);
+                array = new T[newSize];
+                return;
             }
-            array = replacement;
+
+            if (larray.Length != newSize)
+            {
+                // Due to array variance, it's possible that the incoming array is
+                // actually of type U[], where U:T; or that an int[] <-> uint[] or
+                // similar cast has occurred. In any case, since it's always legal
+                // to reinterpret U as T in this scenario (but not necessarily the
+                // other way around), we can use Buffer.Memmove here.
+
+                T[] newArray = new T[newSize];
+                Buffer.Memmove(
+                    ref MemoryMarshal.GetArrayDataReference(newArray),
+                    ref MemoryMarshal.GetArrayDataReference(larray),
+                    (uint)Math.Min(newSize, larray.Length));
+                array = newArray;
+            }
+
+            Debug.Assert(array != null);
         }
 
         public static int IndexOf<T>(T[] array, T value) =>
@@ -351,7 +357,18 @@ namespace System
 
         public static int IndexOf<T>(T[] array, T value, int startIndex, int count)
         {
-            ValidateSearchRange(array, startIndex, count);
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            if ((uint)startIndex > (uint)array.Length)
+            {
+                ThrowArgumentOutOfRange("startIndex", SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
+            }
+            if ((uint)count > (uint)(array.Length - startIndex))
+            {
+                ThrowArgumentOutOfRange("count", SR.ArgumentOutOfRange_Count);
+            }
             var comparer = EqualityComparer<T>.Default;
             var end = startIndex + count;
             for (var index = startIndex; index < end; index++)
@@ -364,15 +381,43 @@ namespace System
             return -1;
         }
 
-        public static int IndexOf(Array array, object? value) =>
-            IndexOf(array, value, 0, array?.Length ?? 0);
+        public static int IndexOf(Array array, object? value)
+        {
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            return IndexOf(array, value, array.GetLowerBound(0), array.Length);
+        }
 
-        public static int IndexOf(Array array, object? value, int startIndex) =>
-            IndexOf(array, value, startIndex, (array?.Length ?? 0) - startIndex);
+        public static int IndexOf(Array array, object? value, int startIndex)
+        {
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            return IndexOf(array, value, startIndex, array.Length - startIndex + array.GetLowerBound(0));
+        }
 
         public static int IndexOf(Array array, object? value, int startIndex, int count)
         {
-            var lowerBound = ValidateVectorRange(array, startIndex, count);
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            if (array.Rank != 1)
+            {
+                ThrowRank(SR.Rank_MultiDimNotSupported);
+            }
+            var lowerBound = array.GetLowerBound(0);
+            if (startIndex < lowerBound || startIndex > array.Length + lowerBound)
+            {
+                ThrowArgumentOutOfRange("startIndex", SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
+            }
+            if (count < 0 || count > array.Length - startIndex + lowerBound)
+            {
+                ThrowArgumentOutOfRange("count", SR.ArgumentOutOfRange_Count);
+            }
             var physicalIndex = startIndex - lowerBound;
             for (var offset = 0; offset < count; offset++)
             {
@@ -390,12 +435,22 @@ namespace System
         public static int LastIndexOf<T>(T[] array, T value) =>
             LastIndexOf(array, value, (array?.Length ?? 0) - 1, array?.Length ?? 0);
 
-        public static int LastIndexOf<T>(T[] array, T value, int startIndex) =>
-            LastIndexOf(array, value, startIndex, startIndex + 1);
+        public static int LastIndexOf<T>(T[] array, T value, int startIndex)
+        {
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            return LastIndexOf(array, value, startIndex, array.Length == 0 ? 0 : startIndex + 1);
+        }
 
         public static int LastIndexOf<T>(T[] array, T value, int startIndex, int count)
         {
             ValidateLastSearchRange(array, startIndex, count);
+            if (array.Length == 0)
+            {
+                return -1;
+            }
             var comparer = EqualityComparer<T>.Default;
             var end = startIndex - count;
             for (var index = startIndex; index > end; index--)
@@ -408,29 +463,50 @@ namespace System
             return -1;
         }
 
-        public static int LastIndexOf(Array array, object? value) =>
-            LastIndexOf(array, value, (array?.Length ?? 0) - 1, array?.Length ?? 0);
+        public static int LastIndexOf(Array array, object? value)
+        {
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            return LastIndexOf(array, value, array.Length - 1 + array.GetLowerBound(0), array.Length);
+        }
 
-        public static int LastIndexOf(Array array, object? value, int startIndex) =>
-            LastIndexOf(array, value, startIndex, startIndex + 1);
+        public static int LastIndexOf(Array array, object? value, int startIndex)
+        {
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            return LastIndexOf(array, value, startIndex, startIndex + 1 - array.GetLowerBound(0));
+        }
 
         public static int LastIndexOf(Array array, object? value, int startIndex, int count)
         {
-            ArgumentNullException.ThrowIfNull(array);
-            if (array.Rank != 1)
+            if (array is null)
             {
-                throw new RankException();
+                ThrowArgumentNull("array");
             }
             var lowerBound = array.GetLowerBound(0);
             if (array.Length == 0)
             {
                 return lowerBound - 1;
             }
-            if (startIndex < lowerBound ||
-                startIndex >= lowerBound + array.Length ||
-                count < 0 || count > startIndex - lowerBound + 1)
+            if (startIndex < lowerBound || startIndex >= array.Length + lowerBound)
             {
-                throw new ArgumentOutOfRangeException();
+                ThrowArgumentOutOfRange("startIndex", SR.ArgumentOutOfRange_IndexMustBeLess);
+            }
+            if (count < 0)
+            {
+                ThrowArgumentOutOfRange("count", SR.ArgumentOutOfRange_Count);
+            }
+            if (count > startIndex - lowerBound + 1)
+            {
+                ThrowArgumentOutOfRange("endIndex", SR.ArgumentOutOfRange_EndIndexStartIndex);
+            }
+            if (array.Rank != 1)
+            {
+                ThrowRank(SR.Rank_MultiDimNotSupported);
             }
 
             var physicalIndex = startIndex - lowerBound;
@@ -463,7 +539,7 @@ namespace System
             T value,
             IComparer<T>? comparer)
         {
-            ValidateRange(array, index, length);
+            ValidateIndexLength(array, index, length);
             return ArraySortHelper<T>.Default.BinarySearch(
                 array,
                 index,
@@ -472,11 +548,16 @@ namespace System
                 comparer);
         }
 
-        public static int BinarySearch(Array array, object? value) =>
-            BinarySearch(array, 0, array?.Length ?? 0, value, null);
+        public static int BinarySearch(Array array, object? value) => BinarySearch(array, value, null);
 
-        public static int BinarySearch(Array array, object? value, IComparer? comparer) =>
-            BinarySearch(array, 0, array?.Length ?? 0, value, comparer);
+        public static int BinarySearch(Array array, object? value, IComparer? comparer)
+        {
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            return BinarySearch(array, array.GetLowerBound(0), array.Length, value, comparer);
+        }
 
         public static int BinarySearch(Array array, int index, int length, object? value) =>
             BinarySearch(array, index, length, value, null);
@@ -488,11 +569,7 @@ namespace System
             object? value,
             IComparer? comparer)
         {
-            var lowerBound = ValidateVectorRange(
-                array,
-                index,
-                length,
-                validateRankFirst: false);
+            var lowerBound = ValidateVectorIndexLength(array, index, length);
             comparer ??= DefaultArrayComparer.Instance;
             var low = index;
             var high = index + length - 1;
@@ -527,24 +604,9 @@ namespace System
         {
             ArgumentNullException.ThrowIfNull(sourceArray);
             ArgumentNullException.ThrowIfNull(destinationArray);
-            if (sourceArray.Rank != destinationArray.Rank)
-            {
-                throw new RankException();
-            }
-            if (length < 0) throw new ArgumentOutOfRangeException();
             var sourceOffset = (long)sourceIndex - sourceArray.GetLowerBound(0);
-            var destinationOffset =
-                (long)destinationIndex - destinationArray.GetLowerBound(0);
-            if (sourceOffset < 0 || destinationOffset < 0)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-            if (sourceOffset > int.MaxValue || destinationOffset > int.MaxValue)
-            {
-                throw new ArgumentException();
-            }
-            ValidateRange(sourceArray.Length, (int)sourceOffset, length);
-            ValidateRange(destinationArray.Length, (int)destinationOffset, length);
+            var destinationOffset = (long)destinationIndex - destinationArray.GetLowerBound(0);
+            ValidateCopy(sourceArray, sourceOffset, destinationArray, destinationOffset, length);
             if (!destinationArray.GetType().IsAssignableFrom(sourceArray.GetType()))
             {
                 throw new ArrayTypeMismatchException();
@@ -562,9 +624,13 @@ namespace System
             TInput[] array,
             Converter<TInput, TOutput> converter)
         {
-            if (array is null || converter is null)
+            if (array is null)
             {
-                throw new ArgumentNullException();
+                ThrowArgumentNull("array");
+            }
+            if (converter is null)
+            {
+                ThrowArgumentNull("converter");
             }
             var result = new TOutput[array.Length];
             for (var index = 0; index < array.Length; index++)
@@ -582,7 +648,18 @@ namespace System
 
         public static void Fill<T>(T[] array, T value, int startIndex, int count)
         {
-            ValidateRange(array, startIndex, count);
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            if ((uint)startIndex > (uint)array.Length)
+            {
+                ThrowArgumentOutOfRange("startIndex", SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
+            }
+            if ((uint)count > (uint)(array.Length - startIndex))
+            {
+                ThrowArgumentOutOfRange("count", SR.ArgumentOutOfRange_Count);
+            }
             for (var index = startIndex; index < startIndex + count; index++)
             {
                 array[index] = value;
@@ -620,8 +697,22 @@ namespace System
 
         public static int FindIndex<T>(T[] array, int startIndex, int count, Predicate<T> match)
         {
-            ValidatePredicate(array, match);
-            ValidateRange(array, startIndex, count);
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            if (startIndex < 0 || startIndex > array.Length)
+            {
+                ThrowArgumentOutOfRange("startIndex", SR.ArgumentOutOfRange_IndexMustBeLessOrEqual);
+            }
+            if (count < 0 || startIndex > array.Length - count)
+            {
+                ThrowArgumentOutOfRange("count", SR.ArgumentOutOfRange_Count);
+            }
+            if (match is null)
+            {
+                ThrowArgumentNull("match");
+            }
             for (var index = startIndex; index < startIndex + count; index++)
             {
                 if (match(array[index])) return index;
@@ -642,13 +733,33 @@ namespace System
         public static int FindLastIndex<T>(T[] array, Predicate<T> match) =>
             FindLastIndex(array, (array?.Length ?? 0) - 1, array?.Length ?? 0, match);
 
-        public static int FindLastIndex<T>(T[] array, int startIndex, Predicate<T> match) =>
-            FindLastIndex(array, startIndex, startIndex + 1, match);
+        public static int FindLastIndex<T>(T[] array, int startIndex, Predicate<T> match)
+        {
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            return FindLastIndex(array, startIndex, array.Length == 0 ? 0 : startIndex + 1, match);
+        }
 
         public static int FindLastIndex<T>(T[] array, int startIndex, int count, Predicate<T> match)
         {
             ValidatePredicate(array, match);
-            ValidateLastSearchRange(array, startIndex, count);
+            if (array.Length == 0)
+            {
+                if (startIndex != -1)
+                {
+                    ThrowArgumentOutOfRange("startIndex", SR.ArgumentOutOfRange_IndexMustBeLess);
+                }
+            }
+            else if (startIndex < 0 || startIndex >= array.Length)
+            {
+                ThrowArgumentOutOfRange("startIndex", SR.ArgumentOutOfRange_IndexMustBeLess);
+            }
+            if (count < 0 || startIndex - count + 1 < 0)
+            {
+                ThrowArgumentOutOfRange("count", SR.ArgumentOutOfRange_Count);
+            }
             for (var index = startIndex; index > startIndex - count; index--)
             {
                 if (match(array[index])) return index;
@@ -658,9 +769,13 @@ namespace System
 
         public static void ForEach<T>(T[] array, Action<T> action)
         {
-            if (array is null || action is null)
+            if (array is null)
             {
-                throw new ArgumentNullException();
+                ThrowArgumentNull("array");
+            }
+            if (action is null)
+            {
+                ThrowArgumentNull("action");
             }
             for (var index = 0; index < array.Length; index++) action(array[index]);
         }
@@ -670,7 +785,7 @@ namespace System
 
         public static void Reverse<T>(T[] array, int index, int length)
         {
-            ValidateRange(array, index, length);
+            ValidateIndexLength(array, index, length);
             var left = index;
             var right = index + length - 1;
             while (left < right)
@@ -683,16 +798,16 @@ namespace System
 
         public static void Reverse(Array array)
         {
-            Reverse(array, 0, array?.Length ?? 0);
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            Reverse(array, array.GetLowerBound(0), array.Length);
         }
 
         public static void Reverse(Array array, int index, int length)
         {
-            var lowerBound = ValidateVectorRange(
-                array,
-                index,
-                length,
-                validateRankFirst: false);
+            var lowerBound = ValidateVectorIndexLength(array, index, length);
             if (length <= 1)
             {
                 return;
@@ -718,13 +833,19 @@ namespace System
             Sort(array, index, length, null);
         public static void Sort<T>(T[] array, Comparison<T> comparison)
         {
-            if (comparison is null) throw new ArgumentNullException();
-            ArgumentNullException.ThrowIfNull(array);
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            if (comparison is null)
+            {
+                ThrowArgumentNull("comparison");
+            }
             ArraySortHelper<T>.Sort(SortSpan(array, 0, array.Length), comparison);
         }
         public static void Sort<T>(T[] array, int index, int length, IComparer<T>? comparer)
         {
-            ValidateRange(array, index, length);
+            ValidateIndexLength(array, index, length);
             ArraySortHelper<T>.Default.Sort(SortSpan(array, index, length), comparer);
         }
 
@@ -741,8 +862,22 @@ namespace System
             int length,
             IComparer<TKey>? comparer)
         {
-            ValidateRange(keys, index, length);
-            if (items is not null) ValidateRange(items, index, length);
+            if (keys is null)
+            {
+                ThrowArgumentNull("keys");
+            }
+            if (index < 0)
+            {
+                ThrowArgumentOutOfRange("index", SR.ArgumentOutOfRange_NeedNonNegNum);
+            }
+            if (length < 0)
+            {
+                ThrowArgumentOutOfRange("length", SR.ArgumentOutOfRange_NeedNonNegNum);
+            }
+            if (keys.Length - index < length || (items is not null && index > items.Length - length))
+            {
+                ThrowArgument(SR.Argument_InvalidOffLen, null);
+            }
             if (items is null)
             {
                 ArraySortHelper<TKey>.Default.Sort(
@@ -761,9 +896,15 @@ namespace System
         private static Span<T> SortSpan<T>(T[] array, int index, int length) =>
             new(ref Unsafe.Add(ref System.Runtime.InteropServices.MemoryMarshal.GetArrayDataReference(array), (nint)(uint)index), length);
 
-        public static void Sort(Array array) => Sort(array, 0, array?.Length ?? 0, null);
-        public static void Sort(Array array, IComparer? comparer) =>
-            Sort(array, 0, array?.Length ?? 0, comparer);
+        public static void Sort(Array array) => Sort(array, (IComparer?)null);
+        public static void Sort(Array array, IComparer? comparer)
+        {
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            Sort(array, null, array.GetLowerBound(0), array.Length, comparer);
+        }
         public static void Sort(Array array, int index, int length) =>
             Sort(array, index, length, null);
         public static void Sort(Array array, int index, int length, IComparer? comparer)
@@ -773,12 +914,16 @@ namespace System
 
         public static void Sort(Array keys, Array? items)
         {
-            Sort(keys, items, 0, keys?.Length ?? 0, null);
+            Sort(keys, items, (IComparer?)null);
         }
 
         public static void Sort(Array keys, Array? items, IComparer? comparer)
         {
-            Sort(keys, items, 0, keys?.Length ?? 0, comparer);
+            if (keys is null)
+            {
+                ThrowArgumentNull("keys");
+            }
+            Sort(keys, items, keys.GetLowerBound(0), keys.Length, comparer);
         }
 
         public static void Sort(Array keys, Array? items, int index, int length)
@@ -793,15 +938,31 @@ namespace System
             int length,
             IComparer? comparer)
         {
-            ArgumentNullException.ThrowIfNull(keys);
-            var lowerBound = ValidateVectorRange(keys, index, length);
-            if (items is not null)
+            if (keys is null)
             {
-                var itemLowerBound = ValidateVectorRange(items, index, length);
-                if (itemLowerBound != lowerBound)
-                {
-                    throw new ArgumentException();
-                }
+                ThrowArgumentNull("keys");
+            }
+            if (keys.Rank != 1 || (items is not null && items.Rank != 1))
+            {
+                ThrowRank(SR.Rank_MultiDimNotSupported);
+            }
+            var lowerBound = keys.GetLowerBound(0);
+            if (items is not null && lowerBound != items.GetLowerBound(0))
+            {
+                ThrowArgument(SR.Arg_LowerBoundsMustMatch, null);
+            }
+            if (index < lowerBound)
+            {
+                ThrowArgumentOutOfRange("index", SR.ArgumentOutOfRange_NeedNonNegNum);
+            }
+            if (length < 0)
+            {
+                ThrowArgumentOutOfRange("length", SR.ArgumentOutOfRange_NeedNonNegNum);
+            }
+            if (keys.Length - (index - lowerBound) < length ||
+                (items is not null && index - lowerBound > items.Length - length))
+            {
+                ThrowArgument(SR.Argument_InvalidOffLen, null);
             }
             if (length <= 1)
             {
@@ -1092,11 +1253,12 @@ namespace System
             };
         }
 
-        public static Array CreateInstance(Type elementType, int length)
+        public static unsafe Array CreateInstance(Type elementType, int length)
         {
             ArgumentNullException.ThrowIfNull(elementType);
             ArgumentOutOfRangeException.ThrowIfNegative(length);
             return InternalCreateInstance(elementType.SemanticTypeId, length) ??
+                CreateSharedInstance(elementType, 1, &length, false) ??
                 throw new NotSupportedException("The requested array element type is not available in this compiled program.");
         }
 
@@ -1105,7 +1267,7 @@ namespace System
             ArgumentNullException.ThrowIfNull(elementType);
             ArgumentOutOfRangeException.ThrowIfNegative(length1);
             ArgumentOutOfRangeException.ThrowIfNegative(length2);
-            return CreateRectangularInstance(elementType, new[] { length1, length2 }, null);
+            return CreateRectangularInstance(elementType, new[] { length1, length2 });
         }
 
         public static Array CreateInstance(Type elementType, int length1, int length2, int length3)
@@ -1114,7 +1276,7 @@ namespace System
             ArgumentOutOfRangeException.ThrowIfNegative(length1);
             ArgumentOutOfRangeException.ThrowIfNegative(length2);
             ArgumentOutOfRangeException.ThrowIfNegative(length3);
-            return CreateRectangularInstance(elementType, new[] { length1, length2, length3 }, null);
+            return CreateRectangularInstance(elementType, new[] { length1, length2, length3 });
         }
 
         public static Array CreateInstance(Type elementType, params int[] lengths)
@@ -1123,7 +1285,7 @@ namespace System
             ArgumentNullException.ThrowIfNull(lengths);
             if (lengths.Length == 0) throw new ArgumentException();
             ThrowIfNegativeLength(lengths);
-            return CreateRectangularInstance(elementType, lengths, null);
+            return CreateRectangularInstance(elementType, lengths);
         }
 
         public static Array CreateInstance(Type elementType, int[] lengths, int[] lowerBounds)
@@ -1134,7 +1296,7 @@ namespace System
             if (lengths.Length != lowerBounds.Length) throw new ArgumentException();
             if (lengths.Length == 0) throw new ArgumentException();
             ThrowIfNegativeLength(lengths);
-            return CreateRectangularInstance(elementType, lengths, lowerBounds);
+            return CreateBoundedInstance(elementType, lengths, lowerBounds);
         }
 
         public static Array CreateInstance(Type elementType, params long[] lengths)
@@ -1151,6 +1313,78 @@ namespace System
             return CreateInstance(elementType, intLengths);
         }
 
+        // CreateInstanceFromArrayType as upstream validates it (Array.cs at 11.0.0); the array is the one CreateInstance
+        // makes for the array type's element type and shape, which roots the array types a program can create (an
+        // array type of rank one with zero lower bounds is a vector, as desktop makes it).
+        public static Array CreateInstanceFromArrayType(Type arrayType, int length)
+        {
+            ArgumentNullException.ThrowIfNull(arrayType);
+            ArgumentOutOfRangeException.ThrowIfNegative(length);
+
+            RuntimeType? t = arrayType as RuntimeType;
+            if (t == null)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_MustBeType, ExceptionArgument.arrayType);
+
+            if (!t.IsArray)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Argument_HasToBeArrayClass, ExceptionArgument.arrayType);
+
+            if (t.GetArrayRank() != 1)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_RankMultiDimNotSupported, ExceptionArgument.arrayType);
+
+            return CreateInstance(t.GetElementType()!, length);
+        }
+
+        public static Array CreateInstanceFromArrayType(Type arrayType, params int[] lengths)
+        {
+            ArgumentNullException.ThrowIfNull(arrayType);
+            ArgumentNullException.ThrowIfNull(lengths);
+
+            RuntimeType? t = arrayType as RuntimeType;
+            if (t == null)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_MustBeType, ExceptionArgument.arrayType);
+
+            if (!t.IsArray)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Argument_HasToBeArrayClass, ExceptionArgument.arrayType);
+
+            if (t.GetArrayRank() != lengths.Length)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_RankIndices);
+
+            for (int i = 0; i < lengths.Length; i++)
+                if (lengths[i] < 0)
+                    ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.lengths, i, ExceptionResource.ArgumentOutOfRange_NeedNonNegNum);
+
+            return CreateRectangularInstance(t.GetElementType()!, lengths);
+        }
+
+        public static Array CreateInstanceFromArrayType(Type arrayType, int[] lengths, int[] lowerBounds)
+        {
+            ArgumentNullException.ThrowIfNull(arrayType);
+            ArgumentNullException.ThrowIfNull(lengths);
+            ArgumentNullException.ThrowIfNull(lowerBounds);
+
+            if (lengths.Length != lowerBounds.Length)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_RanksAndBounds);
+
+            RuntimeType? t = arrayType as RuntimeType;
+            if (t == null)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_MustBeType, ExceptionArgument.arrayType);
+
+            if (!t.IsArray)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Argument_HasToBeArrayClass, ExceptionArgument.arrayType);
+
+            if (t.GetArrayRank() != lengths.Length)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_RankIndices);
+
+            if (lowerBounds[0] != 0 && t.IsSZArray)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_NonZeroLowerBound);
+
+            for (int i = 0; i < lengths.Length; i++)
+                if (lengths[i] < 0)
+                    ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.lengths, i, ExceptionResource.ArgumentOutOfRange_NeedNonNegNum);
+
+            return CreateBoundedInstance(t.GetElementType()!, lengths, lowerBounds);
+        }
+
         private static void ThrowIfNegativeLength(int[] lengths)
         {
             for (var index = 0; index < lengths.Length; index++)
@@ -1160,13 +1394,49 @@ namespace System
         // Copies the shape before allocation, as upstream does, so the caller cannot change it.
         // A rank-1 shape without a lower bound is a vector; any other shape is a rectangular
         // array type that the compiled program provides.
-        private static unsafe Array CreateRectangularInstance(Type elementType, int[] lengths, int[]? lowerBounds)
+        private static unsafe Array CreateRectangularInstance(Type elementType, int[] lengths)
+        {
+            var rank = CheckedRank(lengths);
+            var bounds = stackalloc int[rank * 2];
+            CopyShape(lengths, null, bounds);
+            if (rank == 1) return CreateInstance(elementType, bounds[0]);
+            return InternalCreateRectangularInstance(elementType.SemanticTypeId, rank, bounds, false) ??
+                CreateSharedInstance(elementType, rank, bounds, false) ??
+                throw new NotSupportedException("The requested array type is not available in this compiled program.");
+        }
+
+        // The lower-bounded form has its own intrinsic, so only a program that passes lower bounds carries the
+        // rank-one arrays with lower bounds (T[*]) that only this form creates.
+        private static unsafe Array CreateBoundedInstance(Type elementType, int[] lengths, int[] lowerBounds)
+        {
+            var rank = CheckedRank(lengths);
+            var bounds = stackalloc int[rank * 2];
+            var bounded = CopyShape(lengths, lowerBounds, bounds);
+            if (rank == 1 && !bounded) return CreateInstance(elementType, bounds[0]);
+            return InternalCreateBoundedInstance(elementType.SemanticTypeId, rank, bounds, bounded) ??
+                CreateSharedInstance(elementType, rank, bounds, bounded) ??
+                throw new NotSupportedException("The requested array type is not available in this compiled program.");
+        }
+
+        // An array of a reference element the program has no array type of: the shared array of its shape
+        // (SharedArrays), or null where the program has none of that shape or the element cannot be shared.
+        private static unsafe Array? CreateSharedInstance(Type elementType, int rank, int* bounds, bool bounded) =>
+            SharedArrays.Holds(elementType)
+                ? InternalCreateSharedInstance(elementType.SemanticTypeId, rank, bounds, bounded)
+                : null;
+
+        private static int CheckedRank(int[] lengths)
         {
             const int MaxRank = 32;
-            var rank = lengths.Length;
-            if (rank > MaxRank)
+            if (lengths.Length > MaxRank)
                 throw new NotSupportedException("The requested array type is not available in this compiled program.");
-            var bounds = stackalloc int[rank * 2];
+            return lengths.Length;
+        }
+
+        // The lengths, then the lower bounds; whether any lower bound is not zero.
+        private static unsafe bool CopyShape(int[] lengths, int[]? lowerBounds, int* bounds)
+        {
+            var rank = lengths.Length;
             var bounded = false;
             for (var dimension = 0; dimension < rank; dimension++)
             {
@@ -1177,9 +1447,7 @@ namespace System
                 bounds[rank + dimension] = lowerBound;
                 bounded |= lowerBound != 0;
             }
-            if (rank == 1 && !bounded) return CreateInstance(elementType, bounds[0]);
-            return InternalCreateRectangularInstance(elementType.SemanticTypeId, rank, bounds, bounded) ??
-                throw new NotSupportedException("The requested array type is not available in this compiled program.");
+            return bounded;
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
@@ -1188,6 +1456,19 @@ namespace System
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
         private static extern unsafe Array? InternalCreateRectangularInstance(
             int elementTypeId, int rank, int* bounds, bool bounded);
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
+        private static extern unsafe Array? InternalCreateBoundedInstance(
+            int elementTypeId, int rank, int* bounds, bool bounded);
+
+        // The shared array of the rank and boundedness, with the element in its header (the lengths, then for a
+        // bounded shape the lower bounds, at bounds); null where the program has no shared array of that shape.
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
+        private static extern unsafe Array? InternalCreateSharedInstance(
+            int elementTypeId, int rank, int* bounds, bool bounded);
+
+        // The array's element type, from its header.
+        internal static Type ElementTypeOf(Array array) => InternalElementType(array);
 
         // Compiler intrinsics: the array's element type, and the runtime's store of a value of the
         // element's own type, which returns nonzero for any other value.
@@ -1308,49 +1589,102 @@ namespace System
             return hash;
         }
 
-        private static void ValidateRange<T>(T[]? array, int index, int length)
+        // Array's argument errors name their own message and parameter, as upstream's ThrowHelper calls produce them, so a
+        // program that reaches Array's checks carries only these strings: ThrowHelper maps its enums through switches that
+        // hold every CoreLib message.
+        [DoesNotReturn]
+        private static void ThrowArgumentNull(string paramName) => throw new ArgumentNullException(paramName);
+
+        [DoesNotReturn]
+        private static void ThrowArgumentOutOfRange(string paramName, string message) =>
+            throw new ArgumentOutOfRangeException(paramName, message);
+
+        [DoesNotReturn]
+        private static void ThrowArgument(string message, string? paramName) => throw new ArgumentException(message, paramName);
+
+        [DoesNotReturn]
+        private static void ThrowRank(string message) => throw new RankException(message);
+
+        // An index and a length into a vector, checked as upstream's BinarySearch, Reverse and Sort check them.
+        private static void ValidateIndexLength<T>([NotNull] T[]? array, int index, int length)
         {
-            if (array is null) throw new ArgumentNullException();
-            if (index < 0 || length < 0 || index > array.Length - length)
+            if (array is null)
             {
-                throw new ArgumentOutOfRangeException();
+                ThrowArgumentNull("array");
+            }
+            if (index < 0)
+            {
+                ThrowArgumentOutOfRange("index", SR.ArgumentOutOfRange_NeedNonNegNum);
+            }
+            if (length < 0)
+            {
+                ThrowArgumentOutOfRange("length", SR.ArgumentOutOfRange_NeedNonNegNum);
+            }
+            if (array.Length - index < length)
+            {
+                ThrowArgument(SR.Argument_InvalidOffLen, null);
             }
         }
 
-        private static void ValidateRange(int arrayLength, int index, int length)
+        // The same for an Array, whose indices start at its lower bound, which it returns; the rank is checked last,
+        // as upstream's BinarySearch(Array, ...) and Reverse(Array, ...) check it.
+        private static int ValidateVectorIndexLength([NotNull] Array? array, int index, int length)
         {
-            if (index < 0 || length < 0)
+            if (array is null)
             {
-                throw new ArgumentOutOfRangeException();
-            }
-            if (index > arrayLength - length) throw new ArgumentException();
-        }
-
-        private static int ValidateVectorRange(
-            Array? array,
-            int index,
-            int length,
-            bool validateRankFirst = true)
-        {
-            ArgumentNullException.ThrowIfNull(array);
-            if (validateRankFirst && array.Rank != 1)
-            {
-                throw new RankException();
+                ThrowArgumentNull("array");
             }
             var lowerBound = array.GetLowerBound(0);
-            if (index < lowerBound || length < 0)
+            if (index < lowerBound)
             {
-                throw new ArgumentOutOfRangeException();
+                ThrowArgumentOutOfRange("index", SR.ArgumentOutOfRange_NeedNonNegNum);
             }
-            if (index - lowerBound > array.Length - length)
+            if (length < 0)
             {
-                throw new ArgumentException();
+                ThrowArgumentOutOfRange("length", SR.ArgumentOutOfRange_NeedNonNegNum);
             }
-            if (!validateRankFirst && array.Rank != 1)
+            if (array.Length - (index - lowerBound) < length)
             {
-                throw new RankException();
+                ThrowArgument(SR.Argument_InvalidOffLen, null);
+            }
+            if (array.Rank != 1)
+            {
+                ThrowRank(SR.Rank_MultiDimNotSupported);
             }
             return lowerBound;
+        }
+
+        // A copy's two ranges, by physical offset, checked as upstream's CopyImpl (Array.CoreCLR.cs) checks them: the
+        // ranks, the length, each index against its array's lower bound, then each range against its array's length.
+        private static void ValidateCopy(Array sourceArray, long sourceOffset, Array destinationArray,
+            long destinationOffset, int length)
+        {
+            ArgumentNullException.ThrowIfNull(sourceArray);
+            ArgumentNullException.ThrowIfNull(destinationArray);
+            if (sourceArray.Rank != destinationArray.Rank)
+            {
+                ThrowRank(SR.Rank_MustMatch);
+            }
+            if (length < 0)
+            {
+                ThrowArgumentOutOfRange("length", SR.ArgumentOutOfRange_NeedNonNegNum);
+            }
+            if (sourceOffset < 0)
+            {
+                ThrowArgumentOutOfRange("sourceIndex", SR.ArgumentOutOfRange_ArrayLB);
+            }
+            if (destinationOffset < 0)
+            {
+                ThrowArgumentOutOfRange("destinationIndex", SR.ArgumentOutOfRange_ArrayLB);
+            }
+            if (sourceOffset + length > sourceArray.Length)
+            {
+                ThrowArgument(SR.Arg_LongerThanSrcArray, "sourceArray");
+            }
+            if (destinationOffset + length > destinationArray.Length)
+            {
+                ThrowArgument(SR.Arg_LongerThanDestArray, "destinationArray");
+            }
         }
 
         [MethodImpl(MethodImplOptions.InternalCall)]
@@ -1372,28 +1706,45 @@ namespace System
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void InternalClear(Array array, int index, int length);
 
-        private static void ValidateSearchRange<T>(T[]? array, int startIndex, int count)
+        // LastIndexOf<T>'s start and count, checked as upstream checks them.
+        private static void ValidateLastSearchRange<T>([NotNull] T[]? array, int startIndex, int count)
         {
-            ValidateRange(array, startIndex, count);
-        }
-
-        private static void ValidateLastSearchRange<T>(T[]? array, int startIndex, int count)
-        {
-            if (array is null) throw new ArgumentNullException();
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
             if (array.Length == 0)
             {
-                if (startIndex == -1 && count == 0) return;
-                throw new ArgumentOutOfRangeException();
+                if (startIndex != -1 && startIndex != 0)
+                {
+                    ThrowArgumentOutOfRange("startIndex", SR.ArgumentOutOfRange_IndexMustBeLess);
+                }
+                if (count != 0)
+                {
+                    ThrowArgumentOutOfRange("count", SR.ArgumentOutOfRange_Count);
+                }
+                return;
             }
-            if (startIndex < 0 || startIndex >= array.Length || count < 0 || count > startIndex + 1)
+            if ((uint)startIndex >= (uint)array.Length)
             {
-                throw new ArgumentOutOfRangeException();
+                ThrowArgumentOutOfRange("startIndex", SR.ArgumentOutOfRange_IndexMustBeLess);
+            }
+            if (count < 0 || startIndex - count + 1 < 0)
+            {
+                ThrowArgumentOutOfRange("count", SR.ArgumentOutOfRange_Count);
             }
         }
 
-        private static void ValidatePredicate<T>(T[]? array, Predicate<T>? match)
+        private static void ValidatePredicate<T>([NotNull] T[]? array, [NotNull] Predicate<T>? match)
         {
-            if (array is null || match is null) throw new ArgumentNullException();
+            if (array is null)
+            {
+                ThrowArgumentNull("array");
+            }
+            if (match is null)
+            {
+                ThrowArgumentNull("match");
+            }
         }
 
         private static int ToInt32(long value)

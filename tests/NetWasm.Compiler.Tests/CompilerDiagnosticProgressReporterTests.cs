@@ -21,6 +21,7 @@ public sealed class CompilerDiagnosticProgressReporterTests
         { CompilerProgressStage.Validation, "NetWasm: Generating the interop manifest..." },
         { CompilerProgressStage.InteropManifest, "NetWasm: Finalizing compilation..." },
         { CompilerProgressStage.Complete, "NetWasm: Managed compilation completed." },
+        { CompilerProgressStage.Failed, "NetWasm: Managed compilation failed." },
     };
 
     [Theory]

@@ -15,6 +15,7 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
     private const string YoungCollectionFeature = "young-collection";
     private const string RandomSeedFeature = "random-seed";
     private const string ReferenceWriteBarrierFeature = "reference-write-barrier";
+    private const string SharedArraysFeature = "shared-arrays";
     private const string UninitializedArraysFeature = "uninitialized-arrays";
     private const string EphemeronHandlesFeature = "ephemeron-handles";
     private const string FinalizationFeature = "finalization";
@@ -99,14 +100,9 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
     private static ImmutableArray<string> SelectPublicExports(
         RuntimeLinkExportPlanRequest request)
     {
-        // Missing feature evidence is the compatibility form used by older
-        // compilers. It retains every optional runtime capability.
-        var includeEphemerons = request.RuntimeFeatures.IsDefault ||
-            request.RuntimeFeatures.Contains(EphemeronHandlesFeature);
-        var includeStructuredDiagnostics = request.RuntimeFeatures.IsDefault ||
-            request.RuntimeFeatures.Contains(StructuredCommandDiagnosticsFeature);
-        var includeFinalization = request.RuntimeFeatures.IsDefault ||
-            request.RuntimeFeatures.Contains(FinalizationFeature);
+        var includeEphemerons = request.RuntimeFeatures.Contains(EphemeronHandlesFeature);
+        var includeStructuredDiagnostics = request.RuntimeFeatures.Contains(StructuredCommandDiagnosticsFeature);
+        var includeFinalization = request.RuntimeFeatures.Contains(FinalizationFeature);
         var exports = includeEphemerons
             ? request.PublicExports
             : request.PublicExports
@@ -123,34 +119,40 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
                 .Where(name => !FinalizationExports.Contains(name))
                 .ToImmutableArray();
         }
-        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(ArraySetValueFeature))
+        if (!request.RuntimeFeatures.Contains(ArraySetValueFeature))
         {
             exports = exports.Remove("array_set_value");
         }
-        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(ObjectCloneFeature))
+        if (!request.RuntimeFeatures.Contains(ObjectCloneFeature))
         {
             exports = exports.Remove("object_clone");
         }
-        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(RandomSeedFeature))
+        if (!request.RuntimeFeatures.Contains(RandomSeedFeature))
         {
             exports = exports.Remove("random_seed");
         }
-        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(UninitializedArraysFeature))
+        if (!request.RuntimeFeatures.Contains(UninitializedArraysFeature))
         {
             exports = exports.Remove("allocate_uninitialized_value_array");
         }
-        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(ObjectGenerationFeature))
+        if (!request.RuntimeFeatures.Contains(ObjectGenerationFeature))
         {
             exports = exports.Remove("gc_object_generation");
         }
-        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(YoungCollectionFeature))
+        if (!request.RuntimeFeatures.Contains(YoungCollectionFeature))
         {
             exports = exports.Remove("gc_collect_young");
         }
         // Only a program compiled for a collector with generations records its stores of references.
-        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(ReferenceWriteBarrierFeature))
+        if (!request.RuntimeFeatures.Contains(ReferenceWriteBarrierFeature))
         {
             exports = exports.Remove("record_reference_write").Remove("record_reference_writes");
+        }
+        // Only a program that allocates shared arrays casts, copies and stores them.
+        if (!request.RuntimeFeatures.Contains(SharedArraysFeature))
+        {
+            exports = exports.Remove("register_shared_arrays").Remove("is_assignable_shared")
+                .Remove("array_copy_shared").Remove("array_set_value_shared");
         }
         return exports;
     }

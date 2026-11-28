@@ -9,6 +9,7 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Interop;
 using NetWasm.Compiler.Metadata;
 
+using NetWasm.Compiler.ComponentModel.Optimization;
 namespace NetWasm.Compiler.Pipeline;
 
 internal interface IEditedMethodAnalyzer
@@ -67,7 +68,8 @@ internal sealed class EditedMethodAnalyzer(
             identities.Create(metadata),
             baseTypeIdentities.Create(metadata),
             implementedInterfaces.Create(metadata),
-            bodies.Create(metadata),
+            bodies.Create(metadata,
+                preparation.OptimizationSettings.RuntimeAsyncSuspension == RuntimeAsyncSuspensionPolicy.WholeProgram),
             instances,
             methodImplementations.Create(metadata),
             formatter,

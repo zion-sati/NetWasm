@@ -9,6 +9,8 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
 
+using NetWasm.Compiler.Wasm.Emission.StructResults;
+
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 // A JSImport callback is entered the way a synchronous export is: string,
@@ -25,7 +27,9 @@ internal sealed class HostCallbackFunctionEmitter(
     IJavaScriptValueFrameEmitter valueFrames,
     IManagedTerminalExceptionBoundaryEmitter terminalExceptions,
     IAddressInstructionEmitter addresses,
-    IGeneratedFunctionWriterFactory writers) : IHostCallbackFunctionEmitter
+    IGeneratedFunctionWriterFactory writers,
+    IValueTypeArgumentConventionFactory argumentConventions,
+    IValueTypeResultConventionFactory resultConventions) : IHostCallbackFunctionEmitter
 {
     public byte[] Emit(
         HostCallbackDeclaration callback,
@@ -68,6 +72,12 @@ internal sealed class HostCallbackFunctionEmitter(
         var stackTraceLocal = messageLengthLocal + 1;
         var stackTraceLengthLocal = stackTraceLocal + 1;
         var valueFrameLocal = stackTraceLengthLocal + 1;
+        // A value-type result goes to its frame slot as its return convention takes it: the slot's address first, or the
+        // fields stored there after the call, through locals after the rest.
+        var resultConvention = converted?.Result is not null && invoke.Signature.ReturnSignatureType.StackKind == CliValueKind.ValueType
+            ? resultConventions.Create(invoke.Signature.ReturnSignatureType)
+            : null;
+        var firstStructResultLocal = valueFrameLocal + 1;
         WasmLocalDeclarationWriter.Write(
             code.Bytes,
             [CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.ManagedReference,
@@ -80,7 +90,8 @@ internal sealed class HostCallbackFunctionEmitter(
                 CliValueKind.I4,
                 CliValueKind.ManagedReference,
                 CliValueKind.I4,
-                .. (converted is null ? Array.Empty<CliValueKind>() : [CliValueKind.ManagedAddress])],
+                .. (converted is null ? Array.Empty<CliValueKind>() : [CliValueKind.ManagedAddress]),
+                .. (resultConvention?.FieldLocalKinds ?? [])],
             layouts.Target);
         terminalExceptions.Emit(
             code.Instructions,
@@ -129,28 +140,42 @@ internal sealed class HostCallbackFunctionEmitter(
                         rootSlots[parameter.Index] * layouts.Target.ObjectReferenceSize,
                         layouts.Target.ObjectReferenceSize);
                 }
-                // The invoke helper takes a value-type result's address first, then the delegate.
                 if (converted is not null)
                 {
                     valueFrames.Emit(
                         code.Instructions, new JavaScriptValueFrameEnter(converted, valueFrameLocal, [.. parameterLocals], interopImports));
-                    if (converted.Result is { } resultSlot)
-                        valueFrames.Emit(code.Instructions, new JavaScriptValueFrameAddress(valueFrameLocal, resultSlot.Offset));
                 }
-                WriteLocalGet(code, delegateLocal);
-                for (var index = 0; index < invoke.Signature.ParameterSignatureTypes.Length; index++)
+                void EmitCall(IWasmInstructionWriter instructions)
                 {
-                    if (rootSlots.TryGetValue(index, out var slot))
+                    WriteLocalGet(code, delegateLocal);
+                    for (var index = 0; index < invoke.Signature.ParameterSignatureTypes.Length; index++)
                     {
-                        WriteLocalGet(code, rootFrameLocal);
-                        ManagedMemoryEmitter.EmitLoadBySize(code.Instructions, layouts.Target,
-                            slot * layouts.Target.ObjectReferenceSize, layouts.Target.ObjectReferenceSize);
+                        if (rootSlots.TryGetValue(index, out var slot))
+                        {
+                            WriteLocalGet(code, rootFrameLocal);
+                            ManagedMemoryEmitter.EmitLoadBySize(code.Instructions, layouts.Target,
+                                slot * layouts.Target.ObjectReferenceSize, layouts.Target.ObjectReferenceSize);
+                        }
+                        else if (converted?.Parameters.TryGetValue(index, out var valueSlot) == true)
+                        {
+                            argumentConventions.Create(invoke.Signature.ParameterSignatureTypes[index]).Emit(instructions,
+                                writer => valueFrames.Emit(writer, new JavaScriptValueFrameAddress(valueFrameLocal, valueSlot.Offset)), new());
+                        }
+                        else WriteLocalGet(code, parameterLocals[index]);
                     }
-                    else if (converted?.Parameters.TryGetValue(index, out var valueSlot) == true)
-                        valueFrames.Emit(code.Instructions, new JavaScriptValueFrameAddress(valueFrameLocal, valueSlot.Offset));
-                    else WriteLocalGet(code, parameterLocals[index]);
+                    WriteCall(code, functionIndices.GetDelegateInvokeHelper(invoke.DeclaringType.CanonicalName).Value);
                 }
-                WriteCall(code, functionIndices.GetDelegateInvokeHelper(invoke.DeclaringType.CanonicalName).Value);
+                // The invoke helper takes a value-type result's address first, then the delegate, or returns its fields.
+                if (resultConvention is not null)
+                {
+                    resultConvention.Emit(code.Instructions,
+                        writer => valueFrames.Emit(writer, new JavaScriptValueFrameAddress(valueFrameLocal, converted!.Result!.Offset)), new(StructResultLocals.Sequential(firstStructResultLocal, resultConvention.FieldLocalKinds)),
+                        EmitCall);
+                }
+                else
+                {
+                    EmitCall(code.Instructions);
+                }
                 if (hostObjectResult)
                 {
                     WriteLocalSet(code, objectTemporary);

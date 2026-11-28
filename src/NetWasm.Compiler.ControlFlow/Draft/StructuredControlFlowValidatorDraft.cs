@@ -47,6 +47,13 @@ internal sealed class StructuredControlFlowValidatorDraft : IStructuredControlFl
                 case StructuredBlockDraft block:
                     Record(block.Block.Index, block.IsOriginal, occurrences, owners);
                     break;
+                case StructuredSwitchDraft table:
+                    Record(table.Head.Index, table.IsOriginal, occurrences, owners);
+                    foreach (var block in table.Chain)
+                    {
+                        Record(block.Index, table.IsOriginal, occurrences, owners);
+                    }
+                    break;
                 case StructuredIfDraft conditional:
                     Record(conditional.ConditionBlock.Index, conditional.IsOriginal, occurrences, owners);
                     Visit(conditional.WhenTrue, occurrences, owners, visitedGroups);

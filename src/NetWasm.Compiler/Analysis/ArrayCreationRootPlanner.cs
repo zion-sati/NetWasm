@@ -23,9 +23,9 @@ internal sealed class ArrayCreationRootPlanner(ITypeDefinitionResolver definitio
         ImmutableArray<CliTypeIdentity> elementSeeds,
         ImmutableArray<int> ranks)
     {
-        if (ranks.IsDefault || ranks.Any(rank => rank < 2))
+        if (ranks.IsDefault || ranks.Any(rank => rank < 1))
         {
-            throw new ArgumentException("Rectangular ranks must be initialized and at least two.", nameof(ranks));
+            throw new ArgumentException("Multidimensional ranks must be initialized and at least one.", nameof(ranks));
         }
         return Plan(elementSeeds, element => ranks.Select(rank => CliTypeIdentity.Array(element, rank)));
     }

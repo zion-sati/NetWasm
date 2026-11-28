@@ -24,6 +24,14 @@ namespace NetWasm.Compiler.Analysis.Constants;
 // that calls a method, the load keeps the owner's initialization, the field's
 // address dropped as BeforeFieldInitEntryInitializer writes one, so the
 // constructor still runs, and fails, where .NET's would.
+// A field every store of which stores zero (0, false, null), wherever in the
+// constructor, holds zero wherever it is read, before its store as after it,
+// so it is that constant however much runs before the store. A call that
+// takes nothing and is false on NetWasm (NetWasmPlatformChecks) stores zero
+// too: a library's `static readonly bool IsDynamicCodeSupported =
+// RuntimeFeature.IsDynamicCodeSupported` after another initializer is false,
+// as Native AOT's preinitialization folds it, so the code it guards is no part
+// of the program.
 internal sealed class ConstantStaticFieldRewriter(
     IFieldRepository fields,
     ITypeIdentityResolver typeIdentities,
@@ -68,10 +76,11 @@ internal sealed class ConstantStaticFieldRewriter(
         var (reference, type) = storage;
         var owner = typeDefinitions.ResolveTypeIdentity(typeIdentities.GetTypeIdentity(field.DeclaringType));
         var initialization = _initializers.GetOrAdd(owner.Key, _ => Initializer(owner));
-        // A field the constructor does not store first holds zero only where it does nothing else.
+        // A field the constructor does not store first holds zero where it does nothing else, or where it only
+        // ever stores zero in it.
         if (!initialization.Constants.TryGetValue(field.Key, out var value))
         {
-            if (!initialization.Complete) return null;
+            if (!initialization.Complete && !initialization.ZeroFields.Contains(field.Key)) return null;
             value = new(StaticFieldConstantLoads.StackKind(reference, type), 0, 0);
         }
         initializes = !initialization.Complete;
@@ -84,9 +93,9 @@ internal sealed class ConstantStaticFieldRewriter(
     private Initialization Initializer(TypeDefinitionModel owner)
     {
         var constructor = owner.Methods.Select(methods.GetMethod).SingleOrDefault(method => method.Name == ".cctor");
-        if (constructor is null) return new([], Complete: true);
+        if (constructor is null) return new([], [], Complete: true);
         // A constructor that cannot be decoded stores nothing this rewrite can know of.
-        if (!methodBodies.TryReadMethodBody(constructor, out var body)) return new([], Complete: false);
+        if (!methodBodies.TryReadMethodBody(constructor, out var body)) return new([], [], Complete: false);
         var operations = body.Instructions.Where(instruction => instruction.Operation != CilOperation.Nop).ToArray();
         var stored = new Dictionary<EntityKey, Stored>();
         var pending = (Stored?)null;
@@ -101,7 +110,7 @@ internal sealed class ConstantStaticFieldRewriter(
                 stored.Remove(CilOperands.FieldKey(operation.Operand));
             }
         }
-        return new(stored, operations.Length != 0 && leading == operations.Length - 1 &&
+        return new(stored, ZeroFields(body, operations), operations.Length != 0 && leading == operations.Length - 1 &&
             operations[^1].Operation == CilOperation.Return && body.ExceptionRegions.IsEmpty);
 
         // A constant load, or its store to the owner's own static field: neither runs anything else.
@@ -144,11 +153,68 @@ internal sealed class ConstantStaticFieldRewriter(
         }
     }
 
+    // The owner's fields every store of which stores zero: the load just before each store, past nops, pushes zero
+    // and no branch or handler enters between them, where another path's value could arrive; and nothing takes the
+    // field's address.
+    private static HashSet<EntityKey> ZeroFields(CilMethodBody body, CilInstruction[] operations)
+    {
+        var entries = new List<int>();
+        foreach (var instruction in body.Instructions)
+        {
+            switch (instruction.Operand)
+            {
+                case CilOperand.BranchTarget target: entries.Add(target.Offset); break;
+                case CilOperand.SwitchTargets targets: entries.AddRange(targets.Offsets); break;
+            }
+        }
+        foreach (var region in body.ExceptionRegions)
+        {
+            entries.Add(region.HandlerOffset);
+            if (region.FilterOffset is { } filter) entries.Add(filter);
+        }
+        entries.Sort();
+        var zero = new Dictionary<EntityKey, bool>();
+        for (var index = 0; index < operations.Length; index++)
+        {
+            var operation = operations[index];
+            if (operation.Operation is not (CilOperation.StoreStaticField or CilOperation.LoadStaticFieldAddress)) continue;
+            var key = CilOperands.FieldKey(operation.Operand);
+            var stored = operation.Operation == CilOperation.StoreStaticField && index > 0 &&
+                IsZero(operations[index - 1]) && !Entered(entries, operations[index - 1].Offset, operation.Offset);
+            zero[key] = zero.GetValueOrDefault(key, true) && stored;
+        }
+        return [.. zero.Where(static pair => pair.Value).Select(static pair => pair.Key)];
+
+        // Whether a branch or handler enters (after, through]: a value could arrive there from another path.
+        static bool Entered(List<int> entries, int after, int through)
+        {
+            var at = entries.BinarySearch(after + 1);
+            if (at < 0) at = ~at;
+            return at < entries.Count && entries[at] <= through;
+        }
+    }
+
+    private static bool IsZero(CilInstruction instruction) => instruction switch
+    {
+        { Operation: CilOperation.Call, Operand: CilOperand.MethodInstance { Value: var method } } =>
+            method.Definition is { IsStatic: true, Signature.ParameterTypes.Length: 0 } &&
+            method.DeclaringType.FullName is { } owner && NetWasmPlatformChecks.IsNeverTrueParameterlessCall(owner, method.Definition.Name),
+        { Operation: CilOperation.LoadInt32, Operand: CilOperand.ConstantI4 { Value: 0 } } => true,
+        { Operation: CilOperation.LoadInt64, Operand: CilOperand.ConstantI8 { Value: 0 } } => true,
+        { Operation: CilOperation.LoadNull } => true,
+        // +0.0 only: -0.0 is not the zero a field starts as.
+        { Operation: CilOperation.LoadFloat32, Operand: CilOperand.ConstantF4 { Value: var single } } =>
+            BitConverter.SingleToInt32Bits(single) == 0,
+        { Operation: CilOperation.LoadFloat64, Operand: CilOperand.ConstantF8 { Value: var real } } =>
+            BitConverter.DoubleToInt64Bits(real) == 0,
+        _ => false,
+    };
+
     private static CilInstruction Load(CilOperation operation, CilOperand operand) =>
         StaticFieldConstantLoads.Instruction(operation, operand);
 
     // A constant as the evaluation stack holds it.
     private readonly record struct Stored(CliValueKind Kind, long Integer, double Real);
 
-    private sealed record Initialization(Dictionary<EntityKey, Stored> Constants, bool Complete);
+    private sealed record Initialization(Dictionary<EntityKey, Stored> Constants, HashSet<EntityKey> ZeroFields, bool Complete);
 }

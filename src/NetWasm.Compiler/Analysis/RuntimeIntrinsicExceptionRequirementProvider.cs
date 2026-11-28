@@ -60,7 +60,8 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.EnumGetTypeCode => [NullReference],
 
             RuntimeIntrinsic.ArrayElementType or RuntimeIntrinsic.ArrayCreateInstance or
-                RuntimeIntrinsic.ArrayCreateRectangularInstance or
+                RuntimeIntrinsic.ArrayCreateRectangularInstance or RuntimeIntrinsic.ArrayCreateBoundedInstance or
+                RuntimeIntrinsic.ArrayCreateSharedInstance or
                 RuntimeIntrinsic.AllocateUninitializedObject => [OutOfMemory],
             // Throws nothing; it returns the OutOfMemoryException frozen in the image.
             RuntimeIntrinsic.PreallocatedOutOfMemoryException => [OutOfMemory],
@@ -117,7 +118,8 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.SimdDivide => [NotSupported, DivideByZero, Overflow],
             RuntimeIntrinsic.PackedSimdInstruction when
                 PackedSimdInstructions.TryGet(method, out var instruction) &&
-                instruction.Shape is not (PackedSimdShape.Simple or PackedSimdShape.Memory) =>
+                instruction.Shape is PackedSimdShape.ExtractLane or PackedSimdShape.ReplaceLane or
+                    PackedSimdShape.LoadLane or PackedSimdShape.StoreLane =>
                 [ArgumentOutOfRange],
             _ when RuntimeIntrinsicKinds.IsSimdVector(intrinsic) => [NotSupported],
             _ => [],

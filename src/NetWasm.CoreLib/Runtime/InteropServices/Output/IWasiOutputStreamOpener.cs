@@ -3,7 +3,8 @@
 
 namespace System.Runtime.InteropServices.Output;
 
-internal interface IWasiOutputStreamOpener
+// TStream names the stream (Streams.WasiStreamKinds): an implementation serves one stream only.
+internal interface IWasiOutputStreamOpener<TStream>
 {
     WasiOutputStreamEnds Open();
 }

@@ -3,7 +3,8 @@
 
 namespace System.Runtime.InteropServices.Output;
 
-internal interface IWasiResultFutureReadInvoker
+// TStream names the stream (Streams.WasiStreamKinds): an implementation serves one stream only.
+internal interface IWasiResultFutureReadInvoker<TStream>
 {
     // An async-lowered future.read into a result<_, error-code> buffer.
     int Read(int readable, nuint result);

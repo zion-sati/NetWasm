@@ -50,4 +50,12 @@ internal sealed class CompilationPreparation(
 
     // Whether the program's collector has generations, whose stores into old objects the program records.
     public bool CollectorHasGenerations { get; init; }
+
+    // Whether the analysis runs the receiver flow analysis for its report: the compile writes diagnostic artifacts or
+    // logs at trace level.
+    public bool ReportsReceiverFlow { get; init; }
+
+    // When precise dispatch sites check their receivers against the receiver flow analysis's sets, the method a
+    // receiver outside its set fails through (CoreLib's ReceiverFlowAudit.Fail, rooted for it).
+    public EntityKey? ReceiverFlowAuditFailure { get; init; }
 }

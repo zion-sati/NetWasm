@@ -440,9 +440,10 @@ public sealed class RuntimeTypeCompilationTests
         Assert.True(compilation.Program.RequiresTypeAttributes);
     }
 
-    // MakeArrayType, MakePointerType and MakeGenericType return the type the program has, and throw for
-    // one it does not use; GetNestedTypes lists the program's nested types by visibility, also from a
-    // constructed generic; GetNestedType throws without type names.
+    // MakeArrayType returns the array type of any element the program can read, as desktop does (a program that reaches
+    // it carries them); MakePointerType and MakeGenericType return the type the program has, and throw for one it does
+    // not use; GetNestedTypes lists the program's nested types by visibility, also from a constructed generic;
+    // GetNestedType throws without type names.
     [Theory]
     [InlineData(false, WasmTarget.Wasm32)]
     [InlineData(true, WasmTarget.Wasm64)]
@@ -476,7 +477,7 @@ public sealed class RuntimeTypeCompilationTests
                         typeof(int).MakePointerType() == typeof(int*)) passed |= 1;
                     if (typeof(List<>).MakeGenericType(typeof(int)) == typeof(List<int>) &&
                         typeof(Dictionary<,>).MakeGenericType(typeof(string), typeof(int)) == typeof(Dictionary<string, int>)) passed |= 2;
-                    try { typeof(Lonely).MakeArrayType(); } catch (PlatformNotSupportedException) { passed |= 4; }
+                    if (typeof(Lonely).MakeArrayType() is { IsSZArray: true } lonely && lonely.GetElementType() == typeof(Lonely)) passed |= 4;
                     try { typeof(List<>).MakeGenericType(typeof(int), typeof(int)); } catch (ArgumentException) { passed |= 8; }
                     try { typeof(int).MakeArrayType(0); } catch (IndexOutOfRangeException) { passed |= 16; }
                     Type[] open = typeof(Outer).GetNestedTypes();

@@ -102,6 +102,14 @@ var raw = size => {
   return asAddress(pointer);
 };
 var valueEnter = size => raw(Math.max(memory64 ? 8 : 4, Number(size)));
+// A landing pad's stack-trace depth: -1 when the program records none.
+var unwindStackTrace = depth => {
+  if (depth === -1) return;
+  if (depth > stackTraceFrames.length) {
+    throw new Error("a protected block's marks outlived its stack-trace frames");
+  }
+  stackTraceFrames.length = depth;
+};
 var rootEnter = count => {
   var slotSize = memory64 ? 8 : 4;
   var frame = raw(slotSize + count * slotSize);
@@ -598,10 +606,31 @@ var isTypeAssignable = (type, target) => {
   }
   return 0;
 };
+// Shared arrays (the runtime's register_shared_arrays): their type ids by shape, and by type each array or vector
+// interface one converts to where the element in its header converts to the entry's element.
+var sharedArrays = null;
+var registerSharedArrays = (table, count) => {
+  const view = createRefreshableDataView(memory);
+  const base = asNumber(table);
+  const shapes = [0, 1, 2, 3].map(shape => view.getInt32(base + shape * 4, true));
+  const targets = new Map();
+  for (let index = 0; index < count; index++) {
+    const at = base + 16 + index * 12;
+    targets.set(view.getInt32(at, true), { shared: view.getInt32(at + 4, true), element: view.getInt32(at + 8, true) });
+  }
+  sharedArrays = { shapes, targets };
+};
+var isSharedArrayType = type => type !== 0 && sharedArrays !== null && sharedArrays.shapes.includes(type);
 var isAssignable = (object, target) => {
   if (!object) return 0;
-  const type = createRefreshableDataView(memory).getInt32(asNumber(object), true);
-  return isTypeAssignable(type, target);
+  const view = createRefreshableDataView(memory);
+  const address = asNumber(object);
+  const type = view.getInt32(address, true);
+  if (isTypeAssignable(type, target)) return 1;
+  const entry = isSharedArrayType(type) ? sharedArrays.targets.get(target) : undefined;
+  return entry !== undefined && entry.shared === type
+    ? isTypeAssignable(view.getInt32(address + (memory64 ? 24 : 12), true), entry.element)
+    : 0;
 };
 var copyArray = (source, sourceIndex, destination, destinationIndex, length) => {
   const view = createRefreshableDataView(memory);
@@ -618,8 +647,11 @@ var copyArray = (source, sourceIndex, destination, destinationIndex, length) => 
   const sourceType = view.getInt32(sourceAddress, true);
   const destinationType = view.getInt32(destinationAddress, true);
   if (sourceIsValue === destinationIsValue) {
-    if (!isTypeAssignable(sourceType, destinationType) &&
-        !isTypeAssignable(destinationType, sourceType) &&
+    const [left, right] = isSharedArrayType(sourceType) || isSharedArrayType(destinationType)
+      ? [sourceElement, destinationElement]
+      : [sourceType, destinationType];
+    if (!isTypeAssignable(left, right) &&
+        !isTypeAssignable(right, left) &&
         !typeInterfaces.has(sourceElement) &&
         !typeInterfaces.has(destinationElement)) return 1;
   } else if (sourceIsValue) {
@@ -1020,6 +1052,9 @@ var runtimeValues = {
     return 0;
   },
   array_copy: copyArray,
+  // The forms a program with shared arrays calls; this host's casts and copies already read their elements.
+  array_copy_shared: copyArray,
+  array_set_value_shared: (...args) => runtimeValues.array_set_value(...args),
   array_clear: clearArray,
   array_clone: cloneArray,
   allocate_string: allocateString,
@@ -1162,6 +1197,8 @@ var runtimeValues = {
   report_unobserved_task_exception: zero,
   report_unhandled_exception: zero,
   is_assignable: isAssignable,
+  register_shared_arrays: registerSharedArrays,
+  is_assignable_shared: isAssignable,
   end_catch() { lastException = 0; },
   exception_frame_enter(metadata, count) {
     exceptionFrames.push({
@@ -1191,9 +1228,40 @@ var runtimeValues = {
     stackTraceFrames.length = frame.stackTraceDepth;
     departedExceptionFrame = exceptionFrames.pop();
   },
+  // A catch without filters registers its frame only while a frame with filters is registered; otherwise its landing
+  // pad selects its own clause.
+  exception_filter_frames_live() {
+    return exceptionFrames.some(frame => ((frame.count >>> 0) >>> 31) !== 0) ? 1 : 0;
+  },
+  exception_catch_select(exception, metadata, count) {
+    var view = createRefreshableDataView(memory);
+    for (var clause = 0; clause < count; clause++) {
+      if (isAssignable(exception, view.getInt32(asNumber(plus(metadata, clause * 4)), true))) return clause + 1;
+    }
+    return 0;
+  },
   exception_frame_target_clause(token) {
     if (token !== exceptionFrames.length + 1) throw new Error("unbalanced EH query");
     return departedExceptionFrame.targetClause;
+  },
+  // A landing pad returns the arenas to where its method stood as the block began (frames_unwind), from marks read after
+  // the prologue or as the block begins where the method's own frames do not say: only the stack-trace depth matters
+  // here, since this runtime never collects.
+  frame_mark_root: zeroAddress,
+  frame_mark_value_cursor: zeroAddress,
+  frame_mark_stack_trace() { return stackTraceFrames.length; },
+  // A landing pad's one-slot root frame for the exception in flight, holding it.
+  exception_cell_enter(exception) {
+    var cell = rootEnter(1);
+    writeAddress(createRefreshableDataView(memory), cell, 0, exception);
+    return cell;
+  },
+  exception_cell_leave: zero,
+  frame_marks_rewind(root, valueCursor, stackTraceDepth) {
+    unwindStackTrace(stackTraceDepth);
+  },
+  frames_unwind(root, valueFrame, valueFrameSize, stackTraceDepth) {
+    unwindStackTrace(stackTraceDepth);
   },
   finalizer_safepoint: zeroAddress,
 };

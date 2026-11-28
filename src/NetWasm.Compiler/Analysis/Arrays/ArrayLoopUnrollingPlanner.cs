@@ -111,7 +111,7 @@ internal sealed class ArrayLoopUnrollingPlanner(
             CilOperands.Type(instruction.Operand).Shape == CliTypeShape.Primitive,
         CilOperation.Call => _intrinsics.TryGetIntrinsic(CilOperands.MethodKey(instruction.Operand), out var intrinsic) &&
             intrinsic is RuntimeIntrinsic.UnsafeAdd or RuntimeIntrinsic.UnsafeAddByteOffset or RuntimeIntrinsic.UnsafeAs or
-                RuntimeIntrinsic.UnsafeAsRef or RuntimeIntrinsic.UnsafeAsRefManaged,
+                RuntimeIntrinsic.UnsafeAsRef or RuntimeIntrinsic.UnsafeAsRefManaged or RuntimeIntrinsic.NonZeroAddress,
         _ => NumericBodyOperations.Contains(instruction.Operation),
     };
 }

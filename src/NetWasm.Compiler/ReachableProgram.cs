@@ -29,6 +29,15 @@ public sealed record ReachableProgram(
     internal ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>> TypeDependencyPaths { get; init; } =
         ImmutableDictionary<string, ImmutableStack<CompilerDependencyStep>>.Empty;
 
+    // How the closure reached each host import method (WIT, JavaScript or native), by definition.
+    internal ImmutableDictionary<EntityKey, ImmutableStack<CompilerDependencyStep>> ImportDependencyPaths { get; init; } =
+        ImmutableDictionary<EntityKey, ImmutableStack<CompilerDependencyStep>>.Empty;
+
+    // The static fields reachable code writes, where the unwritten-field fold ran: every load of any other field that
+    // holds a foldable default reads that default. A later compile's early cutoff declines an edited method that reads
+    // a field outside it. Null where the fold did not run.
+    internal ImmutableHashSet<EntityKey>? WrittenStaticFields { get; init; }
+
     public ImmutableHashSet<EnumMetadataRequirement> EnumMetadataRequirements { get; init; } = [];
 
     // Types RuntimeHelpers.GetUninitializedObject creates; empty unless it is reachable.
@@ -37,6 +46,14 @@ public sealed record ReachableProgram(
     // Every closed type the program has at run time: with the allocated types, the only types a Type object can exist
     // for (a typeof, a GetType() result).
     public ImmutableHashSet<CliTypeIdentity> RuntimeTypes { get; init; } = [];
+
+    // The attribute queries the settled program's code leaves to their run-time paths, which throw
+    // PlatformNotSupportedException (NW1019).
+    internal ImmutableArray<NetWasm.Compiler.Analysis.Attributes.UnplannedAttributeQuery> UnplannedAttributeQueries
+    {
+        get;
+        init;
+    } = [];
 
     // Types that receive structure-marshalling descriptors, and whether those descriptors carry
     // field names for Marshal.OffsetOf; empty unless Marshal's structure members are reachable.
@@ -127,16 +144,26 @@ public sealed record ReachableProgram(
     public ImmutableDictionary<string, DispatchCallSiteModel> DispatchCallSites { get; init; } =
         [];
 
+    // The receiver flow analysis's report, when the compile writes diagnostic artifacts.
+    public Analysis.ReceiverFlow.ReceiverFlowReport? ReceiverFlow { get; init; }
+
     // The shared body each of object's virtual calls uses at its many-target sites, by declaration
     // (SharedDispatchPolicy).
     public ImmutableDictionary<string, MethodInstanceModel> SharedObjectDispatch { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
+    // The shared arrays the program allocates and their GetType (SharedArrayShapes); null when it allocates none.
+    public SharedArrayPlan? SharedArrays { get; init; }
 
     public ImmutableDictionary<string, TypeTestSiteModel> TypeTestSites { get; init; } =
         [];
 
     public ImmutableDictionary<string, MethodInstanceModel> CallableMethods { get; init; } =
         [];
+
+    // Methods generated code calls rather than IL (an expander's, an import binding's, managed.throw's getters), by
+    // canonical name: their arguments come from code no method body shows.
+    public ImmutableHashSet<string> GeneratedCallees { get; init; } = [];
 
     public ImmutableDictionary<string, MethodInstanceModel> NativeCallbacks { get; init; } =
         [];
@@ -160,4 +187,7 @@ public sealed record ReachableProgram(
     // CoreLib's conversions, by name, of the values reachable JavaScript boundaries convert.
     public ImmutableDictionary<string, MethodInstanceModel> JavaScriptConversions { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
+    // The program builds a JSException holding a JavaScript error, so its exports offer it back to JavaScript.
+    public bool ProducesJavaScriptErrors { get; init; }
 }

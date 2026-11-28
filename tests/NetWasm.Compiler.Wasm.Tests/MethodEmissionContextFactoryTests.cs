@@ -61,14 +61,44 @@ public sealed class MethodEmissionContextFactoryTests
         Assert.Equal(32, context.NumericTemporaryI4Second);
         Assert.Equal(33, context.InlineCatchFrame);
         Assert.Equal(new VectorScratch(34, 35), context.VectorScratch);
-        // Includes the two address scratch locals for inline known-size copies.
-        Assert.Equal(36, result.LocalTypes.Length);
-        Assert.Equal(0, context.ExceptionRootSlots[group]);
-        Assert.Equal(1, context.RootSlotCount);
+        // Includes the two address scratch locals for inline known-size copies, the group's exception cell frame, its
+        // copy of a lazy root frame local, and the marks the method reads after its prologue.
+        Assert.Equal(41, result.LocalTypes.Length);
+        Assert.Equal(38, context.ExceptionCellFrames[group]);
+        Assert.Equal(39, context.RootFrameSaves[group]);
+        Assert.Equal(new RegionMarkLocals(40, 41, 42), context.EntryMarks);
+        Assert.Equal(CliValueKind.I4, result.LocalTypes[^1]);
+        Assert.Equal(0, context.RootSlotCount);
+    }
+
+    // A block without catch clauses keeps three marks after every other local: two addresses and the stack-trace depth.
+    [Fact]
+    public void AllocatesMarkLocalsOnlyForTheMarkedBlocks()
+    {
+        var marked = new StructuredExceptionGroupId(0);
+        var registered = new StructuredExceptionGroupId(1);
+        var values = new ValueFrameLayout(0, ImmutableDictionary<int, int>.Empty, [], [], []);
+        var arguments = (Header: Header(CreateBody()), Roots: new MethodRootMap(EntryKey, [], []));
+
+        var plain = MethodEmissionContextFactory.Create(arguments.Header, arguments.Roots, 2, 0, [marked, registered], values,
+            FilterEnvironmentLayout.Empty, new ManagedMethodIdentity("Tests.Caller"));
+        var result = MethodEmissionContextFactory.Create(arguments.Header, arguments.Roots, 2, 0, [marked, registered], values,
+            FilterEnvironmentLayout.Empty, new ManagedMethodIdentity("Tests.Caller"), markedGroups: new HashSet<StructuredExceptionGroupId> { marked });
+
+        Assert.Empty(plain.Context.RegionMarkLocals);
+        var first = 2 + plain.LocalTypes.Length;
+        Assert.Equal(new RegionMarkLocals(first, first + 1, first + 2),
+            Assert.Single(result.Context.RegionMarkLocals, pair => pair.Key == marked).Value);
+        Assert.False(result.Context.RegionMarkLocals.ContainsKey(registered));
+        Assert.Equal(
+            [CliValueKind.ManagedAddress, CliValueKind.ManagedAddress, CliValueKind.I4],
+            result.LocalTypes[plain.LocalTypes.Length..]);
+        // A method with protected blocks has one set of marks read after its prologue, before the blocks' own.
+        Assert.Equal(new RegionMarkLocals(first - 3, first - 2, first - 1), plain.Context.EntryMarks);
     }
 
     [Fact]
-    public void ExceptionRootsFollowOrdinarySafepointRootsWithoutAliasing()
+    public void ExceptionCellsTakeNoSlotOfTheMethodFrame()
     {
         var roots = new MethodRootMap(EntryKey,
             ImmutableDictionary<RootSource, int>.Empty.Add(new(RootSourceKind.Local, 0), 0), []);
@@ -77,10 +107,10 @@ public sealed class MethodEmissionContextFactoryTests
         var context = MethodEmissionContextFactory.Create(Header(CreateBody()), roots, 0, 0,
             [first, second], new(0, [], [], [], []), FilterEnvironmentLayout.Empty,
             new ManagedMethodIdentity("Tests.Caller")).Context;
-        Assert.Equal(1, context.ExceptionRootSlots[first]);
-        Assert.Equal(2, context.ExceptionRootSlots[second]);
-        Assert.Equal(3, context.RootSlotCount);
-        Assert.Null(context.ActiveCatchRootSlot);
+        // Each block's cell is a frame its landing pad enters, held in a local of its own.
+        Assert.Equal(1, context.RootSlotCount);
+        Assert.NotEqual(context.ExceptionCellFrames[first], context.ExceptionCellFrames[second]);
+        Assert.Null(context.ActiveCatchCellFrame);
     }
 
     [Fact]

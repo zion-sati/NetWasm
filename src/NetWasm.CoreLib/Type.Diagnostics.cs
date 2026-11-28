@@ -10,11 +10,15 @@ public partial class Type
     // is null, as for a type without one.
     public override string Name => TypeSymbols.Find(SemanticTypeId)?.Name ?? TypeSymbols.IdName(SemanticTypeId);
 
-    public string? Namespace => TypeSymbols.Find(SemanticTypeId)?.Namespace;
+    public string? Namespace => this is SharedArrayType shared
+        ? shared.SharedNamespace
+        : TypeSymbols.Find(SemanticTypeId)?.Namespace;
 
-    public string? FullName => TypeSymbols.Find(SemanticTypeId) is { } symbol
-        ? symbol.FullName
-        : TypeSymbols.IdName(SemanticTypeId);
+    public string? FullName => this is SharedArrayType shared
+        ? shared.SharedFullName
+        : TypeSymbols.Find(SemanticTypeId) is { } symbol
+            ? symbol.FullName
+            : TypeSymbols.IdName(SemanticTypeId);
 
     public override string ToString() =>
         TypeSymbols.Find(SemanticTypeId)?.DisplayName ?? TypeSymbols.IdName(SemanticTypeId);

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-NetWasm-Community-1.0
 
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler;
@@ -9,6 +10,7 @@ using NetWasm.Compiler.Analysis.Delegates;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.GarbageCollection;
+using NetWasm.Compiler.Diagnostics;
 
 namespace NetWasm.Compiler.Analysis;
 
@@ -16,7 +18,9 @@ internal sealed class ReachableProgramBuilder(
     IAllocationCapabilityAnalyzer allocationCapabilities,
     IManagedByRefEffectAnalyzer byRefEffects,
     IDelegateBindingPlanner delegateBindings,
-    IObjectDispatchSharing objectDispatchSharing) :
+    IObjectDispatchSharing objectDispatchSharing,
+    IDispatchSiteTargetSelector siteTargets,
+    IAnalysisStepRecorder steps) :
     IReachableProgramBuilder
 {
     private readonly IAllocationCapabilityAnalyzer _allocationCapabilities = allocationCapabilities ??
@@ -27,6 +31,9 @@ internal sealed class ReachableProgramBuilder(
         throw new ArgumentNullException(nameof(delegateBindings));
     private readonly IObjectDispatchSharing _objectDispatchSharing = objectDispatchSharing ??
         throw new ArgumentNullException(nameof(objectDispatchSharing));
+    private readonly IDispatchSiteTargetSelector _siteTargets = siteTargets ??
+        throw new ArgumentNullException(nameof(siteTargets));
+    private readonly IAnalysisStepRecorder _steps = steps ?? throw new ArgumentNullException(nameof(steps));
 
     public ReachableProgram Build(
         MethodDefinitionModel? entryPoint,
@@ -35,46 +42,34 @@ internal sealed class ReachableProgramBuilder(
         IDelegateTypeRecognizer delegateTypes,
         ITypeTestPlanner typeTestPlanner)
     {
-        var dispatchCallSites =
-            state.DispatchDeclarations
-                .Select(pair => new DispatchCallSiteModel(
-                    pair.Value.Caller,
-                    pair.Value.IlOffset,
-                    pair.Value.Declaration,
-                    state.DispatchTargets.TryGetValue(pair.Key, out var targets)
-                        ? targets
-                        : [])
-                {
-                    SharesObjectDispatch = SharesObjectDispatch(pair.Value, targets, state),
-                })
-                .ToImmutableDictionary(site => site.Key, StringComparer.Ordinal);
+        var dispatchCallSites = _steps.Record("dispatch call sites", () => DispatchCallSites(state));
         var methods = state.Methods;
         var constructedMethods = state.ConstructedMethods;
-        var typeTestSites = typeTestPlanner.Build(
+        var typeTestSites = _steps.Record("type test sites", () => typeTestPlanner.Build(
             methods.Values.Concat(constructedMethods.Values),
-            state.AllocatedTypes);
+            state.AllocatedTypes));
 
-        var capabilities = _allocationCapabilities.Analyze(
+        var capabilities = _steps.Record("allocation capabilities", () => _allocationCapabilities.Analyze(
             new AllocationCapabilityAnalysisRequest(
                 methods,
                 constructedMethods,
-                dispatchCallSites));
-        var managedByRefEffects = _byRefEffects.Analyze(
+                dispatchCallSites)));
+        var managedByRefEffects = _steps.Record("by-ref effects", () => _byRefEffects.Analyze(
             new ManagedByRefEffectAnalysisRequest(
                 methods,
                 constructedMethods,
-                dispatchCallSites));
+                dispatchCallSites)));
         var allocatingMethods = capabilities.Methods;
         var constructedAllocatingMethods =
             capabilities.ConstructedMethods;
-        var rootMaps = methods.ToImmutableDictionary(
-            pair => pair.Key,
-            pair => EmptyRootMap(pair.Key));
-        var constructedRootMaps =
+        var (rootMaps, constructedRootMaps) = _steps.Record("root maps", () => (
+            methods.ToImmutableDictionary(
+                pair => pair.Key,
+                pair => EmptyRootMap(pair.Key)),
             constructedMethods.ToImmutableDictionary(
                 pair => pair.Key,
                 pair => EmptyRootMap(pair.Value.Method.Definition.Key),
-                StringComparer.Ordinal);
+                StringComparer.Ordinal)));
         // Every delegate type whose Invoke is called, directly or not, or whose address a delegate
         // binds, has an invoke helper.
         var delegateInvokeMethods = state.ManagedCallSites.Values
@@ -84,11 +79,11 @@ internal sealed class ReachableProgramBuilder(
             .Select(site => site.Target)
             .Concat(state.HostCallbacks.Select(callback => callback.Invoke))
             .Concat(state.MemberExecution.DelegateInvocation?.Methods.Values ?? []);
-        var plannedDelegateBindings = _delegateBindings.Plan(
+        var plannedDelegateBindings = _steps.Record("delegate bindings", () => _delegateBindings.Plan(
             delegateInvokeMethods,
-            state.CallableMethods.Values);
+            state.CallableMethods.Values));
 
-        return new ReachableProgram(
+        return _steps.Record("program model", () => new ReachableProgram(
             entryPoint,
             methods,
             state.Types,
@@ -112,6 +107,7 @@ internal sealed class ReachableProgramBuilder(
             state.ImplicitExceptions)
         {
             TypeDependencyPaths = state.TypeDependencyPaths,
+            ImportDependencyPaths = state.ImportDependencyPaths,
             EnumMetadataRequirements = state.EnumMetadataRequirements,
             UninitializedObjectTypes = [.. state.UninitializedObjectTypes
                 .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
@@ -156,8 +152,10 @@ internal sealed class ReachableProgramBuilder(
             ],
             DispatchCallSites = dispatchCallSites,
             SharedObjectDispatch = state.SharedObjectDispatch,
+            SharedArrays = state.SharedArrays,
             TypeTestSites = typeTestSites,
             CallableMethods = state.CallableMethods,
+            GeneratedCallees = state.GeneratedCallees,
             NativeCallbacks = state.NativeCallbacks,
             JSImportMethods = [.. state.JavaScriptImports.Values
                 .OrderBy(method => method.JSImport!.ModuleName ?? RuntimeAbi.HostModule,
@@ -170,6 +168,7 @@ internal sealed class ReachableProgramBuilder(
                 .OrderBy(callback => callback.ExportName, StringComparer.Ordinal)],
             JavaScriptAsyncBindings = state.JavaScriptAsyncBindings,
             JavaScriptConversions = state.JavaScriptConversions,
+            ProducesJavaScriptErrors = state.ProducesJavaScriptErrors,
             ManagedCallSites = state.ManagedCallSites,
             DelegateBindings = plannedDelegateBindings,
             ManagedByRefEffects = managedByRefEffects,
@@ -177,7 +176,50 @@ internal sealed class ReachableProgramBuilder(
                 .Where(delegateTypes.Recognize)
                 .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
             AllocatedTypes = [.. state.AllocatedTypes.OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
-        };
+        });
+    }
+
+    // Each site with its slot use's targets that its bound admits: one array for every site of the same slot use and
+    // bound, and of the same admitted set where the receiver flow admitted it (the flow shares one set among the sites
+    // its bounds admit the same receivers at).
+    private ImmutableDictionary<string, DispatchCallSiteModel> DispatchCallSites(ReachabilityLedgerSnapshot state)
+    {
+        var selected =
+            new Dictionary<(DispatchSlot Slot, CliTypeIdentity? Bound), ImmutableArray<DispatchTargetModel>>();
+        var admittedTargets = new Dictionary<(DispatchSlot Slot, CliTypeIdentity? Bound, ImmutableHashSet<CliTypeIdentity> Admitted),
+            ImmutableArray<DispatchTargetModel>>();
+        var sites = ImmutableDictionary.CreateBuilder<string, DispatchCallSiteModel>(StringComparer.Ordinal);
+        foreach (var (key, declaration) in state.DispatchDeclarations)
+        {
+            var slot = new DispatchSlot(declaration.Operation, declaration.Declaration.CanonicalName);
+            if (!selected.TryGetValue((slot, declaration.ReceiverBound), out var targets))
+            {
+                selected.Add((slot, declaration.ReceiverBound), targets = _siteTargets.Select(
+                    declaration.ReceiverBound,
+                    state.DispatchTargets.GetValueOrDefault(slot, [])));
+            }
+            // A call dispatched by receiver flow has the targets of the receivers its flow admitted, not every target its
+            // slot use has for other calls; with no bound among them, they are exactly what reached it.
+            var admission = state.ReceiverFlowAdmissions.GetValueOrDefault(key);
+            if (admission is not null)
+            {
+                var admittedKey = (slot, declaration.ReceiverBound, admission.Receivers);
+                if (!admittedTargets.TryGetValue(admittedKey, out var admitted))
+                {
+                    admittedTargets.Add(admittedKey,
+                        admitted = [.. targets.Where(target => admission.Receivers.Contains(target.ReceiverType))]);
+                }
+                targets = admitted;
+            }
+            sites.Add(key, new DispatchCallSiteModel(declaration.Caller, declaration.IlOffset, declaration.Declaration,
+                targets)
+            {
+                SharesObjectDispatch = SharesObjectDispatch(declaration, targets, state),
+                PreciseTargets = admission is { Bounded: false },
+                BoundedTargets = admission is { Bounded: true },
+            });
+        }
+        return sites.ToImmutable();
     }
 
     private static MethodRootMap EmptyRootMap(EntityKey method) => new(

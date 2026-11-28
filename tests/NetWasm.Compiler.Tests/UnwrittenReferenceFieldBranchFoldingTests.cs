@@ -49,8 +49,11 @@ public sealed class UnwrittenReferenceFieldBranchFoldingTests
         }
         """;
 
+    // The unwritten-static-field fold runs at every level, so no level keeps the type the dead branches name.
     [Theory]
-    [InlineData(FinalWasmOptimization.O0, true)]
+    [InlineData(FinalWasmOptimization.None, false)]
+    [InlineData(FinalWasmOptimization.O0, false)]
+    [InlineData(FinalWasmOptimization.O1, false)]
     [InlineData(FinalWasmOptimization.O2, false)]
     [InlineData(FinalWasmOptimization.Oz, false)]
     public void ATypeReachedOnlyBehindTheFieldsBranchesIsNotInTheProgram(FinalWasmOptimization optimization, bool reached)

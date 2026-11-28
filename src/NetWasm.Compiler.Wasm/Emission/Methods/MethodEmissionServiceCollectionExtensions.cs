@@ -9,6 +9,7 @@ using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 using NetWasm.Compiler.Wasm.Emission.Values;
 using NetWasm.Compiler.Wasm.Emission.Arrays;
 using NetWasm.Compiler.Wasm.Emission.CallLifetimes;
+using NetWasm.Compiler.Wasm.Emission.StructResults;
 
 namespace NetWasm.Compiler.Wasm.Emission.Methods;
 
@@ -21,6 +22,7 @@ internal static class MethodEmissionServiceCollectionExtensions
         services.AddManagedValuePlanning();
         services.AddArrayMetadataCaching();
         services.AddScalarCallPreservation();
+        services.AddStructResults();
         services.AddSingleton<IManagedDefinitionFunctionAppender,
             ManagedDefinitionFunctionAppender>();
         services.AddSingleton<IManagedDefinitionSetAppender,
@@ -71,11 +73,50 @@ internal static class MethodEmissionServiceCollectionExtensions
         services.AddSingleton<IStructuredBlockPredecessorReader, StructuredBlockPredecessorReader>();
         services.AddSingleton<IRootClearElisionPlanner, RootClearElisionPlanner>();
         services.AddSingleton<IRootFrameEntryClearPlanner, RootFrameEntryClearPlanner>();
+        services.AddSingleton<IFallbackPublicationClassifier, FallbackPublicationClassifier>();
+        services.AddSingleton<ILazyRootFramePlanner, LazyRootFramePlanner>();
+        services.AddSingleton<ILazyRootFrameEmitter, LazyRootFrameEmitter>();
         services.AddSingleton<IRootValueElisionPlanner, RootValueElisionPlanner>();
         services.AddSingleton<IInstructionCountingWriterFactory,
             InstructionCountingWriterFactory>();
         services.AddSingleton<IManagedMethodEmitter>(provider =>
             provider.GetRequiredService<ManagedMethodEmitter>());
+        services.AddSingleton<IPassThroughCatchLocalFinder, PassThroughCatchLocalFinder>();
+        services.AddSingleton<ILandingPadRestoreEmitter, LandingPadRestoreEmitter>();
+        services.AddSingleton<ILandingPadRestorePlanner, LandingPadRestorePlanner>();
+        services.AddSingleton<IExceptionFrameCallEmitter, ExceptionFrameCallEmitter>();
+        services.AddSingleton<MarkedExceptionRegion>();
+        services.AddSingleton<RegisteredExceptionFrame>();
+        services.AddSingleton(provider => new PassThroughExceptionFrame(
+            provider.GetRequiredService<NetWasm.Compiler.Core.ITargetLayout>(),
+            provider.GetRequiredService<IExceptionFrameCallEmitter>(),
+            provider.GetRequiredService<IPassThroughCatchLocalFinder>(),
+            provider.GetRequiredService<ILandingPadRestoreEmitter>(),
+            provider.GetRequiredService<ILazyRootFrameEmitter>()));
+        services.AddSingleton(provider => new FilterGuardedCatchFrame(
+            provider.GetRequiredService<NetWasm.Compiler.Core.ITargetLayout>(),
+            provider.GetRequiredService<IExceptionFrameCallEmitter>(),
+            provider.GetRequiredService<ILandingPadRestoreEmitter>(),
+            provider.GetRequiredService<ILazyRootFrameEmitter>(),
+            provider.GetRequiredService<RegisteredExceptionFrame>()));
+        services.AddSingleton(provider => new UnregisteredCatchFrame(
+            provider.GetRequiredService<IExceptionFrameCallEmitter>(),
+            provider.GetRequiredService<ILandingPadRestoreEmitter>(),
+            provider.GetRequiredService<ILazyRootFrameEmitter>()));
+        services.AddSingleton<IExceptionFrameStrategySelector>(provider => new ExceptionFrameStrategySelector(
+            provider.GetRequiredService<MarkedExceptionRegion>(),
+            provider.GetRequiredService<PassThroughExceptionFrame>(),
+            new PassThroughExceptionFrame(
+                provider.GetRequiredService<NetWasm.Compiler.Core.ITargetLayout>(),
+                provider.GetRequiredService<IExceptionFrameCallEmitter>(),
+                provider.GetRequiredService<IPassThroughCatchLocalFinder>(),
+                provider.GetRequiredService<ILandingPadRestoreEmitter>(),
+                provider.GetRequiredService<ILazyRootFrameEmitter>(),
+                registersUnderFilters: false),
+            provider.GetRequiredService<FilterGuardedCatchFrame>(),
+            provider.GetRequiredService<UnregisteredCatchFrame>(),
+            provider.GetRequiredService<RegisteredExceptionFrame>()));
+        services.AddSingleton<IExceptionFrameStepEmitter, ExceptionFrameStepEmitter>();
         services.AddSingleton<ExceptionRegionEmitter>();
         services.AddSingleton<IExceptionRegionEmitter>(provider =>
             provider.GetRequiredService<ExceptionRegionEmitter>());

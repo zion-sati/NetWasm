@@ -18,14 +18,12 @@ using static EmitterTestSupport;
 public sealed class ArrayCreateInstanceIntrinsicEmitterTests
 {
     [Theory]
-    [InlineData(WasmTarget.Wasm32, false)]
-    [InlineData(WasmTarget.Wasm64, false)]
-    [InlineData(WasmTarget.Wasm32, true)]
-    [InlineData(WasmTarget.Wasm64, true)]
-    public void EmitsExactAllocatorArgumentsAndAllocationFailureChecks(WasmTarget target, bool value)
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void EmitsExactAllocatorArgumentsAndAllocationFailureChecks(WasmTarget target)
     {
         var layout = new RecordingLayoutProvider(WasmTargetLayout.For(target));
-        var element = value ? CliTypeIdentity.FromStackKind(CliValueKind.I4) : CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, false);
+        var element = CliTypeIdentity.FromStackKind(CliValueKind.I4);
         var descriptors = new Descriptors(element);
         var roots = new RecordingRoots(); var addresses = new RecordingAddresses(); var exceptions = new RecordingExceptions();
         var imports = WasmRuntimeImports.CreateCatalog();
@@ -39,21 +37,38 @@ public sealed class ArrayCreateInstanceIntrinsicEmitterTests
         Assert.Equal([ManagedExceptionKind.OutOfMemory], exceptions.Kinds);
         Assert.Equal(element, layout.ObjectIdentityRequest);
         var call = Assert.Single(code.Where(i => i.Opcode == WasmOpcodes.Call));
-        Assert.Equal((uint)imports.Resolve(value ? RuntimeImportSymbol.AllocateValueArray : RuntimeImportSymbol.AllocateReferenceArray, request.Instruction.Target.RuntimeImportSelection), call.Operand.UnsignedValue);
+        Assert.Equal((uint)imports.Resolve(RuntimeImportSymbol.AllocateValueArray, request.Instruction.Target.RuntimeImportSelection), call.Operand.UnsignedValue);
         Assert.Equal(2, code.Count(i => i.Opcode == WasmOpcodes.If));
         Assert.Contains(code, i => i.Opcode == WasmOpcodes.I32Constant && i.Operand.SignedValue == 77);
         Assert.Contains(code, i => i.Opcode == WasmOpcodes.LocalGet && i.Operand.UnsignedValue == (uint)request.Local(1, CliValueKind.I4));
         Assert.Equal((uint)request.Instruction.Context.NumericTemporaryI4, code[1].Operand.UnsignedValue);
         Assert.Equal((uint)request.Local(0, CliValueKind.ManagedReference), Assert.Single(code.Where(i => i.Opcode == WasmOpcodes.LocalTee)).Operand.UnsignedValue);
     }
-    // A vector whose element type has no layout, such as a parameter's DynamicMetaObject[] when no
-    // DynamicMetaObject is ever constructed, gets no allocation branch: no runtime Type names its element.
+    // An array of references is the shared array (ArrayCreateSharedInstanceIntrinsicEmitter): a vector type the
+    // program only names is not one the analysis saw allocated, so it takes no case.
+    [Fact]
+    public void LeavesVectorsOfReferencesToTheSharedArray()
+    {
+        var layout = new RecordingLayoutProvider(WasmTargetLayout.For(WasmTarget.Wasm32));
+        var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.ArrayCreateInstance, [CliValueKind.I4, CliValueKind.I4]);
+        var writer = new RecordingInstructionWriter();
+        new ArrayCreateInstanceIntrinsicEmitter(new Descriptors(CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, false)),
+            layout, layout, WasmRuntimeImports.CreateCatalog(), new RecordingRoots(), new RecordingAddresses(),
+            new RecordingExceptions(), new KeyedDispatchEmitter()).Emit(request, writer);
+
+        var code = writer.ToInstructions();
+        Assert.DoesNotContain(code, i => i.Opcode == WasmOpcodes.Call);
+        Assert.DoesNotContain(code, i => i.Opcode == WasmOpcodes.I32Constant && i.Operand.SignedValue == 77);
+    }
+
+    // A vector whose element type has no layout, such as a parameter's struct array when the struct is never
+    // constructed, gets no allocation branch: no runtime Type names its element.
     [Fact]
     public void SkipsVectorsWhoseElementTypeHasNoLayout()
     {
         var layout = new RecordingLayoutProvider(WasmTargetLayout.For(WasmTarget.Wasm32));
-        var element = CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, false);
-        var hidden = CliTypeIdentity.Named(new AssemblyIdentity("in-memory"), "Fixtures", "Hidden", isValueType: false);
+        var element = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var hidden = CliTypeIdentity.Named(new AssemblyIdentity("in-memory"), "Fixtures", "Hidden", isValueType: true);
         var types = new PartialLayouts(layout, hidden);
         var request = CreateRuntimeIntrinsicRequest(RuntimeIntrinsic.ArrayCreateInstance, [CliValueKind.I4, CliValueKind.I4]);
         var imports = WasmRuntimeImports.CreateCatalog();

@@ -111,6 +111,11 @@ public sealed class DispatcherBranchTablePlannerTests
         var entry = Assert.Single(plan.Cases.Where(item => item.Target == 0));
 
         Assert.Equal(31U, entry.WhenTrue!.DirectBranchDepth);
+        // A branch straight to an exit leaves the dispatcher; one to a block does not.
+        Assert.True(entry.WhenTrue.LeavesDispatcher);
+        Assert.All(plan.Cases.Where(item => item.Block is not null && item.WhenTrue is { DirectBranchDepth: not null }
+                && item.WhenTrue.Target.Value != 32),
+            item => Assert.False(item.WhenTrue!.LeavesDispatcher));
     }
 
     [Fact]

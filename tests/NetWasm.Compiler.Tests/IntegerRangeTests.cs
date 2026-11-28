@@ -483,6 +483,33 @@ public sealed class IntegerRangeTests
         Assert.False(NonZero(proof, 10));
     }
 
+    // A method whose blocks times slots pass the budget is not analyzed: its states would hold every slot at every
+    // block. One fewer block is analyzed.
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public void AMethodPastTheSlotBudgetIsNotAnalyzed(int extraBlocks, bool analyzed)
+    {
+        const int locals = 4095;
+        var blocks = (int)(IntegerRangeAnalysis.MaximumSlotRanges / (locals + 1)) + extraBlocks;
+        var code = new List<CilInstruction>();
+        for (var block = 0; block < blocks - 1; block++)
+        {
+            code.Add(new(code.Count, code.Count + 1, CilOperation.LoadArgument, new CilOperand.Index(0)));
+            code.Add(new(code.Count, code.Count + 1, CilOperation.BranchIfFalse, new CilOperand.BranchTarget(code.Count + 1)));
+        }
+        code.Add(new(code.Count, code.Count + 1, CilOperation.Return, new CilOperand.None()));
+        var graph = Validator().Validate(new ControlFlowGraphBuilderFactory().Create().Build(new CilMethodBody(
+            new MethodDefinitionModel(new(Assembly, 0x06000001), new(Assembly, 0x02000001), "Chain", true,
+                new MethodSignatureModel(CliTypeIdentity.FromStackKind(CliValueKind.Void), [Int32]), 1),
+            1, [.. Enumerable.Repeat(CliValueKind.I4, locals)], [.. code])));
+
+        var stacks = new IntegerRangeAnalysis(new StackEffectResolver(new Calls())).StacksAt(graph, new HashSet<int> { 1 });
+
+        Assert.Equal(blocks, graph.Graph.ReachableBlocks.Count);
+        Assert.Equal(analyzed, stacks.ContainsKey(1));
+    }
+
     [Fact]
     public void TheEliminatorAndAnalysisRequireTheirInputs()
     {

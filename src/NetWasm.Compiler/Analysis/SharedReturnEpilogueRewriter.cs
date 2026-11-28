@@ -6,6 +6,10 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Analysis;
 
+// A branch to the shared return epilogue (`ret`, or `ldloc; ret` after a store to that local, as Debug IL returns)
+// returns where it is. The return reports the epilogue's sequence point (SequencePointOffset), a method's closing
+// brace, which is where a debugger and a stack trace place the return; it keeps the branch's source offset, as every
+// rewrite keeps where an instruction came from, so the inliner still counts the branch's bytes.
 internal sealed class SharedReturnEpilogueRewriter : IMethodRewriteRule
 {
     public CilMethodBody Rewrite(CilMethodBody body)
@@ -35,6 +39,7 @@ internal sealed class SharedReturnEpilogueRewriter : IMethodRewriteRule
                 {
                     Operation = CilOperation.Return,
                     Operand = new CilOperand.None(),
+                    SequencePointOffset = instructions[targetIndex].LineOffset,
                 };
                 changed = true;
                 continue;
@@ -64,6 +69,7 @@ internal sealed class SharedReturnEpilogueRewriter : IMethodRewriteRule
             {
                 Operation = CilOperation.Return,
                 Operand = new CilOperand.None(),
+                SequencePointOffset = instructions[targetIndex].LineOffset,
             };
             changed = true;
         }

@@ -61,6 +61,8 @@ def run_cells(*, root, env, feed, version, sdk_version, node, kinds, profiles, c
         save()
         assert code == 0
 
+    # Sources the page and the worker share, beside their cells as beside their folders here.
+    shutil.copytree(FIXTURES / 'shared', root / 'shared', dirs_exist_ok=True)
     for kind, collector in [(k, c) for c in collectors for k in kinds]:
         for (variant, properties), profile in [(v, p) for v in variants(kind) for p in profiles]:
             prefix = f'{collector.lower()}-' if collector else ''

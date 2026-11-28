@@ -15,7 +15,7 @@ public sealed class ExceptionRegionSequenceStepExecutorTests
     {
         var distances = new ControlFlowDistanceFinder();
         var joins = new CommonReachableBlockFinder(
-            new ControlFlowPostDominatorFinder(new ControlFlowPostDominanceAnalyzer()),
+            new ControlFlowPostDominatorFinder(new ControlFlowPostDominanceAnalyzer(new DominatorTreeBuilder())),
             distances);
         var reachableBlocks = new ReachableBlockFinder(distances);
         var command = new ExceptionRegionSequenceStepExecutor(

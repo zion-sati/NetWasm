@@ -19,18 +19,10 @@ internal sealed class ContinuationDispatcherBuilder(
 
     public StructuredDispatcherDraft Build(ControlFlowStructuringState state,
         IEnumerable<int> targets,
-        int continuationBoundary,
-        int methodEnd)
+        int end)
     {
         var targetArray = targets.Distinct().Order().ToArray();
-        var end = targetArray.Any(target => target > continuationBoundary)
-            ? methodEnd
-            : continuationBoundary;
-        var allowed = state.Graph.Blocks
-            .Where(block => block.StartOffset >= targetArray[0] &&
-                block.StartOffset < end)
-            .Select(block => block.Index)
-            .ToImmutableHashSet();
+        var allowed = BlocksStarting.Between(state.Graph, targetArray[0], end);
         var component = targetArray
             .Select(target => state.Graph.GetBlockAtOffset(target).Index)
             .SelectMany(target => _reachableBlocks.Find(state.Graph, target, allowed))

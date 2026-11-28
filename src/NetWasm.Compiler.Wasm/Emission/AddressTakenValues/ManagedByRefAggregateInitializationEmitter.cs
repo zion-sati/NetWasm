@@ -23,7 +23,7 @@ internal sealed class ManagedByRefAggregateInitializationEmitter(
         foreach (var parameter in context.ManagedByRefAggregatePromotions.Plan
                      .PromotedParameters.OrderBy(pair => pair.Key))
         {
-            var sourceLocal = checked(parameter.Key + context.ParameterOffset);
+            var sourceLocal = context.ArgumentLocal(parameter.Key);
             var storageLocals = context.ManagedByRefAggregatePromotions.StorageLocals[
                 parameter.Key];
             for (var index = 0; index < parameter.Value.StorageSlots.Length; index++)

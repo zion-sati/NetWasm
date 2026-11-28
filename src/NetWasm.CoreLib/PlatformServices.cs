@@ -34,13 +34,22 @@ namespace System.Runtime.InteropServices
         ulong GetMonotonicTime();
     }
 
-    internal interface IPlatformSchedule : IDisposable
+    // Scheduled work's handle. Its one verb is not IDisposable.Dispose: at O0 an interface call
+    // dispatches to every allocated implementation, so a handle that reaches host imports must not
+    // answer the program's own Dispose calls (the levels lane checks O0's imports equal O1's).
+    internal interface IPlatformSchedule
     {
+        // Stops the work if it has not run; a second call does nothing.
+        void Cancel();
     }
 
     internal interface IPlatformScheduler
     {
+        // Work to run after a delay; the delay machinery is reached only through it.
         IPlatformSchedule Schedule(Action continuation, ulong delayNanoseconds);
+
+        // Work to run as soon as the loop takes it, with no delay.
+        IPlatformSchedule Post(Action continuation);
     }
 
     internal static class WasiPlatformServicesComposition
@@ -128,6 +137,10 @@ namespace System.Runtime.InteropServices
                 new Concurrency.WasiSubtaskDropInvoker())
             {
                 HostCanComplete = PlatformWorld.HasHostEventLoop(),
+                // A world without the monotonic clock cannot time a batch.
+                Batch = PlatformWorld.HasHostEventLoop() && PlatformWorld.ImportsMonotonicClock()
+                    ? new QuantumBatch(new Concurrency.WasiMonotonicWaitInvoker())
+                    : UnboundedBatch.Instance,
             };
 
         internal static IPlatformTimerFactory CreateTimerFactory(
@@ -142,12 +155,19 @@ namespace System.Runtime.InteropServices
 
         // Each standard stream is composed on its own first use, so a program that writes only
         // standard output reaches none of standard error's bindings.
-        internal static Output.WasiStreamBlockingOutputWriter CreateStandardOutput()
+        // Set when a standard stream's writer is composed. They are not generic statics, which the
+        // unwritten-static-field fold tracks by definition, so a stream a program never composes
+        // leaves its flag unwritten and its process exit compiles no end for it.
+        internal static bool StandardOutputComposed;
+        internal static bool StandardErrorComposed;
+
+        internal static Output.WasiStreamBlockingOutputWriter<Streams.StandardOutputStreamKind> CreateStandardOutput()
         {
+            StandardOutputComposed = true;
             var awaiter = CreateWaitableEventAwaiter();
-            return new Output.WasiStreamBlockingOutputWriter(
-                new Output.WasiOutputStreamResource(
-                    new Output.WasiOutputStreamOpener(
+            return new Output.WasiStreamBlockingOutputWriter<Streams.StandardOutputStreamKind>(
+                new Output.WasiOutputStreamResource<Streams.StandardOutputStreamKind>(
+                    new Output.WasiOutputStreamOpener<Streams.StandardOutputStreamKind>(
                         new Output.WasiStandardOutputStreamCreateInvoker(),
                         new Output.WasiStandardOutputHandOffInvoker()),
                     CreateOutputStreamCloser(
@@ -162,14 +182,14 @@ namespace System.Runtime.InteropServices
 
         // A JavaScript host that runs a raw module's event loop finishes a write after the export
         // returns; anywhere else the program waits until the host has written its output.
-        private static Output.IWasiOutputStreamCloser CreateOutputStreamCloser(
-            Output.IWasiByteStreamWritableDropInvoker dropWritable,
-            Output.IWasiResultFutureReadInvoker readResult,
-            Output.IWasiResultFutureDropInvoker dropResult,
+        private static Output.IWasiOutputStreamCloser<TStream> CreateOutputStreamCloser<TStream>(
+            Output.IWasiByteStreamWritableDropInvoker<TStream> dropWritable,
+            Output.IWasiResultFutureReadInvoker<TStream> readResult,
+            Output.IWasiResultFutureDropInvoker<TStream> dropResult,
             Concurrency.IWaitableEventAwaiter awaiter) =>
             PlatformWorld.HasHostEventLoop()
-                ? new Output.WasiOutputStreamNonblockingCloser(dropWritable, dropResult)
-                : new Output.WasiOutputStreamCloser(
+                ? new Output.WasiOutputStreamNonblockingCloser<TStream>(dropWritable, dropResult)
+                : new Output.WasiOutputStreamCloser<TStream>(
                     dropWritable, readResult, dropResult, awaiter, new CanonicalBufferAllocator());
 
         internal static Input.WasiStandardInputReader CreateStandardInput() =>
@@ -182,12 +202,13 @@ namespace System.Runtime.InteropServices
                 CreateWaitableEventAwaiter(),
                 new CanonicalBufferAllocator());
 
-        internal static Output.WasiStreamBlockingOutputWriter CreateStandardError()
+        internal static Output.WasiStreamBlockingOutputWriter<Streams.StandardErrorStreamKind> CreateStandardError()
         {
+            StandardErrorComposed = true;
             var awaiter = CreateWaitableEventAwaiter();
-            return new Output.WasiStreamBlockingOutputWriter(
-                new Output.WasiOutputStreamResource(
-                    new Output.WasiOutputStreamOpener(
+            return new Output.WasiStreamBlockingOutputWriter<Streams.StandardErrorStreamKind>(
+                new Output.WasiOutputStreamResource<Streams.StandardErrorStreamKind>(
+                    new Output.WasiOutputStreamOpener<Streams.StandardErrorStreamKind>(
                         new Output.WasiStandardErrorStreamCreateInvoker(),
                         new Output.WasiStandardErrorHandOffInvoker()),
                     CreateOutputStreamCloser(
@@ -349,10 +370,25 @@ namespace System.Runtime.InteropServices
         // which carries only success or failure.
         internal static void RunProcessExit(int exitCode)
         {
-            Output.WasiOutputStreamResource.EndOpened();
+            EndOpenedStandardStreams();
             if (exitCode != 0 && PlatformWorld.ImportsProcessExit())
             {
                 ProcessExit.Exit(exitCode);
+            }
+        }
+
+        // The standard streams the process opened end, standard output's then standard error's:
+        // each stream keeps its own list (Output.WasiOutputStreamResource<TStream>).
+        private static void EndOpenedStandardStreams()
+        {
+            if (WasiPlatformServicesComposition.StandardOutputComposed)
+            {
+                Output.WasiOutputStreamResource<Streams.StandardOutputStreamKind>.EndOpened();
+            }
+
+            if (WasiPlatformServicesComposition.StandardErrorComposed)
+            {
+                Output.WasiOutputStreamResource<Streams.StandardErrorStreamKind>.EndOpened();
             }
         }
 
@@ -360,7 +396,7 @@ namespace System.Runtime.InteropServices
         [Diagnostics.CodeAnalysis.DoesNotReturn]
         internal static void ExitProcess(int exitCode)
         {
-            Output.WasiOutputStreamResource.EndOpened();
+            EndOpenedStandardStreams();
             ProcessExit.Exit(exitCode);
             throw new Diagnostics.UnreachableException("The platform returned from its process exit.");
         }

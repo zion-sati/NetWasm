@@ -13,7 +13,9 @@ using static CompilerTestSupport;
 
 // A call to a method whose body has no ret ends its block, as an inline throw does, so the code
 // only its fall-through reaches is dead: here the calls after the throw helpers are left out.
-// Upstream's ThrowHelper calls rely on this to keep the values after them out of root frames.
+// Upstream's ThrowHelper calls rely on this to keep the values after them out of root frames. The
+// throw that ends the block never runs, so it is Wasm's unreachable, not a throw of null: Checked,
+// whose only throw it is, throws no NullReferenceException of its own.
 public sealed partial class NonReturningCallCompilationTests
 {
     private const string Source = """
@@ -91,6 +93,10 @@ public sealed partial class NonReturningCallCompilationTests
         var functions = FunctionNames().Matches(printed.StandardOutput).Select(static name => name.Value).ToArray();
         Assert.Contains(functions, static name => name.Contains("::Fail", StringComparison.Ordinal));
         Assert.DoesNotContain(functions, static name => name.Contains("AfterFail", StringComparison.Ordinal));
+        var checkedBody = Regex.Split(printed.StandardOutput, @"\n\s*\(func ")
+            .Single(static function => function.StartsWith("$NonReturningCalls.EntryPoint::Checked", StringComparison.Ordinal));
+        Assert.Matches(@"call \$\S+::Fail\s+(?:i(?:32|64)\.const 0\s+(?:local\.set \d+\s+)?)?unreachable", checkedBody);
+        Assert.DoesNotContain("call $managed.throw", checkedBody, StringComparison.Ordinal);
 
         foreach (var (input, expected) in new[] { (0, 41), (1, 100), (2, 5), (3, 200) })
         {

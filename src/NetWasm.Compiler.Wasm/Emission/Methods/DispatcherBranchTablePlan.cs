@@ -19,4 +19,8 @@ internal sealed record DispatcherCasePlan(
 
 internal sealed record DispatcherTransitionPlan(
     StructuredBlockId Target,
-    uint? DirectBranchDepth);
+    uint? DirectBranchDepth)
+{
+    // Whether the direct branch reaches one of the dispatcher's exits, which leaves the dispatcher.
+    public bool LeavesDispatcher { get; init; }
+}

@@ -34,6 +34,8 @@ public static class NetWasmEmissionServiceCollectionExtensions
             NetWasm.Compiler.Wasm.Units.MappedFileUnitStoreLoader>();
         services.TryAddSingleton<NetWasm.Compiler.Wasm.Units.IUnitStoreCommitter,
             NetWasm.Compiler.Wasm.Units.FileUnitStoreCommitter>();
+        services.TryAddSingleton<NetWasm.Compiler.Wasm.Units.IUnitSegmentSealer,
+            NetWasm.Compiler.Wasm.Units.FileUnitSegmentSealer>();
         services.TryAddSingleton<NetWasm.Compiler.Wasm.Units.IUnitKeptCompileLoader,
             NetWasm.Compiler.Wasm.Units.FileUnitKeptCompileLoader>();
         services.TryAddSingleton<NetWasm.Compiler.Wasm.Units.IUnitKeptCompileCommitter,

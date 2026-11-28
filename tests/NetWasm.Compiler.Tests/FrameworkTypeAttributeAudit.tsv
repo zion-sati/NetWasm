@@ -4,7 +4,6 @@ extra	System.Diagnostics.Debug+WriteIfInterpolatedStringHandler	System.ObsoleteA
 extra	System.RuntimeFieldHandle	System.Runtime.CompilerServices.IsReadOnlyAttribute
 extra	System.RuntimeMethodHandle	System.Runtime.CompilerServices.IsReadOnlyAttribute
 extra	System.RuntimeTypeHandle	System.Runtime.CompilerServices.IsReadOnlyAttribute
-extra	System.Text.StringBuilder+AppendInterpolatedStringHandler	System.ObsoleteAttribute("Types with embedded references are not supported in this version of your compiler.",True)
 missing	System.Collections.Specialized.StringDictionary	System.ComponentModel.Design.Serialization.DesignerSerializerAttribute
 missing	System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute	System.Runtime.CompilerServices.CompilerLoweringPreserveAttribute
 missing	System.Windows.Input.ICommand	System.Windows.Markup.ValueSerializerAttribute
@@ -109,9 +108,6 @@ missing-cosmetic	System.Text.CompositeFormat	System.Diagnostics.DebuggerDisplayA
 missing-cosmetic	System.Text.RegularExpressions.CaptureCollection	System.Diagnostics.DebuggerTypeProxyAttribute
 missing-cosmetic	System.Text.RegularExpressions.GroupCollection	System.Diagnostics.DebuggerTypeProxyAttribute
 missing-cosmetic	System.Text.RegularExpressions.MatchCollection	System.Diagnostics.DebuggerTypeProxyAttribute
-missing-cosmetic	System.Text.Rune	System.Diagnostics.DebuggerDisplayAttribute
-missing-cosmetic	System.Text.StringBuilder+AppendInterpolatedStringHandler	System.ComponentModel.EditorBrowsableAttribute
-missing-cosmetic	System.Text.Unicode.Utf8+TryWriteInterpolatedStringHandler	System.ComponentModel.EditorBrowsableAttribute
 missing-cosmetic	System.Threading.CancellationToken	System.Diagnostics.DebuggerDisplayAttribute
 missing-cosmetic	System.Threading.CancellationTokenSource	System.Diagnostics.DebuggerDisplayAttribute
 missing-cosmetic	System.Threading.ManualResetEventSlim	System.Diagnostics.DebuggerDisplayAttribute

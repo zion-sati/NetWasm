@@ -8,18 +8,18 @@ using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Emission.StructResults;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions;
 
 internal sealed class ExceptionAndReturnEmitter(
     ITargetLayout layouts,
-    IValueLayoutProvider values,
     IRuntimeImportResolver runtimeImports,
     IImplicitExceptionEmitter exceptions,
     IMethodFrameExitEmitter methodFrameExits,
     IFilterEnvironmentRootEmitter filterEnvironmentRoots,
     IAddressInstructionEmitter addresses,
-    IValueCopyEmitter valueCopies) : InstructionCommandProvider
+    IValueTypeReturnConventionFactory returns) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -42,6 +42,13 @@ internal sealed class ExceptionAndReturnEmitter(
 
     private void EmitThrow(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
+        // The throw after a call that never returns never runs.
+        if (request.Instruction.Operand is CilOperand.NeverRuns)
+        {
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
+            request.Stack.Clear();
+            return;
+        }
         var exceptionLocal = GetStackLocal(
             request.Context,
             request.Stack.Count - 1,
@@ -61,20 +68,32 @@ internal sealed class ExceptionAndReturnEmitter(
 
     private void EmitRethrow(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
-        var slot = request.Context.ActiveCatchRootSlot ?? throw new InvalidOperationException(
+        // The catch's exception cell holds the exception across begin_rethrow, which can collect.
+        var cell = request.Context.ActiveCatchCellFrame ?? throw new InvalidOperationException(
             "rethrow was emitted outside a catch handler");
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)request.Context.RootFrame)));
-        ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target,
-            checked(slot * layouts.Target.ObjectReferenceSize), layouts.Target.ObjectReferenceSize);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)cell)));
+        ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target, 0, layouts.Target.ObjectReferenceSize);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)request.Context.ExceptionTemporary)));
+        // A pass-through catch passed by in the first pass rethrows into the search its throw began, which has
+        // selected a frame beyond it: it starts no search of its own.
+        var passThrough = request.Context.ActiveCatchPassThroughToken;
+        if (passThrough is { } token)
+        {
+            // The token is -1 while passed by.
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)token)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(-1)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32NotEqual));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ExceptionTemporary))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.BeginRethrow)))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)request.Context.RootFrame)));
-        ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target,
-            checked(slot * layouts.Target.ObjectReferenceSize), layouts.Target.ObjectReferenceSize);
+        if (passThrough is not null)
+        {
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        }
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)cell)));
+        ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target, 0, layouts.Target.ObjectReferenceSize);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Throw, WasmInstructionOperand.Unsigned((uint)(0))));
         request.Stack.Clear();
     }
@@ -95,25 +114,14 @@ internal sealed class ExceptionAndReturnEmitter(
     {
         var returnSignature = request.Header.MethodInstance?.Signature ??
                               request.Header.Method.Signature;
+        // A value type returns as its convention takes it: copied into the caller's buffer, or its fields in results.
         if (returnSignature.ReturnSignatureType.StackKind == CliValueKind.ValueType)
         {
-            var returnLayout = values.GetValueLayout(
-                returnSignature.ReturnSignatureType);
-            var source = GetStackLocal(
-                request.Context,
-                0,
-                CliValueKind.ValueType);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(0))));
-            valueCopies.Emit(
-                code,
-                0,
-                returnLayout.Size,
-                returnLayout.Alignment,
-                SmallBlockEmitter.WidestChunk(returnLayout),
-                writer => writer.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.LocalGet,
-                    WasmInstructionOperand.Unsigned((uint)source))),
-                request.Context);
+            returns.Create(returnSignature.ReturnSignatureType).Emit(code, new(request.Context, request.Instruction.Offset),
+                () => GetStackLocal(request.Context, 0, CliValueKind.ValueType),
+                writer => methodFrameExits.Emit(writer, request.Context));
+            request.Stack.Clear();
+            return;
         }
         methodFrameExits.Emit(code, request.Context);
         if (returnSignature.ReturnType != CliValueKind.Void &&

@@ -14,7 +14,7 @@ internal sealed record RuntimeLinkExportPlanRequest(
     ImmutableArray<string> PublicExports,
     ImmutableArray<RuntimeNativeBinding> NativeBindings)
 {
-    public ImmutableArray<string> RuntimeFeatures { get; init; }
+    public ImmutableArray<string> RuntimeFeatures { get; init; } = [];
     public RuntimeNativeCallbackSupport? NativeCallbackSupport { get; init; }
     // Entry points of the C library functions the program imports (RuntimeSystemImportPartitioner).
     public ImmutableArray<string> SystemExports { get; init; } = [];

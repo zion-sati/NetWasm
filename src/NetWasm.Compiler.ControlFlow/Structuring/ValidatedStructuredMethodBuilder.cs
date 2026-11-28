@@ -52,7 +52,7 @@ internal sealed class ValidatedStructuredMethodBuilder(
         // A dispatcher routes every transition through a program counter;
         // reducible control flow needs none.
         if (reducibleControlFlow is not null &&
-            ContainsDispatcher(body) &&
+            StructuredDispatcherDrafts.Contains(body) &&
             reducibleControlFlow.Structure(validated) is { } labeled)
         {
             body = labeled;
@@ -65,17 +65,4 @@ internal sealed class ValidatedStructuredMethodBuilder(
         _validator.Validate(draft);
         return _completer.Complete(draft);
     }
-
-    private static bool ContainsDispatcher(Draft.StructuredSequenceDraft sequence) =>
-        sequence.Regions.Any(region => region switch
-        {
-            Draft.StructuredDispatcherDraft => true,
-            Draft.StructuredIfDraft conditional =>
-                ContainsDispatcher(conditional.WhenTrue) || ContainsDispatcher(conditional.WhenFalse),
-            Draft.StructuredLoopDraft loop =>
-                ContainsDispatcher(loop.Body) || ContainsDispatcher(loop.ContinueBody) || ContainsDispatcher(loop.ExitBody),
-            Draft.StructuredPostTestLoopDraft loop =>
-                ContainsDispatcher(loop.Body) || ContainsDispatcher(loop.ContinueBody) || ContainsDispatcher(loop.ExitBody),
-            _ => false,
-        });
 }

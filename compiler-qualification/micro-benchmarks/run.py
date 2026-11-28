@@ -49,6 +49,19 @@ SOURCES = [
     'benchmarks/micro/libraries/System.Runtime.Intrinsics',
     'benchmarks/micro/libraries/System.Numerics.Vectors',
     'benchmarks/micro/libraries/System.Memory',
+    'benchmarks/micro/libraries/System.Threading.Tasks',
+    'benchmarks/micro/libraries/System.Threading.Tasks.Extensions',
+    'benchmarks/micro/libraries/System.Threading.Channels',
+    # Only the benchmarks that return a task, from suites whose other benchmarks the table does not time.
+    'async:benchmarks/micro/libraries/System.IO.Pipelines/',
+    'async:benchmarks/micro/libraries/System.Threading/Perf.SemaphoreSlim.cs',
+    'async:benchmarks/micro/libraries/System.IO/TextReaderReadLineTests.cs',
+    'async:benchmarks/micro/libraries/System.IO/StreamReaderReadToEndTests.cs',
+    'async:benchmarks/micro/libraries/System.IO/StringReaderReadToEndTests.cs',
+    'async:benchmarks/micro/libraries/System.IO/StreamReaderReadLineTests.cs',
+    'async:benchmarks/micro/libraries/System.IO/StringReaderReadLineTests.cs',
+    'async:benchmarks/micro/libraries/System.IO/MemoryStreamTests.cs',
+    'async:benchmarks/micro/libraries/System.IO/MemoryStreamChunkedTests.cs',
 ]
 
 
@@ -87,7 +100,8 @@ def generate(performance, output, env):
         source, env, output / 'generator-build.log')
     run(['dotnet', output / 'generator' / 'Generator.dll', generated / 'Benchmarks.g.cs', ROOT / 'exclusions.txt',
          ROOT / 'shim', performance / 'benchmarks' / 'micro' / 'Categories.cs',
-         *[performance / source for source in SOURCES], ROOT / 'workloads'],
+         *[f'async:{performance / source[6:]}' if source.startswith('async:') else performance / source
+           for source in SOURCES], ROOT / 'workloads'],
         ROOT, env, output / 'generate.log')
     (generated / 'Exclusions.g.props').write_text(exclusion_props((ROOT / 'exclusions.txt').read_text()))
     return generated
@@ -106,7 +120,9 @@ def exclusion_props(exclusions):
 
 def build_desktop(output, performance, generated, sdk, env):
     cell = output / 'desktop'
-    write_project(cell, 'Microsoft.NET.Sdk', '', '    <TargetFramework>net11.0</TargetFramework>\n')
+    # Runtime async for the benchmarks' own async methods, as NetWasm compiles them; Mono AOT has only state machines.
+    write_project(cell, 'Microsoft.NET.Sdk', '', '    <TargetFramework>net11.0</TargetFramework>\n'
+                  '    <Features>$(Features);runtime-async=on</Features>\n')
     (cell / 'global.json').write_text(json.dumps({'sdk': {'version': sdk, 'rollForward': 'disable'}}))
     run(['dotnet', 'build', 'Micro.csproj', '-c', 'Release', f'-p:DotnetPerformanceSource={performance}',
          f'-p:MicroBenchmarkGenerated={generated}', '--nologo'], cell, env, cell / 'build.log')

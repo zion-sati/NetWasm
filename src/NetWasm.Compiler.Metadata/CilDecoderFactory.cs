@@ -34,5 +34,6 @@ internal sealed class CilDecoderFactory(
             new CilSwitchLowerer(),
             new PlatformGuardPlanner(new RawCilInstructionReader()),
             new CilTryReentryLowerer(),
+            new CilLeaveChainer(),
             typedReferences);
 }

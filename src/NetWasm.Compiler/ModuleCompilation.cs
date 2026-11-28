@@ -73,13 +73,17 @@ public interface INetWasmModuleCompiler
 internal sealed class NetWasmModuleCompilationPipeline(
     ICompilationPipelineExecutor executor,
     Microsoft.Extensions.Logging.ILogger<CompilerDiagnosticCompilationDecorator> logger,
-    ICompilerDiagnosticLogPathResolver logPaths) : INetWasmModuleCompiler
+    ICompilerDiagnosticLogPathResolver logPaths,
+    ICompilerMemoryWatch memory) : INetWasmModuleCompiler
 {
     public ModuleCompilationResult Compile(CompilerOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        return CompilerDiagnosticCompilationDecorator.Logged(logger, logPaths, options,
-            () => executor.Execute(options, serveFromLastCompile: true).Module);
+        return CompilerDiagnosticCompilationDecorator.Logged(logger, logPaths, options, () =>
+        {
+            using var watch = memory.Watch();
+            return executor.Execute(options, serveFromLastCompile: true).Module;
+        });
     }
 }
 

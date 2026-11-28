@@ -520,7 +520,7 @@ public sealed class ReachabilityImportClassifierTests
         var method = Method(60, MethodSignatureModel.Create(taskType),
             new("get", "host") { IsPromise = true });
         var instance = new MethodInstanceModel(method, owner, [], method.Signature);
-        var setResult = Setter(65, "SetResult", taskType, CliValueKind.I4);
+        var setResult = Setter(65, "SetResultForJavaScriptInterop", taskType, CliValueKind.I4);
         var setException = Setter(66, "SetException", taskBaseType, CliValueKind.ManagedReference);
         var setCanceled = Setter(67, "SetCanceledForJavaScriptInterop", taskBaseType);
         var getVoidResult = Setter(68, "GetVoidResult", taskBaseType);

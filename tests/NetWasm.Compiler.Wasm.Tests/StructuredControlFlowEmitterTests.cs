@@ -489,6 +489,39 @@ public sealed class StructuredControlFlowEmitterTests
         Assert.Equal([direct[0] + 1, direct[1] + 1, direct[2]], labeled);
     }
 
+    // A labeled block or loop adds one level between a dispatcher continuation or a protected region's leave and its
+    // target: an else-if chain's arm inside a dispatcher may break to the dispatcher's next block.
+    [Fact]
+    public void LabeledRegionsDeepenDispatcherContinuationsAndLeaves()
+    {
+        (uint[] Branches, int?[] Leaves) Emit(Func<StructuredSequence, StructuredRegion> wrap)
+        {
+            var code = new RecordingInstructionWriter();
+            var leaves = new List<int?>();
+            CreateEmitter().Emit(
+                code,
+                new StructuredSequence([wrap(new([
+                    new StructuredDispatcherContinue(new StructuredBlockId(7)),
+                    new StructuredExceptionRegion(new StructuredExceptionGroupId(0), null),
+                ]))]),
+                CreateContext(),
+                (_, _, _) => new ConditionValue(0, CliValueKind.I4),
+                (_, _, _, _, _, leave) => leaves.Add(leave),
+                exceptionLeaveDepth: 3,
+                dispatcherContinueDepth: 2);
+            return ([.. code.ToInstructions().Where(instruction => instruction.Opcode == WasmOpcodes.Branch)
+                .Select(instruction => instruction.Operand.UnsignedValue)], [.. leaves]);
+        }
+
+        var block = Emit(body => new StructuredLabeledBlock(new StructuredBlockId(5), body));
+        var loop = Emit(body => new StructuredLabeledLoop(new StructuredBlockId(5), body));
+
+        Assert.Equal([3u], block.Branches);
+        Assert.Equal([4], block.Leaves);
+        Assert.Equal([3u], loop.Branches);
+        Assert.Equal([4], loop.Leaves);
+    }
+
     [Fact]
     public void LabelBranchOutsideItsRegionIsRejected() =>
         Assert.Throws<InvalidOperationException>(() => CreateEmitter().Emit(
@@ -497,6 +530,38 @@ public sealed class StructuredControlFlowEmitterTests
             CreateContext(),
             (_, _, _) => new ConditionValue(0, CliValueKind.I4),
             (_, _, _, _, _, _) => { }));
+
+    [Fact]
+    public void SwitchTargetOutsideItsRegionIsRejected()
+    {
+        var head = new StructuredBlockId(1);
+        var target = new StructuredBlockId(5);
+        var sequence = new StructuredSequence([new StructuredSwitch(Block(1), [], [target], target)]);
+        var method = StructuredControlFlowEmitterTestExtensions.CreateMethod(sequence);
+        method = method with
+        {
+            Blocks = method.Blocks.SetItem(head, new StructuredBlockDefinition(
+                head,
+                1,
+                [EmitterTestSupport.I(1, CilOperation.BranchIfNotEqual)],
+                [],
+                new StructuredConditionalExit(
+                    new StructuredCondition(1, CilOperation.BranchIfNotEqual, 1, CliValueKind.I4, CliValueKind.I4),
+                    target,
+                    target))
+            {
+                EndOffset = 2,
+            }),
+        };
+
+        Assert.Throws<InvalidOperationException>(() => CreateEmitter().Emit(
+            new RecordingInstructionWriter(),
+            method,
+            sequence,
+            CreateContext(),
+            (_, _, _) => new ConditionValue(0, CliValueKind.I4),
+            (_, _, _, _, _, _) => { }));
+    }
 
     [Theory]
     [InlineData(true, 0)]

@@ -292,6 +292,18 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedConditionalSelects.Enabled => ConditionalSelectPolicy.Enabled,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
+        // A check that cannot fail is code that only costs, so every optimizing preset leaves out the proven ones and
+        // versions loops: the size presets too, as a loop's copy costs under 1% of a program (the micro runner at Oz,
+        // +0.68%) for a fifth to a third fewer instructions in its span loops.
+        var byRefNullCheckOverride = options?.ByRefNullCheckElimination ?? ManagedByRefNullCheckElimination.Auto;
+        var byRefNullChecks = byRefNullCheckOverride switch
+        {
+            ManagedByRefNullCheckElimination.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? ByRefNullCheckEliminationPolicy.Disabled : ByRefNullCheckEliminationPolicy.VersionedLoops,
+            ManagedByRefNullCheckElimination.Disabled => ByRefNullCheckEliminationPolicy.Disabled,
+            ManagedByRefNullCheckElimination.Enabled => ByRefNullCheckEliminationPolicy.VersionedLoops,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
         // A direct call replaces a dispatch, so it is smaller as well as faster.
         var devirtualizationOverride = options?.Devirtualization ?? ManagedDevirtualization.Auto;
         var devirtualization = devirtualizationOverride switch
@@ -546,13 +558,15 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
         // A static field nothing writes reads as its default, so the code its value decides folds,
-        // as an exit code nothing sets decides the process exit; a whole-program fact, as the other
-        // whole-program reductions take.
+        // as an exit code nothing sets decides the process exit. At every level: the code it folds
+        // away is what CoreLib's pay-for-use guards cut (a date's culture formatter, local time and
+        // the clock behind a field the program never sets), so without it a level would reach other
+        // host imports, which a host withholding a capability, or a build without a world, observes.
+        // The early cutoff declines an edit that changes what it folds.
         var unwrittenStaticFieldsOverride = options?.UnwrittenStaticFieldFolding ?? ManagedUnwrittenStaticFieldFolding.Auto;
         var unwrittenStaticFields = unwrittenStaticFieldsOverride switch
         {
-            ManagedUnwrittenStaticFieldFolding.Auto => wholeProgramDefaults
-                ? UnwrittenStaticFieldFoldingPolicy.WholeProgram : UnwrittenStaticFieldFoldingPolicy.Disabled,
+            ManagedUnwrittenStaticFieldFolding.Auto => UnwrittenStaticFieldFoldingPolicy.WholeProgram,
             ManagedUnwrittenStaticFieldFolding.Disabled => UnwrittenStaticFieldFoldingPolicy.Disabled,
             ManagedUnwrittenStaticFieldFolding.Enabled => UnwrittenStaticFieldFoldingPolicy.WholeProgram,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
@@ -594,7 +608,6 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
              newObjectsOverride == ManagedNewObjectNullCheckElimination.Enabled ||
              strengthReductionOverride == ManagedLoopStrengthReduction.Enabled ||
              rangeBranchesOverride == ManagedRangeBranchFolding.Enabled ||
-             unwrittenStaticFieldsOverride == ManagedUnwrittenStaticFieldFolding.Enabled ||
              branchPrefixDuplicationOverride ==
                 ManagedBranchPrefixDuplication.Enabled))
         {
@@ -664,6 +677,30 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
                 ? ObjectDispatchPolicy.SharedAtLargeSites
                 : ObjectDispatchPolicy.Shared,
-            conditionalSelects);
+            conditionalSelects,
+            // Without wasm-opt, whose coalesce-locals merges them at every other preset, each IL local stays one of
+            // the function's locals, and Debug IL gives every condition one: an engine that keeps the locals' state
+            // per block (V8) compiles a long else-if chain in memory quadratic in its length.
+            preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? LocalSlotSharingPolicy.BlockLocals
+                : LocalSlotSharingPolicy.Disabled,
+            // Which runtime-async methods cannot suspend is a whole-program fact, as the whole-program reductions'
+            // are: the presets that take those take it.
+            wholeProgramDefaults ? RuntimeAsyncSuspensionPolicy.WholeProgram : RuntimeAsyncSuspensionPolicy.Local,
+            byRefNullChecks,
+            // A finally's normal exits run copies of it, which the optimizing presets take: the speed ones for copies up
+            // to 256 instructions in all, the size ones up to 48, a small handler such as a using statement's Dispose.
+            preset switch
+            {
+                FinalWasmOptimization.None or FinalWasmOptimization.O0 => 0,
+                FinalWasmOptimization.Os or FinalWasmOptimization.Oz => 48,
+                _ => 256,
+            },
+            // Which receivers reach a call is a whole-program fact, and the presets whose managed analysis is local to
+            // each method (those the early cutoff serves edits at) take only generic virtual calls' (whose type-based
+            // targets multiply); the others dispatch every virtual call by it.
+            preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? ReceiverFlowDispatchPolicy.GenericVirtualCalls
+                : ReceiverFlowDispatchPolicy.EveryVirtualCall);
     }
 }

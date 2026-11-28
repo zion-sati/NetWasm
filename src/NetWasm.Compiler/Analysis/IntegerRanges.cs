@@ -67,6 +67,12 @@ internal sealed class IntegerRangeAnalysis(IStackEffectResolver effects) : IInte
     private const int JoinsBeforeWidening = 2;
     private const int ThresholdWidenings = 4;
 
+    // The most slot ranges the states at a method's blocks hold, its reachable blocks times its slots. A state
+    // holds every slot, so a method with thousands of both, such as a long else-if chain in Debug IL, where each
+    // condition has a local of its own, would take gigabytes; such a method is left unanalyzed, and its branches and
+    // checks stay as they are.
+    internal const long MaximumSlotRanges = 1 << 24;
+
     private readonly IStackEffectResolver _effects = effects ?? throw new ArgumentNullException(nameof(effects));
 
     // A stack value: its range when it is an integer, and the slot it was loaded from while the slot still holds it.
@@ -91,6 +97,7 @@ internal sealed class IntegerRangeAnalysis(IStackEffectResolver effects) : IInte
             .Concat(signature.ParameterSignatureTypes.Select(static type => (CliTypeIdentity?)type))
             .Concat(body.LocalSignatureTypes.Select(static type => (CliTypeIdentity?)type))
             .ToArray();
+        if ((long)graph.ReachableBlocks.Count * types.Length > MaximumSlotRanges) return ImmutableDictionary<int, ImmutableArray<IntegerRange?>>.Empty;
         var untracked = Untracked(body, arguments);
         var bounds = types.Select((type, slot) => untracked.Contains(slot) || type is null ? null : Bounds(type)).ToArray();
         var blocksByOffset = graph.Blocks.ToDictionary(static block => block.StartOffset, static block => block.Index);

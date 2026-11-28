@@ -176,7 +176,8 @@ public sealed class AttributeQueryLowererTests
         internal AttributeCilFragment Fragment { get; } = new([], [Target, Filter], 2);
         internal ImmutableDictionary<int, AttributeCilFragment>? Replacements { get; private set; }
         internal AttributeQueryLowerer Create() => new(
-            this, this, this, this, this, this, this, this, this, this, AmbiguityConstructor);
+            this, this, this, this, this, new AttributeQueryCompileTimeAnswerer(this, this, this, AmbiguityConstructor),
+            this, this);
         internal CilMethodBody Lower() => ((IAttributeQueryLowerer)Create()).Lower(Body);
 
         public MethodInstanceModel? Resolve(CilInstruction instruction) =>

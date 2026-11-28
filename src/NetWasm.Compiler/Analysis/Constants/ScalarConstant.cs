@@ -23,4 +23,9 @@ internal abstract record ScalarConstant
 
 internal sealed record ConstantCallEvaluation(
     MethodInstanceModel Method,
-    ImmutableArray<ScalarConstant?> Arguments);
+    ImmutableArray<ScalarConstant?> Arguments)
+{
+    // For each argument, the declared parameter of the calling method whose value it passes on unchanged, or -1;
+    // default when the call passes on none.
+    public ImmutableArray<int> ForwardedParameters { get; init; }
+}

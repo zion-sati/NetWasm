@@ -50,7 +50,8 @@ internal sealed class OutwardMethodFunctionAppender(
                     throw new InvalidOperationException("An asynchronous boundary requires task fault observation.")),
                 runtimeImports.Resolve(
                     RuntimeImportSymbol.ManagedExceptionCapture,
-                    request.Initialization.RuntimeImportSelection));
+                    request.Initialization.RuntimeImportSelection),
+                javaScriptArguments?.ExportFailure);
             request.Functions.Add(new WasmFunctionDefinition(
                 request.GeneratedFunctionName,
                 new(

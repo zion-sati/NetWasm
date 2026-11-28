@@ -65,14 +65,14 @@ internal sealed class MemberReachabilityExpander(
             session.State.FieldDescriptors.Values);
         if (memberExecution.UnsupportedTarget is not null)
         {
-            session.EnqueueInstance(memberExecution.UnsupportedTarget);
+            session.EnqueueGenerated(memberExecution.UnsupportedTarget);
         }
         if (memberExecution.DelegateInvocation is { } delegateInvocation)
         {
-            session.EnqueueInstance(delegateInvocation.UnsupportedTarget);
-            session.EnqueueInstance(delegateInvocation.ArgumentTarget);
-            session.EnqueueInstance(delegateInvocation.ParameterCountTarget);
-            session.EnqueueInstance(delegateInvocation.InvocationTarget);
+            session.EnqueueGenerated(delegateInvocation.UnsupportedTarget);
+            session.EnqueueGenerated(delegateInvocation.ArgumentTarget);
+            session.EnqueueGenerated(delegateInvocation.ParameterCountTarget);
+            session.EnqueueGenerated(delegateInvocation.InvocationTarget);
             foreach (var method in delegateInvocation.Methods.Values)
             {
                 foreach (var parameter in method.Signature.ParameterSignatureTypes)
@@ -93,12 +93,12 @@ internal sealed class MemberReachabilityExpander(
             if (method.Definition.Name == ".ctor")
             {
                 // New runs the constructor on an object or box the intrinsic allocates.
-                session.VisitMethod(CilOperation.NewObject, method);
+                session.VisitGenerated(CilOperation.NewObject, method);
                 session.AddAllocatedType(method.DeclaringType);
             }
             else if (!execution.RequiresDispatch)
             {
-                session.VisitMethod(CilOperation.Call, method);
+                session.VisitGenerated(CilOperation.Call, method);
             }
             else
             {
@@ -113,7 +113,7 @@ internal sealed class MemberReachabilityExpander(
                     .ToImmutableArray();
                 foreach (var target in targets)
                 {
-                    session.VisitMethod(CilOperation.CallVirtual, target.Method);
+                    session.VisitGenerated(CilOperation.CallVirtual, target.Method);
                 }
                 plannedExecutions[pair.Key] = execution with
                 {

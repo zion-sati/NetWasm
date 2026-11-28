@@ -35,9 +35,11 @@ internal sealed class CompiledUnitStateFactory(
     IMethodRepositoryFactory methodRepositories,
     IFieldRepositoryFactory fieldRepositories,
     ISymbolFormatterFactory symbolFormatters,
-    IFunctionIndexResolverFactory functionIndexResolvers) : ICompiledUnitStateFactory
+    IFunctionIndexResolverFactory functionIndexResolvers,
+    IUnitSegmentSealer sealer) : ICompiledUnitStateFactory
 {
     private readonly IUnitStoreLoader _loader = loader ?? throw new ArgumentNullException(nameof(loader));
+    private readonly IUnitSegmentSealer _sealer = sealer ?? throw new ArgumentNullException(nameof(sealer));
     private readonly IWasmMethodLowerer _structuring = structuring ??
         throw new ArgumentNullException(nameof(structuring));
 
@@ -55,6 +57,7 @@ internal sealed class CompiledUnitStateFactory(
         ArgumentNullException.ThrowIfNull(program);
         if (inputs is null)
             return null;
+        var store = _loader.Load(inputs.Directory);
         var state = new CompiledUnitState(inputs.Directory)
         {
             Verifies = options.VerifyCompiledUnits,
@@ -64,7 +67,9 @@ internal sealed class CompiledUnitStateFactory(
             Policy = $"{options.Target}/{branchPrefixDuplication}/{dispatcherElimination}/{NativeBindingPolicy(options)}" +
                 $"/{FeatureSwitchPolicy(options)}",
             Bodies = CompiledUnitState.Index(program.Methods.Values, program.ConstructedMethods.Values),
-            Store = _loader.Load(inputs.Directory),
+            Store = store,
+            // A full segment goes to the store's medium while emission runs, under the sequences the commit gives it.
+            EmittedSegments = new(sealer: _sealer, location: inputs.Directory, firstSequence: store.NextSequence),
             Structuring = _structuring,
             AssemblyShapes = UnitAssemblyShapes.Of(
                 metadata.Assemblies.ToDictionary(assembly => assembly.Identity.Name, assembly => assembly.References,

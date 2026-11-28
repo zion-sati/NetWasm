@@ -36,8 +36,17 @@ internal sealed class ExceptionalNumericInstructionEmitter(
 
     private void EmitCheckedBinary(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
+        var left = request.Stack.Count - 2;
+        // add.ovf.un offsets an address and sub.ovf.un subtracts from one (ECMA-335 Table III.7): the arithmetic is the
+        // native int's, and an offset address is an address again.
+        var addresses = request.Stack[left] == CliValueKind.ManagedAddress ||
+            request.Stack[left + 1] == CliValueKind.ManagedAddress;
+        var resultType = addresses && !(request.Stack[left] == CliValueKind.ManagedAddress &&
+            request.Stack[left + 1] == CliValueKind.ManagedAddress)
+                ? CliValueKind.ManagedAddress
+                : (CliValueKind?)null;
         // Operands whose ranges keep the result in range need only the operation.
-        if (request.Header.IntegerCheckProof?.ProvesNoOverflow(request.Header.Instructions, request.Instruction) == true)
+        if (!addresses && request.Header.IntegerCheckProof?.ProvesNoOverflow(request.Header.Instructions, request.Instruction) == true)
         {
             var (i32, i64) = request.Instruction.Operation switch
             {
@@ -50,9 +59,9 @@ internal sealed class ExceptionalNumericInstructionEmitter(
                 WasmInstruction.NoOperand(WasmOpcodes.F32Add), WasmInstruction.NoOperand(WasmOpcodes.F64Add));
             return;
         }
-        var left = request.Stack.Count - 2;
-        var type = NumericStackTypes.GetCompatible(
-            request.Stack[left], request.Stack[left + 1]);
+        var type = addresses
+            ? CliValueKind.NativeInt
+            : NumericStackTypes.GetCompatible(request.Stack[left], request.Stack[left + 1]);
         var unsigned = request.Instruction.Operation is
             CilOperation.AddCheckedUnsigned or CilOperation.SubtractCheckedUnsigned or
             CilOperation.MultiplyCheckedUnsigned;
@@ -73,9 +82,10 @@ internal sealed class ExceptionalNumericInstructionEmitter(
             rightLocal,
             resultLocal, request.Context.ManagedThrowFunction);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(resultLocal))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(leftLocal))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(
+            resultType is { } address ? GetStackLocal(request.Context, left, address) : leftLocal))));
         request.Stack.RemoveAt(left + 1);
-        request.Stack[left] = type;
+        request.Stack[left] = resultType ?? type;
     }
 
     private void NormalizeCheckedOperand(
@@ -92,7 +102,8 @@ internal sealed class ExceptionalNumericInstructionEmitter(
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
             WasmInstructionOperand.Unsigned((uint)GetStackLocal(request.Context, slot, sourceType))));
-        if (layouts.Target.UsesMemory64)
+        // An address is already a native int's width.
+        if (layouts.Target.UsesMemory64 && sourceType != CliValueKind.ManagedAddress)
         {
             code.Write(WasmInstruction.NoOperand(unsigned
                 ? WasmOpcodes.I64ExtendI32Unsigned

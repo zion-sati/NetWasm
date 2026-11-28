@@ -399,7 +399,9 @@ public sealed class CompilationPipelineCompositionTests
             IRuntimeIntrinsicRegistry intrinsics,
             WasmOptimizationSettings optimizationSettings,
             PlatformWorldCapabilities world,
-            ImmutableHashSet<EntityKey>? inliningExcludedCallers = null)
+            ImmutableHashSet<EntityKey>? inliningExcludedCallers = null,
+            bool reportsReceiverFlow = false,
+            EntityKey? receiverFlowAuditFailure = null)
         {
             calls.Add("analysis-create");
             return new RecordingAnalyzer(inner.Create(

@@ -324,7 +324,7 @@ internal sealed class ExactReceiverDevirtualizer(
     private static bool Dominates(
         CilMethodBody body,
         Dictionary<int, int> blocks,
-        Dictionary<int, ImmutableHashSet<int>> dominators,
+        DominatorTree dominators,
         int store,
         int load)
     {

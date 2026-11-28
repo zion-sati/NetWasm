@@ -235,7 +235,7 @@ public sealed class ManagedMethodEmitterTests
     }
 
     [Fact]
-    public void ExceptionPayloadRootsShareTheMethodRootFrame()
+    public void AnExceptionPayloadTakesACellFrameNotASlotOfTheMethodFrame()
     {
         var program = new FakeProgram();
         var method = program.GetMethod(EntryKey);
@@ -251,8 +251,8 @@ public sealed class ManagedMethodEmitterTests
             new MethodRootMap(EntryKey, [], []), null, (code, _, context) =>
             {
                 calls++;
-                Assert.Equal(0, context.RootMap.SlotCount);
-                Assert.Equal(1, context.RootSlotCount);
+                Assert.Equal(0, context.RootSlotCount);
+                Assert.True(context.ExceptionCellFrames.ContainsKey(group.Id));
                 code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
             });
         Assert.Equal(1, calls);
@@ -289,12 +289,15 @@ public sealed class ManagedMethodEmitterTests
             new ArrayMetadataSnapshotEmitter(layouts, layouts, new RectangularArrayLayoutProvider(layouts, layouts), CreateAddressInstructions(layouts),
                 new ImplicitExceptionEmitter(layouts)),
             new ArrayStoreCheckPlanner(types, new UnusedTypeDefinitionResolver()),
-            new EmptyFloatingCallPlanner(), new AuthoritativeRootSourceSelector(), new AuthoritativeRootLayoutPlanner(),
+            new EmptyFloatingCallPlanner(), new AuthoritativeRootSourceSelector(new RootClearElisionPlanner(new StructuredBlockPredecessorReader()), new RootValueElisionPlanner(new StructuredBlockPredecessorReader())), new AuthoritativeRootLayoutPlanner(),
             new RootClearElisionPlanner(new StructuredBlockPredecessorReader()),
                 new RootFrameEntryClearPlanner(new RootClearElisionPlanner(new StructuredBlockPredecessorReader()), layouts),
+                new LazyRootFramePlanner(new RootClearElisionPlanner(new StructuredBlockPredecessorReader()),
+                    new FallbackPublicationClassifier()),
                 new RootValueElisionPlanner(new StructuredBlockPredecessorReader()),
             new ValueFrameReferenceMapPlanner(layouts, layouts, types),
-            new NetWasm.Compiler.GarbageCollection.RootSlotAllocator());
+            new NetWasm.Compiler.GarbageCollection.RootSlotAllocator(),
+            TestExceptionFrames.Strategies(layouts, WasmRuntimeImports.CreateCatalog()), new LandingPadRestorePlanner());
     }
 
     private sealed class EmptyFloatingCallPlanner : IScalarCallLifetimePlanner
@@ -336,7 +339,9 @@ public sealed class ManagedMethodEmitterTests
             NetWasm.Compiler.Wasm.Emission.AddressTakenValues.AddressTakenAggregatePromotionPlan?
                 addressTakenAggregatePromotions = null,
             NetWasm.Compiler.Wasm.Emission.CallLifetimes.ScalarCallLifetimePlan?
-                scalarCallLifetimes = null)
+                scalarCallLifetimes = null,
+            ReturnBufferLocal? returnBufferLocal = null,
+            StructConventionStorage? structConventions = null)
         {
             Method = method;
             MemberExecution = memberExecution;

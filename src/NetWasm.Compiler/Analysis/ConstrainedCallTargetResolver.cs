@@ -35,8 +35,21 @@ internal sealed class ConstrainedCallTargetResolver(
         var candidateMethods = request.ConcreteType.Methods.Clear();
         if (request.ConcreteType.IsEnum)
         {
-            candidateMethods = candidateMethods.AddRange(
-                types.FindType("System.Enum").Methods);
+            // An enum declares no methods: System.Enum implements them for it, its interface methods explicitly
+            // (ISpanFormattable.TryFormat, IConvertible's), which System.Enum's method implementations map as the
+            // enum's own would (ECMA-335 II.12.2).
+            var enumType = types.FindType("System.Enum");
+            var inheritedCandidates = methodImplementations
+                .GetMethodImplementations(CliTypeIdentity.Named(enumType.Key.Assembly, enumType.Namespace, enumType.Name, false))
+                .Where(mapping => MatchesDeclaration(mapping.Declaration, request))
+                .Select(mapping => mapping.Body.Definition)
+                .DistinctBy(candidate => candidate.Key)
+                .ToArray();
+            if (inheritedCandidates.Length != 0)
+            {
+                return RequireUnique(inheritedCandidates, request);
+            }
+            candidateMethods = candidateMethods.AddRange(enumType.Methods);
         }
         else if (request.ConcreteType.IsValueType &&
                  IsValueTypeFallback(request.Declaration))

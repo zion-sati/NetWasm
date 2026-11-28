@@ -75,6 +75,38 @@ internal sealed class ValueFrameEntryEmitter(
         }
         foreach ((var argumentIndex, var offset) in context.ValueLayout.ArgumentOffsets)
         {
+            // A struct argument passed by its fields is stored into its frame copy, whose address its local
+            // then holds, as a copied argument's local does.
+            if (context.FieldArguments.TryGetValue(argumentIndex, out var fieldArgument))
+            {
+                addresses.Emit(code, context, offset);
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee,
+                    WasmInstructionOperand.Unsigned((uint)context.ArgumentLocal(argumentIndex))));
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Drop));
+                var fields = fieldArgument.Shape.Fields;
+                for (var field = 0; field < fields.Length; field++)
+                {
+                    code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                        WasmInstructionOperand.Unsigned((uint)context.ArgumentLocal(argumentIndex))));
+                    code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                        WasmInstructionOperand.Unsigned((uint)(fieldArgument.FirstParameter + field))));
+                    // A Vector3 field arrives as a v128 and stores 12 bytes, through the method's vector scratch.
+                    ManagedMemoryEmitter.EmitStoreByType(code, layouts.Target, fields[field].Offset, fields[field].Type,
+                        fields[field].Size, context.VectorScratch);
+                }
+                // The padding the fields do not cover is zero, as a whole copy of the argument would leave it.
+                var argumentLocal = context.ArgumentLocal(argumentIndex);
+                StructResults.StructPaddingEmitter.Emit(code, layouts.Target, fieldArgument.Shape, writer =>
+                    writer.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                        WasmInstructionOperand.Unsigned((uint)argumentLocal))));
+                if (aggregateValues.TryInitializeArgument(code, header, context, argumentIndex))
+                {
+                    addresses.Emit(code, context, offset);
+                    code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+                        WasmInstructionOperand.Unsigned((uint)(context.ArgumentLocal(argumentIndex)))));
+                }
+                continue;
+            }
             if (aggregateValues.TryInitializeArgument(code, header, context, argumentIndex))
             {
                 // The lanes now hold the argument's value. Its frame backing, which the lanes are stored to before
@@ -83,7 +115,7 @@ internal sealed class ValueFrameEntryEmitter(
                 // writes the backing, not the caller's copy.
                 addresses.Emit(code, context, offset);
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
-                    WasmInstructionOperand.Unsigned((uint)(argumentIndex + context.ParameterOffset))));
+                    WasmInstructionOperand.Unsigned((uint)(context.ArgumentLocal(argumentIndex)))));
                 continue;
             }
             addresses.Emit(code, context, offset);
@@ -92,7 +124,7 @@ internal sealed class ValueFrameEntryEmitter(
             {
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee,
                     WasmInstructionOperand.Unsigned((uint)context.ObjectTemporary)));
-                var argumentLocal = argumentIndex + context.ParameterOffset;
+                var argumentLocal = context.ArgumentLocal(argumentIndex);
                 var layout = values.GetValueLayout(argumentType);
                 copies.Emit(code, context.ObjectTemporary, layout.Size, layout.Alignment,
                     SmallBlockEmitter.WidestChunk(layout),
@@ -106,7 +138,7 @@ internal sealed class ValueFrameEntryEmitter(
                 continue;
             }
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)(argumentIndex + context.ParameterOffset))));
+                WasmInstructionOperand.Unsigned((uint)(context.ArgumentLocal(argumentIndex)))));
             ManagedMemoryEmitter.EmitStoreByType(code, layouts.Target, 0, argumentType,
                 layouts.Target.GetStorageSize(argumentType));
         }

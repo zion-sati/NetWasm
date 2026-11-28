@@ -279,6 +279,30 @@ public sealed class RootClearElisionPlannerTests
         Assert.Empty(_planner.Plan(method, context)[(0, false)]);
     }
 
+    // A throw-only point leaves a deferrable root unpublished while its slot holds null, so the slot stays null through
+    // such points until one that collects publishes it; with nothing known null (a frame not zeroed on entry), it is
+    // published at once.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ADeferrableRootKeepsItsSlotNullUntilAPointThatCollects(bool zeroed)
+    {
+        var context = Context([
+            new(0, [Source], []) { Deferrable = [Source] },
+            new(1, [Source], []) { Deferrable = [Source] },
+            new(2, [Source], []),
+            new(3, [Source], []) { Deferrable = [Source] },
+        ]) with
+        { RootFrameStartsZeroed = zeroed };
+
+        var plan = _planner.Plan(Method(Enumerable.Range(0, 4).Select(i => I(i, CilOperation.Call)).ToImmutableArray()), context);
+
+        Assert.Equal(zeroed, plan[(0, false)].Contains(0));
+        Assert.Equal(zeroed, plan[(1, false)].Contains(0));
+        Assert.DoesNotContain(0, plan[(2, false)]);
+        Assert.DoesNotContain(0, plan[(3, false)]);
+    }
+
     private static MethodEmissionContext Context(IEnumerable<SafepointRootMap> points) =>
         CreateMethodEmissionContext() with
         {
