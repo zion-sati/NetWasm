@@ -84,6 +84,7 @@ NetWasm.Compiler.Tests.Correctness.EmittedMemberHandleTests
 NetWasm.Compiler.Tests.Correctness.EmittedTupleElementNamesAttributeTests
 NetWasm.Compiler.Tests.Correctness.EncodingStreamBoundaryTests
 NetWasm.Compiler.Tests.Correctness.EnumConstantSpanCompilationTests
+NetWasm.Compiler.Tests.Correctness.EnumInterfaceCallCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.EnumerableIteratorContractDifferentialTests
 NetWasm.Compiler.Tests.Correctness.ExceptionControlFlowDifferentialTests
 NetWasm.Compiler.Tests.Correctness.ExceptionSequenceTests
@@ -231,6 +232,7 @@ NetWasm.Compiler.Tests.Correctness.StructConventionDifferentialTests
 NetWasm.Compiler.Tests.Correctness.StructCopyCorpusTests
 NetWasm.Compiler.Tests.Correctness.StructElementCopyRootingTests
 NetWasm.Compiler.Tests.Correctness.StructureMarshallingGapsCompilationTests
+NetWasm.Compiler.Tests.Correctness.StructuredRegionShapeDifferentialTests
 NetWasm.Compiler.Tests.Correctness.SystemNetCredentialsUriCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.TaskExceptionShapeCorpusTests
 NetWasm.Compiler.Tests.Correctness.TaskSchedulerAwaitTests
